@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+.aistudio/
+deploy-server/
+data/
+*.sqlite3
+server/__pycache__/

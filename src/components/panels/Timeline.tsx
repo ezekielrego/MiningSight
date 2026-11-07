@@ -13,6 +13,8 @@ interface TimelineProps {
   onRecordKeyframe?: () => void;
   tourName?: string;
   isTourPlaybackEnabled?: boolean;
+  playbackSpeed?: number;
+  onChangePlaybackSpeed?: (speed: number) => void;
 }
 
 export const Timeline: React.FC<TimelineProps> = ({
@@ -26,6 +28,8 @@ export const Timeline: React.FC<TimelineProps> = ({
   onRecordKeyframe,
   tourName,
   isTourPlaybackEnabled = false,
+  playbackSpeed = 1,
+  onChangePlaybackSpeed,
 }) => {
   const { currentFrame, minFrame, previewMaxFrame } = timeline;
   const totalFrames = previewMaxFrame - minFrame;
@@ -112,6 +116,16 @@ export const Timeline: React.FC<TimelineProps> = ({
               Tour: {tourName}
             </span>
           )}
+          <label className="hidden md:flex items-center gap-1 text-[9px] text-[#999]" title="Playback speed">
+            <span>Speed</span>
+            <select value={playbackSpeed} onChange={(event) => onChangePlaybackSpeed?.(Number(event.target.value))} className="bg-[#222] border border-[#444] rounded-[2px] px-1 py-0.5 text-[#e88724] font-mono cursor-pointer">
+              <option value={0.25}>0.25×</option>
+              <option value={0.5}>0.5×</option>
+              <option value={1}>1×</option>
+              <option value={2}>2×</option>
+              <option value={4}>4×</option>
+            </select>
+          </label>
         </div>
 
         {/* Center: Transport Playback Controls */}

@@ -8,6 +8,7 @@ interface MenuBarProps {
   onResetView?: () => void;
   onSaveProject?: () => void;
   onOpenProject?: () => void;
+  onNewProject?: () => void;
   onRevertProject?: () => void;
   onOpenAISurvey?: () => void;
   onOpenTours?: () => void;
@@ -25,6 +26,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
   onResetView,
   onSaveProject,
   onOpenProject,
+  onNewProject,
   onRevertProject,
   onOpenAISurvey,
   onOpenTours,
@@ -52,7 +54,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
     {
       name: 'File',
       items: [
-        { label: 'New Project (Mining Site Baseline)', shortcut: 'Ctrl+N', action: onRevertProject },
+        { label: 'New Project…', shortcut: 'Ctrl+N', action: onNewProject },
         { label: 'Open Project from Machine (.json / .c4d.json)...', shortcut: 'Ctrl+O', action: onOpenProject },
         { divider: true, label: '' },
         {
@@ -195,7 +197,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
   return (
     <div className="relative w-full h-[22px] bg-[#323232] border-b border-[#1e1e1e] flex items-center justify-between px-1.5 text-[11px] text-[#cfcfcf] select-none font-sans z-30">
       {/* Horizontal Menu Items */}
-      <div className="flex items-center space-x-0.5 overflow-x-hidden whitespace-nowrap">
+      <div className="flex items-center space-x-0.5 overflow-visible whitespace-nowrap">
         {menuItems.map((menu) => (
           <div key={menu.name} className="relative">
             <button
@@ -306,6 +308,15 @@ export const MenuBar: React.FC<MenuBarProps> = ({
         >
           AI Survey
         </button>
+
+        {/* Interface switcher: the companion GOMERA X viewer lives at the same origin. */}
+        <a
+          href="/gomerax-trial/"
+          title="Switch to the GOMERA X IFC Viewer"
+          className="px-1.5 py-0.5 bg-[#3a4452] hover:bg-[#4ea3e8] hover:text-black text-white font-bold text-[10px] rounded-[2px] cursor-pointer border border-[#556677]"
+        >
+          GOMERA X
+        </a>
 
         {/* Lock layout icon */}
         <button title="Lock Workspace" className="text-[#999] hover:text-white p-0.5">

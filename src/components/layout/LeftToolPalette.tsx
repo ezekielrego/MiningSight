@@ -6,6 +6,8 @@ interface LeftToolPaletteProps {
   onSelectMode: (mode: ToolMode) => void;
   isSnapping: boolean;
   onToggleSnapping: () => void;
+  isSoloMode: boolean;
+  onToggleSolo: () => void;
 }
 
 export const LeftToolPalette: React.FC<LeftToolPaletteProps> = ({
@@ -13,6 +15,8 @@ export const LeftToolPalette: React.FC<LeftToolPaletteProps> = ({
   onSelectMode,
   isSnapping,
   onToggleSnapping,
+  isSoloMode,
+  onToggleSolo,
 }) => {
   return (
     <div className="w-[36px] bg-[#323232] border-r border-[#222] flex flex-col items-center py-1 space-y-1 select-none flex-shrink-0 z-20">
@@ -146,8 +150,11 @@ export const LeftToolPalette: React.FC<LeftToolPaletteProps> = ({
 
       {/* 8. Solo / Guide / Lock Mode */}
       <button
+        onClick={onToggleSolo}
         title="Solo Mode / Isolate"
-        className="w-7 h-7 flex items-center justify-center bg-[#3a3a3a] hover:bg-[#454545] text-[#e88724] border border-t-[#505050] border-b-[#202020] rounded-[2px]"
+        className={`w-7 h-7 flex items-center justify-center border border-t-[#505050] border-b-[#202020] rounded-[2px] ${
+          isSoloMode ? 'bg-[#e88724] text-black border-[#a8580b]' : 'bg-[#3a3a3a] hover:bg-[#454545] text-[#e88724]'
+        }`}
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>

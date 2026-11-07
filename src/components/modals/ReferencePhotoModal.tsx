@@ -82,7 +82,7 @@ export const ReferencePhotoModal: React.FC<ReferencePhotoModalProps> = ({
           <div className="flex items-center space-x-2">
             <span className="w-2.5 h-2.5 rounded-full bg-[#e88724]"></span>
             <span className="font-semibold text-[#f5f5f5]">
-              AI Survey Reference Image Analysis — [Rugged_Timbered_Mine_Tunnel_53b5c504.png]
+              AI Survey Reference Image Analysis — [rugged_timbered_mine_reference.png]
             </span>
           </div>
           <button
@@ -98,7 +98,7 @@ export const ReferencePhotoModal: React.FC<ReferencePhotoModalProps> = ({
           <div className="flex items-center space-x-3 text-[11px]">
             <span className="text-[#888]">Source File:</span>
             <span className="text-[#e88724] font-mono bg-[#1e1e1e] px-2 py-0.5 rounded border border-[#3a3a3a]">
-              /assets/aistudio/Rugged_Timbered_Mine_Tunnel_53b5c504.png
+              /assets/reference/rugged_timbered_mine_reference.png
             </span>
             <span className="text-[#666]">|</span>
             <span className="text-[#aaa]">Status: 3D Procedural Rig Synthesized & Active</span>
@@ -138,7 +138,7 @@ export const ReferencePhotoModal: React.FC<ReferencePhotoModalProps> = ({
           <div className="flex-1 bg-[#151515] p-3 flex flex-col items-center justify-center relative overflow-hidden border-r border-[#222]">
             <div className="relative max-h-full max-w-full rounded border border-[#333] shadow-2xl overflow-hidden group">
               <img
-                src="/assets/aistudio/Rugged_Timbered_Mine_Tunnel_53b5c504.png"
+                src="/assets/reference/rugged_timbered_mine_reference.png"
                 alt="Rugged Timbered Mine Tunnel Reference"
                 className="max-h-[580px] object-contain select-none block"
               />

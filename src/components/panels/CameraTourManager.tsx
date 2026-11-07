@@ -264,6 +264,9 @@ export const CameraTourManager: React.FC<CameraTourManagerProps> = ({
                       <div className="font-medium text-[#f0f0f0] truncate">{kf.name}</div>
                       <div className="text-[9.5px] text-[#999] font-mono flex items-center space-x-2">
                         <span className="text-[#4ade80]">F: {kf.frame}</span>
+                        {kf.annotations && kf.annotations.length > 0 && (
+                          <span className="text-[#ffb347]">Notes: {kf.annotations.length}</span>
+                        )}
                         <span>
                           Pos: ({kf.position.x.toFixed(1)}, {kf.position.y.toFixed(1)}, {kf.position.z.toFixed(1)})
                         </span>

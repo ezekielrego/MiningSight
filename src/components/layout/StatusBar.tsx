@@ -149,7 +149,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
 
             <div className="bg-[#1f1f1f] p-3 rounded border border-[#3f2020] space-y-2">
               <div className="text-[10px] uppercase font-mono text-[#f87171]">
-                Error Code: {status.errorCode || 'ERR_VALIDATION_FAILURE'}
+                Error Code: {status.errorCode || (status.message.toLowerCase().includes('upload') ? 'ERR_UPLOAD_FAILURE' : 'ERR_APPLICATION_FAILURE')}
               </div>
               <div className="text-white font-semibold text-[12px] leading-snug">
                 {status.message}

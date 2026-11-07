@@ -16,6 +16,13 @@ import {
   Layers,
   Upload,
   RotateCcw,
+  Cloud,
+  Server,
+  ImagePlus,
+  X,
+  Info,
+  ExternalLink,
+  Loader2,
 } from 'lucide-react';
 import {
   SurveyImageItem,
@@ -33,6 +40,45 @@ interface AIGeologicalMapperPanelProps {
   currentPresetId?: string;
   onSelectPreset?: (presetId: any) => void;
   onApplyCustomScene?: (params: any) => void;
+  authToken?: string | null;
+  onOpenAuth?: () => void;
+}
+
+type WorldProvider = 'marble' | 'gomera';
+type WorldMode = 'text' | 'image' | 'multi-image';
+type GomeraUploadSource = 'ai-panel' | 'gomera-file-manager';
+
+interface WorldImageInput {
+  id: string;
+  name: string;
+  mimeType: string;
+  dataUrl: string;
+  size: number;
+  azimuth: number;
+}
+
+const geminiModelOptions = [
+  { value: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash · fast stable' },
+  { value: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash · stronger reasoning' },
+  { value: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash · multimodal balance' },
+  { value: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash · legacy stable' },
+  { value: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite · lowest cost' },
+  { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash · preview' },
+  { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro · preview reasoning' },
+];
+
+const marbleModelOptions = [
+  { value: 'marble-1.1', label: 'Marble 1.1 · recommended' },
+  { value: 'marble-1.1-plus', label: 'Marble 1.1 Plus · dynamic size' },
+  { value: 'marble-1.0', label: 'Marble 1.0' },
+  { value: 'marble-1.0-draft', label: 'Marble 1.0 Draft' },
+];
+
+interface AISettingsState {
+  geminiConfigured: boolean;
+  marbleConfigured: boolean;
+  geminiModel: string;
+  marbleModel: string;
 }
 
 export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = ({
@@ -42,6 +88,8 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   currentPresetId,
   onSelectPreset,
   onApplyCustomScene,
+  authToken = null,
+  onOpenAuth,
 }) => {
   const [activeTab, setActiveTab] = useState<'input' | 'preview' | 'analysis' | 'records' | 'reconstruct'>('input');
   const [images, setImages] = useState<SurveyImageItem[]>(getDefaultSampleSurveyImages());
@@ -51,12 +99,45 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   );
 
   // AI 3D Scene Reconstruction state
-  const [reconstructImage, setReconstructImage] = useState<string>('/assets/aistudio/Rugged_Timbered_Mine_Tunnel_53b5c504.png');
+  const [reconstructImage, setReconstructImage] = useState<string>('/assets/reference/rugged_timbered_mine_reference.png');
   const [reconstructPrompt, setReconstructPrompt] = useState<string>(
-    'Synthesize square timber sets with 4-tier side lagging, inward batter angle, packed earthen rubble floor, and unlined rock cavern adit bore.'
+    'Synthesize square timber sets with 4-tier side lagging, inward batter angle, a clear packed earthen wheel-cart path, and unlined rock cavern adit bore. Do not add rails, carts, or loose stones.'
   );
   const [isReconstructing, setIsReconstructing] = useState<boolean>(false);
   const [reconstructResult, setReconstructResult] = useState<any>(null);
+
+  // AI World Studio providers. The API keys remain server-side; this state only drives the UI.
+  const [worldProvider, setWorldProvider] = useState<WorldProvider>('marble');
+  const [worldMode, setWorldMode] = useState<WorldMode>('text');
+  const [worldModel, setWorldModel] = useState('marble-1.1');
+  const [worldDisplayName, setWorldDisplayName] = useState('MiningSight AI World');
+  const [worldPrompt, setWorldPrompt] = useState(
+    'Generate a navigable underground timbered mining drift with square timber sets, four tiers of side lagging, an inward batter angle, a clear packed earthen wheel-cart path, and an unlined rock cavern heading. Do not add rails, carts, or loose stones.'
+  );
+  const [worldImages, setWorldImages] = useState<WorldImageInput[]>([]);
+  const [worldReconstructImages, setWorldReconstructImages] = useState(false);
+  const [worldIsPano, setWorldIsPano] = useState<'auto' | 'true' | 'false'>('auto');
+  const [worldDisableRecaption, setWorldDisableRecaption] = useState(false);
+  const [worldDragActive, setWorldDragActive] = useState(false);
+  const [worldGenerating, setWorldGenerating] = useState(false);
+  const [worldProgress, setWorldProgress] = useState(0);
+  const [worldStatus, setWorldStatus] = useState('Ready to generate a world.');
+  const [worldResult, setWorldResult] = useState<any>(null);
+  const [worldError, setWorldError] = useState('');
+  const [worldConfigured, setWorldConfigured] = useState<boolean | null>(null);
+  const [worldCredits, setWorldCredits] = useState<number | null>(null);
+  const [gomeraCaptureName, setGomeraCaptureName] = useState('MiningSight GOMERA capture');
+  const [gomeraUploadSource, setGomeraUploadSource] = useState<GomeraUploadSource>('gomera-file-manager');
+  const [aiSettings, setAiSettings] = useState<AISettingsState | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsGeminiKey, setSettingsGeminiKey] = useState('');
+  const [settingsMarbleKey, setSettingsMarbleKey] = useState('');
+  const [settingsGeminiModel, setSettingsGeminiModel] = useState('gemini-3.8-flash');
+  const [settingsMarbleModel, setSettingsMarbleModel] = useState('marble-1.1');
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState('');
+  const [worldFilesLoading, setWorldFilesLoading] = useState(false);
 
   const [constants, setConstants] = useState<PhotogrammetryConstants>({
     sensorFocalLengthMm: 35,
@@ -195,18 +276,33 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
       return;
     }
 
+    if (!authToken || (aiSettings && !aiSettings.geminiConfigured)) {
+      setActiveTab('reconstruct');
+      openProviderSettings();
+      onStatusChange({
+        type: 'warning',
+        message: 'Gemini API key required before survey analysis.',
+        details: authToken ? 'Open Provider API keys & model preferences and save a Gemini key.' : 'Sign in with Google, then save a Gemini key in Provider API keys & model preferences.',
+        timestamp: new Date().toLocaleTimeString(),
+      });
+      if (!authToken) onOpenAuth?.();
+      return;
+    }
+
+    const activeGeminiModel = aiSettings?.geminiModel || settingsGeminiModel || 'gemini-3.8-flash';
+
     setShowPreviewModal(false);
     setIsProcessing(true);
 
     onStatusChange({
       type: 'loading',
-      message: `[Step 1/3] Uploading ${images.length} survey frames & distance tags to Gemini 3.8 Flash...`,
+      message: `[Step 1/3] Uploading ${images.length} survey frames & distance tags to ${activeGeminiModel}...`,
       details: `Computing ${totalBaselineDistance.toFixed(2)}m baseline drift convergence, rock quality rating, and 3D subsurface coordinates.`,
       timestamp: new Date().toLocaleTimeString(),
     });
 
     try {
-      const response = await fetch('/api/ai/photogrammetry-survey', {
+      const response = await fetch('/api/reconstruction/ai/photogrammetry-survey', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -220,6 +316,10 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
       const json = await response.json();
 
       if (!response.ok || !json.success) {
+        if (response.status === 428 && json.provider === 'gemini') {
+          openProviderSettings();
+          if (!authToken) onOpenAuth?.();
+        }
         throw new Error(json.message || json.error || 'Server processing error.');
       }
 
@@ -242,7 +342,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
       onStatusChange({
         type: 'error',
         message: `AI Photogrammetry failed: ${err.message}`,
-        details: 'Ensure distance tags are numbers > 0 and check server connectivity. If using Gemini API, ensure your GEMINI_API_KEY is configured in Settings > Secrets.',
+        details: 'Ensure distance tags are numbers > 0 and check server connectivity. If the provider key is missing, open Provider API keys & model preferences.',
         errorCode: 'ERR_AI_PROCESSING',
         timestamp: new Date().toLocaleTimeString(),
       });
@@ -253,6 +353,18 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
 
   // Reconstruct 3D scene from reference photograph via Gemini AI Vision
   const handleReconstructScene = async () => {
+    if (!authToken || (aiSettings && !aiSettings.geminiConfigured)) {
+      setActiveTab('reconstruct');
+      openProviderSettings();
+      onStatusChange({
+        type: 'warning',
+        message: 'Gemini API key required before scene reconstruction.',
+        details: authToken ? 'Open Provider API keys & model preferences and save a Gemini key.' : 'Sign in with Google, then save a Gemini key in Provider API keys & model preferences.',
+        timestamp: new Date().toLocaleTimeString(),
+      });
+      if (!authToken) onOpenAuth?.();
+      return;
+    }
     setIsReconstructing(true);
     onStatusChange({
       type: 'loading',
@@ -261,17 +373,21 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
     });
 
     try {
-      const resp = await fetch('/api/ai/reconstruct-scene-from-image', {
+      const resp = await fetch('/api/reconstruction/ai/reconstruct-scene-from-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          imageName: 'Rugged_Timbered_Mine_Tunnel_53b5c504.png',
+          imageName: 'rugged_timbered_mine_reference.png',
           fieldNotes: reconstructPrompt,
         }),
       });
 
       const json = await resp.json();
       if (!resp.ok || !json.success) {
+        if (resp.status === 428 && json.provider === 'gemini') {
+          openProviderSettings();
+          if (!authToken) onOpenAuth?.();
+        }
         throw new Error(json.message || 'Scene reconstruction failed');
       }
 
@@ -293,6 +409,323 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
     }
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    const headers = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
+    fetch('/api/reconstruction/ai/worldlabs/status', headers ? { headers } : undefined)
+      .then((response) => response.json())
+      .then((json) => {
+        if (cancelled) return;
+        setWorldConfigured(Boolean(json.configured));
+        setWorldCredits(typeof json.credits === 'number' ? json.credits : null);
+      })
+      .catch(() => {
+        if (!cancelled) setWorldConfigured(false);
+      });
+    if (!authToken) {
+      setAiSettings(null);
+      return () => { cancelled = true; };
+    }
+    setSettingsLoading(true);
+    fetch('/api/reconstruction/ai/settings', { headers: { Authorization: `Bearer ${authToken}` } })
+      .then((response) => response.json())
+      .then((json) => {
+        if (cancelled || !json.success || !json.settings) return;
+        setAiSettings(json.settings);
+        setSettingsGeminiModel(json.settings.geminiModel || 'gemini-3.8-flash');
+        setSettingsMarbleModel(json.settings.marbleModel || 'marble-1.1');
+        setWorldModel(json.settings.marbleModel || 'marble-1.1');
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setSettingsLoading(false); });
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken]);
+
+  const saveAISettings = async () => {
+    if (!authToken) {
+      onOpenAuth?.();
+      return;
+    }
+    setSettingsSaving(true);
+    setSettingsMessage('');
+    try {
+      const response = await fetch('/api/reconstruction/ai/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({
+          geminiApiKey: settingsGeminiKey.trim() || undefined,
+          marbleApiKey: settingsMarbleKey.trim() || undefined,
+          geminiModel: settingsGeminiModel,
+          marbleModel: settingsMarbleModel,
+        }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || !json.success) throw new Error(json.message || 'Could not save AI settings.');
+      setAiSettings(json.settings);
+      setWorldConfigured(Boolean(json.settings.marbleConfigured));
+      setWorldModel(json.settings.marbleModel || settingsMarbleModel);
+      setSettingsGeminiKey('');
+      setSettingsMarbleKey('');
+      setSettingsMessage('Saved securely. New generations will use your selected models.');
+    } catch (error: any) {
+      setSettingsMessage(error.message || 'Could not save AI settings.');
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
+  const openProviderSettings = () => {
+    setActiveTab('reconstruct');
+    setSettingsOpen(true);
+    setSettingsMessage('');
+    window.setTimeout(() => document.getElementById('provider-api-settings')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 0);
+  };
+
+  const readWorldFile = (file: File): Promise<WorldImageInput> => new Promise((resolve, reject) => {
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      reject(new Error(`${file.name} is not supported. Use JPG, PNG, or WebP.`));
+      return;
+    }
+    if (file.size > 100 * 1024 * 1024) {
+      reject(new Error(`${file.name} is larger than the 100 MB app upload guardrail.`));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => resolve({
+      id: `world_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      name: file.name,
+      mimeType: file.type,
+      dataUrl: String(reader.result || ''),
+      size: file.size,
+      azimuth: 0,
+    });
+    reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
+    reader.readAsDataURL(file);
+  });
+
+  const addWorldFiles = async (fileList: FileList | File[]) => {
+    const selected = Array.from(fileList);
+    if (!selected.length) return;
+    const selectedCount = selected.length;
+    const nextMode: WorldMode = worldProvider === 'marble'
+      ? (worldMode === 'text' ? (selectedCount > 1 ? 'multi-image' : 'image') : (worldMode === 'image' && selectedCount > 1 ? 'multi-image' : worldMode))
+      : worldMode;
+    const maxImages = worldProvider === 'gomera' ? 337 : nextMode === 'multi-image' ? (worldReconstructImages ? 8 : 4) : 1;
+    const available = Math.max(0, maxImages - (nextMode === 'image' ? 0 : worldImages.length));
+    const filesToRead = selected.slice(0, available || (nextMode === 'image' ? 1 : 0));
+    if (selected.length > filesToRead.length) {
+      setWorldError(`This mode accepts ${maxImages} image${maxImages === 1 ? '' : 's'}; extra files were not added.`);
+    } else {
+      setWorldError('');
+    }
+    setWorldFilesLoading(true);
+    try {
+      const loaded = await Promise.all(filesToRead.map(readWorldFile));
+      const withAzimuth = loaded.map((image, index) => ({ ...image, azimuth: (worldImages.length + index) * 90 }));
+      setWorldMode(nextMode);
+      setWorldImages(nextMode === 'image' ? withAzimuth.slice(0, 1) : [...worldImages, ...withAzimuth]);
+      setWorldStatus(`${loaded.length} image${loaded.length === 1 ? '' : 's'} ready for ${worldProvider === 'marble' ? 'Marble' : 'GOMERA'}.`);
+    } catch (error: any) {
+      setWorldError(error.message || 'Could not read the selected images.');
+    } finally {
+      setWorldFilesLoading(false);
+    }
+  };
+
+  const removeWorldImage = (id: string) => {
+    setWorldImages((current) => current.filter((image) => image.id !== id));
+  };
+
+  const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+  const startGomeraFileManagerUpload = async (): Promise<string> => {
+    if (!authToken) throw new Error('Sign in with Google before using the GOMERA file manager.');
+    const authHeaders = { Authorization: `Bearer ${authToken}` };
+    const sessionResponse = await fetch('/api/reconstruction/ai/gomera-file-manager/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
+      body: JSON.stringify({ fileCount: worldImages.length }),
+    });
+    const session = await sessionResponse.json().catch(() => ({}));
+    if (!sessionResponse.ok || !session.uploadId) throw new Error(session.message || session.error || 'Could not open the GOMERA file-manager upload session.');
+    const uploadId = session.uploadId as string;
+    const chunkSize = 512 * 1024;
+    for (let imageIndex = 0; imageIndex < worldImages.length; imageIndex += 1) {
+      const image = worldImages[imageIndex];
+      const response = await fetch(image.dataUrl);
+      const blob = await response.blob();
+      const totalChunks = Math.ceil(blob.size / chunkSize);
+      const fileId = crypto.randomUUID();
+      for (let part = 0; part < totalChunks; part += 1) {
+        let uploaded = false;
+        let lastError = 'Chunk upload failed.';
+        for (let attempt = 1; attempt <= 3 && !uploaded; attempt += 1) {
+          try {
+            const query = new URLSearchParams({ part: String(part), total: String(totalChunks), size: String(blob.size), name: image.name });
+            setWorldStatus(`GOMERA file manager · ${image.name} · part ${part + 1}/${totalChunks}${attempt > 1 ? ` · retry ${attempt}/3` : ''}`);
+            setWorldProgress(Math.max(2, Math.round(((imageIndex + (part + 0.5) / totalChunks) / worldImages.length) * 25)));
+            const chunkResponse = await fetch(`/api/reconstruction/ai/gomera-file-manager/session/${encodeURIComponent(uploadId)}/chunks/${encodeURIComponent(fileId)}?${query.toString()}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/octet-stream', ...authHeaders },
+              body: blob.slice(part * chunkSize, Math.min(blob.size, (part + 1) * chunkSize)),
+            });
+            const chunkJson = await chunkResponse.json().catch(() => ({}));
+            if (!chunkResponse.ok) throw new Error(chunkJson.message || chunkJson.error || `Chunk ${part + 1} failed (${chunkResponse.status}).`);
+            uploaded = true;
+          } catch (error: any) {
+            lastError = error.message || lastError;
+            if (attempt < 3) await wait(attempt * 750);
+          }
+        }
+        if (!uploaded) throw new Error(`${image.name} stopped at part ${part + 1}/${totalChunks}: ${lastError}`);
+      }
+      setWorldProgress(Math.max(4, Math.round(((imageIndex + 1) / worldImages.length) * 25)));
+    }
+    const jobResponse = await fetch('/api/reconstruction/ai/gomera-file-manager/jobs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
+      body: JSON.stringify({ uploadId }),
+    });
+    const job = await jobResponse.json().catch(() => ({}));
+    if (!jobResponse.ok || !job.jobId) throw new Error(job.message || job.error || 'GOMERA did not start a reconstruction job.');
+    return job.jobId as string;
+  };
+
+  const handleWorldGenerate = async () => {
+    setWorldError('');
+    setWorldResult(null);
+    if (worldProvider === 'marble' && (!authToken || (aiSettings && !aiSettings.marbleConfigured))) {
+      openProviderSettings();
+      setWorldError(authToken ? 'Save a World Labs Marble API key in Provider settings before generating.' : 'Sign in with Google, then save a World Labs Marble API key in Provider settings.');
+      if (!authToken) onOpenAuth?.();
+      return;
+    }
+    if (worldProvider === 'marble') {
+      const maxImages = worldReconstructImages ? 8 : 4;
+      if (worldMode === 'text' && !worldPrompt.trim()) {
+        setWorldError('A text prompt is required for text-to-world generation.');
+        return;
+      }
+      if (worldPrompt.length > 4000) {
+        setWorldError('Keep the prompt under the 4,000-character application guardrail.');
+        return;
+      }
+      if (worldMode === 'image' && worldImages.length !== 1) {
+        setWorldError('Single-image mode requires exactly one image.');
+        return;
+      }
+      if (worldMode === 'multi-image' && (worldImages.length < 2 || worldImages.length > maxImages)) {
+        setWorldError(`Multi-image mode requires 2-${maxImages} images with the current reconstruction setting.`);
+        return;
+      }
+    } else if (!worldImages.length) {
+      setWorldError('Add at least one image before starting a GOMERA reconstruction.');
+      return;
+    }
+
+    setWorldGenerating(true);
+    setWorldProgress(2);
+    setWorldStatus(worldProvider === 'marble' ? 'Uploading references to World Labs…' : 'Uploading capture to GOMERA…');
+    try {
+      if (worldProvider === 'marble') {
+        const response = await fetch('/api/reconstruction/ai/worldlabs/generate', {
+          method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
+          body: JSON.stringify({
+            mode: worldMode,
+            model: worldModel,
+            displayName: worldDisplayName,
+            prompt: worldPrompt,
+            reconstructImages: worldReconstructImages,
+            disableRecaption: worldDisableRecaption,
+            isPano: worldIsPano === 'auto' ? 'auto' : worldIsPano === 'true',
+            images: worldImages.map(({ name, mimeType, dataUrl, azimuth }) => ({ name, mimeType, dataUrl, azimuth })),
+          }),
+        });
+        const json = await response.json().catch(() => ({}));
+        if (!response.ok || !json.success) {
+          if (response.status === 428 && json.provider === 'marble') {
+            openProviderSettings();
+            if (!authToken) onOpenAuth?.();
+          }
+          throw new Error(json.message || json.error || 'World Labs request failed.');
+        }
+        let operation = json.operation;
+        setWorldProgress(12);
+        setWorldStatus('World Labs is generating the navigable world. This can take several minutes…');
+        const operationId = operation?.operation_id || operation?.name;
+        if (!operationId) throw new Error('World Labs did not return an operation ID.');
+        for (let attempt = 0; attempt < 180; attempt += 1) {
+          if (operation?.done) break;
+          await wait(4000);
+          const statusResponse = await fetch(`/api/reconstruction/ai/worldlabs/operations/${encodeURIComponent(operationId)}`, authToken ? { headers: { Authorization: `Bearer ${authToken}` } } : undefined);
+          const statusJson = await statusResponse.json().catch(() => ({}));
+          if (!statusResponse.ok || !statusJson.success) {
+            if (statusResponse.status === 428 && statusJson.provider === 'marble') openProviderSettings();
+            throw new Error(statusJson.message || 'Could not read World Labs operation status.');
+          }
+          operation = statusJson.operation;
+          const reported = Number(operation?.metadata?.progress ?? operation?.progress);
+          setWorldProgress(Number.isFinite(reported) ? Math.max(12, Math.min(98, reported)) : Math.min(96, 12 + attempt * 2));
+          if (operation?.error) throw new Error(operation.error.message || 'World Labs generation failed.');
+          if (operation?.done) break;
+        }
+        if (!operation?.done) throw new Error('World Labs generation is still running. Check the operation again from the AI panel.');
+        const world = operation.response?.world || operation.response || operation.result?.world || operation.result || operation;
+        setWorldResult({ provider: 'marble', operation, world });
+        setWorldProgress(100);
+        setWorldStatus('Marble world ready.');
+        onStatusChange({ type: 'success', message: 'World Labs Marble world generated successfully.', timestamp: new Date().toLocaleTimeString() });
+      } else {
+        let jobId: string | undefined;
+        if (gomeraUploadSource === 'gomera-file-manager') {
+          jobId = await startGomeraFileManagerUpload();
+        } else {
+          const response = await fetch('/api/reconstruction/ai/gomera-reconstruction', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              captureName: gomeraCaptureName,
+              images: worldImages.map(({ name, mimeType, dataUrl }) => ({ name, mimeType, dataUrl })),
+            }),
+          });
+          const json = await response.json().catch(() => ({}));
+          if (!response.ok || !json.success) throw new Error(json.message || json.error || 'GOMERA request failed.');
+          jobId = json.jobId;
+        }
+        if (!jobId) throw new Error('GOMERA did not return a reconstruction job ID.');
+        setWorldProgress(20);
+        setWorldStatus('GOMERA is reconstructing the capture…');
+        let task: any = null;
+        for (let attempt = 0; attempt < 240; attempt += 1) {
+          await wait(5000);
+          const statusResponse = await fetch(`/api/reconstruction/ai/gomera-reconstruction/${encodeURIComponent(jobId)}`);
+          const statusJson = await statusResponse.json().catch(() => ({}));
+          if (!statusResponse.ok || !statusJson.success) throw new Error(statusJson.message || 'Could not read GOMERA status.');
+          task = statusJson.task;
+          const code = task?.status?.code;
+          const percent = Math.max(0, Math.min(100, Number(task?.progress || 0)));
+          setWorldProgress(20 + Math.round(percent * 0.8));
+          setWorldStatus(code === 40 ? 'GOMERA model ready.' : `GOMERA reconstruction in progress · ${Math.round(percent)}%`);
+          if (code === 40) break;
+          if (code === 30 || code === 50) throw new Error(task?.status?.errorMessage || 'GOMERA reconstruction failed.');
+        }
+        if (task?.status?.code !== 40) throw new Error('GOMERA reconstruction is still running. Check the job again from the AI panel.');
+        setWorldResult({ provider: 'gomera', jobId, task, modelUrl: `/api/reconstruction/ai/gomera-reconstruction/${encodeURIComponent(jobId)}/model` });
+        setWorldProgress(100);
+        onStatusChange({ type: 'success', message: 'GOMERA reconstruction completed successfully.', timestamp: new Date().toLocaleTimeString() });
+      }
+    } catch (error: any) {
+      setWorldError(error.message || 'AI world generation failed.');
+      setWorldStatus('Generation failed.');
+      onStatusChange({ type: 'error', message: `AI world generation failed: ${error.message}`, timestamp: new Date().toLocaleTimeString() });
+    } finally {
+      setWorldGenerating(false);
+    }
+  };
+
   const selectedImg = images[selectedImageIndex] || images[0];
 
   return (
@@ -303,9 +736,12 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
           <span className="w-2 h-2 rounded-full bg-[#e88724] animate-pulse"></span>
           <span className="font-bold text-[#f0f0f0] tracking-tight">AI Photogrammetry & Subsurface Mapping</span>
         </div>
-        <span className="text-[10px] text-[#e88724] font-mono px-1 py-0.5 bg-[#252525] rounded-[2px] border border-[#444]">
-          Gemini 3.8 Flash
-        </span>
+        <div className="flex items-center gap-1.5">
+          <button onClick={openProviderSettings} className="px-1.5 py-0.5 rounded-[2px] border border-[#76552b] bg-[#2b2118] text-[9px] font-bold text-[#ffb35d] hover:bg-[#e88724] hover:text-black active:scale-[0.98] cursor-pointer" title="Open Gemini and World Labs API key settings">API Keys</button>
+          <span className="text-[10px] text-[#e88724] font-mono px-1 py-0.5 bg-[#252525] rounded-[2px] border border-[#444]">
+            {aiSettings?.geminiModel || settingsGeminiModel || 'Gemini 3.8 Flash'}
+          </span>
+        </div>
       </div>
 
       {/* Sub Tabs - Responsive flex-wrap / horizontal scroll */}
@@ -711,7 +1147,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
               </span>
               <span className="text-[10px] text-[#55dd88] font-bold flex items-center space-x-1">
                 <Check className="w-3 h-3" />
-                <span>Ready for Gemini 3.8 Flash</span>
+                <span>Ready for {aiSettings?.geminiModel || settingsGeminiModel || 'Gemini 3.8 Flash'}</span>
               </span>
             </div>
 
@@ -778,9 +1214,10 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
               <button
                 disabled={isProcessing}
                 onClick={handleExecuteAI}
-                className="flex-1 py-2 bg-[#e88724] hover:bg-[#ff9933] text-black font-black rounded-[2px] text-[11px] uppercase tracking-wide cursor-pointer disabled:opacity-50 shadow flex items-center justify-center space-x-1.5"
+                aria-busy={isProcessing}
+                className="flex-1 py-2 bg-[#e88724] hover:bg-[#ff9933] active:scale-[0.99] text-black font-black rounded-[2px] text-[11px] uppercase tracking-wide cursor-pointer disabled:opacity-50 disabled:cursor-wait shadow flex items-center justify-center space-x-1.5"
               >
-                <span>{isProcessing ? 'Gemini 3.8 Flash Processing...' : 'Confirm & Generate 3D Subsurface Mapping'}</span>
+                <span>{isProcessing ? `${aiSettings?.geminiModel || settingsGeminiModel || 'Gemini 3.8 Flash'} Processing...` : 'Confirm & Generate 3D Subsurface Mapping'}</span>
                 {!isProcessing && <ArrowRight className="w-3.5 h-3.5" />}
               </button>
               <button
@@ -804,7 +1241,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                 <Sparkles className="w-6 h-6 text-[#888] mx-auto" />
                 <div className="font-bold text-[#eee]">No Survey Analysis Run Yet</div>
                 <p className="text-[10px] text-[#888] max-w-xs mx-auto">
-                  Tag survey images with inter-frame distances and execute Gemini 3.8 Flash to synthesize 3D drift geometry.
+                  Tag survey images with inter-frame distances and execute {aiSettings?.geminiModel || settingsGeminiModel || 'Gemini 3.8 Flash'} to synthesize 3D drift geometry.
                 </p>
                 <button
                   onClick={() => setActiveTab('input')}
@@ -1059,11 +1496,217 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
         {/* TAB 5: AI 3D SCENE RECONSTRUCTION FROM PHOTO REFERENCE */}
         {activeTab === 'reconstruct' && (
           <div className="space-y-3">
+            {/* AI World Studio: provider selection, guarded inputs, and async result handling */}
+            <div className="bg-[#242424] border border-[#4b3825] rounded-[3px] overflow-hidden shadow-lg">
+              <div className="px-2.5 py-2 bg-gradient-to-r from-[#3a2b1d] to-[#292929] border-b border-[#5d4227] flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded bg-[#e88724] text-black flex items-center justify-center shadow-inner">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-[#f6d2a7] text-[12px]">AI World Studio</div>
+                    <div className="text-[9.5px] text-[#b7a28d]">Generate navigable worlds or survey meshes from your own references</div>
+                  </div>
+                </div>
+                <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${worldConfigured === true ? 'text-[#62e28a] bg-[#14271a] border-[#2b5934]' : 'text-[#e7b36e] bg-[#302417] border-[#604522]'}`}>
+                  {worldConfigured === true ? 'MARBLE CONNECTED' : worldConfigured === false ? 'MARBLE KEY REQUIRED' : 'CHECKING MARBLE'}
+                </span>
+              </div>
+
+              <div className="p-2.5 space-y-2.5">
+                <div id="provider-api-settings" className="bg-[#1d1d1d] border border-[#454545] rounded-[3px] overflow-hidden">
+                  <button
+                    onClick={() => setSettingsOpen((current) => !current)}
+                    className="w-full px-2 py-1.5 flex items-center justify-between gap-2 text-left hover:bg-[#292929] cursor-pointer"
+                  >
+                    <span className="text-[10.5px] font-bold text-[#f0c18b]">Provider API keys &amp; model preferences</span>
+                    <span className="text-[8.5px] font-mono text-[#999]">
+                      {settingsLoading ? 'CHECKING…' : `Gemini ${aiSettings?.geminiConfigured ? 'READY' : 'NEEDS KEY'} · Marble ${aiSettings?.marbleConfigured ? 'READY' : 'NEEDS KEY'}`}
+                    </span>
+                  </button>
+                  {settingsOpen && (
+                    <div className="border-t border-[#3d3d3d] p-2 space-y-2">
+                      {!authToken ? (
+                        <div className="flex items-center justify-between gap-2 bg-[#302417] border border-[#604522] rounded p-1.5 text-[9.5px] text-[#e7b36e]">
+                          <span>Sign in with Google to save your own provider keys and model preferences.</span>
+                          <button onClick={onOpenAuth} className="shrink-0 px-2 py-1 bg-[#e88724] hover:bg-[#ff9933] text-black font-bold rounded cursor-pointer">Sign in</button>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="text-[9px] text-[#9da9b0] leading-relaxed">Keys are encrypted on the server and never returned to the browser after saving. Leave a key blank to keep the saved value.</div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <label className="text-[9.5px] text-[#999]">Gemini API key
+                              <input type="password" value={settingsGeminiKey} onChange={(event) => setSettingsGeminiKey(event.target.value)} placeholder={aiSettings?.geminiConfigured ? 'Saved key · leave blank to keep' : 'Paste Gemini API key'} autoComplete="off" className="mt-0.5 w-full bg-[#171717] border border-[#414141] rounded px-1.5 py-1 text-[#eee] text-[10px] focus:outline-none focus:border-[#e88724]" />
+                            </label>
+                            <label className="text-[9.5px] text-[#999]">Gemini preferred model
+                              <select value={settingsGeminiModel} onChange={(event) => setSettingsGeminiModel(event.target.value)} className="mt-0.5 w-full bg-[#171717] border border-[#414141] rounded px-1.5 py-1 text-[#eee] text-[10px] focus:outline-none focus:border-[#e88724]">
+                                {geminiModelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                              </select>
+                            </label>
+                            <label className="text-[9.5px] text-[#999]">World Labs Marble API key
+                              <input type="password" value={settingsMarbleKey} onChange={(event) => setSettingsMarbleKey(event.target.value)} placeholder={aiSettings?.marbleConfigured ? 'Saved key · leave blank to keep' : 'Paste Marble API key'} autoComplete="off" className="mt-0.5 w-full bg-[#171717] border border-[#414141] rounded px-1.5 py-1 text-[#eee] text-[10px] focus:outline-none focus:border-[#e88724]" />
+                            </label>
+                            <label className="text-[9.5px] text-[#999]">Marble preferred model
+                              <select value={settingsMarbleModel} onChange={(event) => { setSettingsMarbleModel(event.target.value); setWorldModel(event.target.value); }} className="mt-0.5 w-full bg-[#171717] border border-[#414141] rounded px-1.5 py-1 text-[#eee] text-[10px] focus:outline-none focus:border-[#e88724]">
+                                {marbleModelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                              </select>
+                            </label>
+                          </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[8.5px] text-[#777]">Provider usage is billed to the account behind each key.</span>
+                            <button onClick={() => void saveAISettings()} disabled={settingsSaving || settingsLoading} aria-busy={settingsSaving} className="shrink-0 px-2.5 py-1.5 bg-[#e88724] hover:bg-[#ff9933] active:scale-[0.98] disabled:opacity-50 text-black font-bold rounded-[2px] cursor-pointer">{settingsSaving ? 'Saving…' : 'Save keys & preferences'}</button>
+                          </div>
+                          {settingsMessage && <div className="text-[9px] text-[#8ee5a0]">{settingsMessage}</div>}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-1.5 bg-[#1c1c1c] p-1 rounded border border-[#353535]">
+                  <button
+                    onClick={() => setWorldProvider('marble')}
+                    className={`px-2 py-2 rounded-[2px] text-left cursor-pointer transition-colors ${worldProvider === 'marble' ? 'bg-[#e88724] text-black shadow' : 'text-[#bbb] hover:bg-[#333]'}`}
+                  >
+                    <span className="flex items-center gap-1.5 font-bold text-[10.5px]"><Cloud className="w-3.5 h-3.5" /> World Labs Marble</span>
+                    <span className={`block text-[9px] mt-0.5 ${worldProvider === 'marble' ? 'text-black/70' : 'text-[#777]'}`}>AI-generated navigable worlds</span>
+                  </button>
+                  <button
+                    onClick={() => setWorldProvider('gomera')}
+                    className={`px-2 py-2 rounded-[2px] text-left cursor-pointer transition-colors ${worldProvider === 'gomera' ? 'bg-[#e88724] text-black shadow' : 'text-[#bbb] hover:bg-[#333]'}`}
+                  >
+                    <span className="flex items-center gap-1.5 font-bold text-[10.5px]"><Server className="w-3.5 h-3.5" /> GOMERA X</span>
+                    <span className={`block text-[9px] mt-0.5 ${worldProvider === 'gomera' ? 'text-black/70' : 'text-[#777]'}`}>Photogrammetry survey reconstruction</span>
+                  </button>
+                </div>
+
+                {worldProvider === 'marble' ? (
+                  <>
+                    <div className="flex items-center gap-1.5">
+                      {(['text', 'image', 'multi-image'] as WorldMode[]).map((mode) => (
+                        <button
+                          key={mode}
+                          onClick={() => setWorldMode(mode)}
+                          className={`flex-1 py-1.5 rounded-[2px] border text-[10px] font-semibold cursor-pointer transition-colors ${worldMode === mode ? 'border-[#e88724] bg-[#513317] text-[#ffb35d]' : 'border-[#414141] bg-[#303030] text-[#aaa] hover:text-white'}`}
+                        >
+                          {mode === 'text' ? 'Text to World' : mode === 'image' ? 'Single Image' : 'Multi-Image'}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="text-[9.5px] text-[#999]">World name (max 64)
+                        <input value={worldDisplayName} maxLength={64} onChange={(event) => setWorldDisplayName(event.target.value)} className="mt-0.5 w-full bg-[#1c1c1c] border border-[#414141] rounded px-1.5 py-1 text-[#eee] text-[10.5px] focus:outline-none focus:border-[#e88724]" />
+                      </label>
+                      <label className="text-[9.5px] text-[#999]">Marble model
+                        <select value={worldModel} onChange={(event) => setWorldModel(event.target.value)} className="mt-0.5 w-full bg-[#1c1c1c] border border-[#414141] rounded px-1.5 py-1 text-[#eee] text-[10.5px] focus:outline-none focus:border-[#e88724]">
+                          {marbleModelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        </select>
+                      </label>
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-1.5">
+                    <label className="block text-[9.5px] text-[#999]">GOMERA capture name
+                      <input value={gomeraCaptureName} maxLength={120} onChange={(event) => setGomeraCaptureName(event.target.value)} className="mt-0.5 w-full bg-[#1c1c1c] border border-[#414141] rounded px-1.5 py-1 text-[#eee] text-[10.5px] focus:outline-none focus:border-[#e88724]" />
+                    </label>
+                    <label className="block text-[9.5px] text-[#999]">GOMERA 3D generation upload path
+                      <select value={gomeraUploadSource} onChange={(event) => setGomeraUploadSource(event.target.value as GomeraUploadSource)} className="mt-0.5 w-full bg-[#1c1c1c] border border-[#414141] rounded px-1.5 py-1 text-[#eee] text-[10px] focus:outline-none focus:border-[#e88724]">
+                        <option value="gomera-file-manager">GOMERA file manager · chunked and retryable</option>
+                        <option value="ai-panel">AI panel upload · one request</option>
+                      </select>
+                    </label>
+                  </div>
+                )}
+
+                <div
+                  onDragOver={(event) => { event.preventDefault(); setWorldDragActive(true); }}
+                  onDragLeave={() => setWorldDragActive(false)}
+                  onDrop={(event) => { event.preventDefault(); setWorldDragActive(false); void addWorldFiles(event.dataTransfer.files); }}
+                  className={`rounded-[3px] border border-dashed p-2.5 transition-colors ${worldDragActive ? 'border-[#e88724] bg-[#3b2919]' : 'border-[#505050] bg-[#1c1c1c]'}`}
+                >
+                  <label className="flex flex-col items-center justify-center min-h-[68px] cursor-pointer">
+                    <input type="file" multiple={worldProvider === 'gomera' || worldMode === 'multi-image'} accept="image/jpeg,image/png,image/webp" disabled={worldFilesLoading || worldGenerating} className="hidden" onChange={(event) => { if (event.target.files) void addWorldFiles(event.target.files); event.currentTarget.value = ''; }} />
+                    {worldFilesLoading ? <Loader2 className="w-5 h-5 mb-1 animate-spin text-[#e88724]" /> : <ImagePlus className={`w-5 h-5 mb-1 ${worldDragActive ? 'text-[#ffb35d]' : 'text-[#e88724]'}`} />}
+                    <span className="text-[10.5px] text-[#ddd] font-semibold">{worldFilesLoading ? 'Reading image files…' : 'Drop reference images here or click to browse'}</span>
+                    <span className="text-[9px] text-[#888] mt-0.5">JPG, PNG, WebP · up to 100 MB each · {worldProvider === 'gomera' ? '1–337 images' : worldMode === 'text' ? 'optional for text mode' : worldMode === 'image' ? 'exactly 1 image' : `2–${worldReconstructImages ? 8 : 4} images`}</span>
+                  </label>
+                </div>
+
+                {worldImages.length > 0 && (
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {worldImages.map((image, index) => (
+                      <div key={image.id} className="flex items-center gap-1.5 bg-[#303030] border border-[#414141] rounded p-1.5 min-w-0">
+                        <img src={image.dataUrl} alt={image.name} className="w-10 h-10 object-cover rounded border border-[#555] flex-shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[9.5px] text-[#ddd] truncate" title={image.name}>{image.name}</div>
+                          <div className="text-[8.5px] text-[#888]">{(image.size / 1024 / 1024).toFixed(1)} MB</div>
+                          {worldProvider === 'marble' && worldMode === 'multi-image' && (
+                            <label className="flex items-center gap-1 text-[8.5px] text-[#999] mt-0.5">Azimuth
+                              <input type="number" min="-360" max="360" value={image.azimuth} onChange={(event) => setWorldImages((current) => current.map((item) => item.id === image.id ? { ...item, azimuth: Number(event.target.value) || 0 } : item))} className="w-12 bg-[#1b1b1b] border border-[#4b4b4b] rounded px-1 text-[#eee]" />°
+                            </label>
+                          )}
+                        </div>
+                        <button onClick={() => removeWorldImage(image.id)} className="p-1 text-[#999] hover:text-[#ff8c8c] cursor-pointer" title={`Remove ${image.name}`}><X className="w-3.5 h-3.5" /></button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {worldProvider === 'marble' && (
+                  <>
+                    <label className="block text-[9.5px] text-[#999]">World description / reconstruction instructions
+                      <textarea value={worldPrompt} maxLength={4000} onChange={(event) => setWorldPrompt(event.target.value)} rows={4} className="mt-0.5 w-full resize-y bg-[#1c1c1c] border border-[#414141] rounded px-1.5 py-1.5 text-[#ddd] text-[10.5px] leading-relaxed focus:outline-none focus:border-[#e88724]" placeholder="Describe the world, geometry, materials, lighting, and what must not appear…" />
+                      <span className={`block text-right text-[8.5px] mt-0.5 ${worldPrompt.length > 3800 ? 'text-[#ffb35d]' : 'text-[#777]'}`}>{worldPrompt.length}/4000</span>
+                    </label>
+                    <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-[9px] text-[#aaa]">
+                      {worldMode === 'multi-image' && <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={worldReconstructImages} onChange={(event) => setWorldReconstructImages(event.target.checked)} className="accent-[#e88724]" /> reconstruction mode (up to 8 images)</label>}
+                      {worldMode === 'image' && <label className="flex items-center gap-1">Panorama <select value={worldIsPano} onChange={(event) => setWorldIsPano(event.target.value as 'auto' | 'true' | 'false')} className="bg-[#1c1c1c] border border-[#444] rounded px-1 py-0.5 text-[#ddd]"><option value="auto">Auto</option><option value="true">Yes</option><option value="false">No</option></select></label>}
+                      <label className="flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={worldDisableRecaption} onChange={(event) => setWorldDisableRecaption(event.target.checked)} className="accent-[#e88724]" /> keep prompt literal</label>
+                    </div>
+                    <div className="flex items-start gap-1.5 bg-[#1b2429] border border-[#2d4854] rounded p-1.5 text-[9px] text-[#9fc0cc] leading-relaxed"><Info className="w-3 h-3 mt-0.5 flex-shrink-0" /><span>Marble accepts JPG, PNG, and WebP. Text mode needs a prompt; single-image mode needs 1 image; multi-image needs 2–4, or 2–8 with reconstruction mode. World Labs does not publish a text maximum in the current schema; MiningSight applies a 4,000-character guardrail.</span></div>
+                  </>
+                )}
+
+                {worldProvider === 'gomera' && <div className="flex items-start gap-1.5 bg-[#1b2429] border border-[#2d4854] rounded p-1.5 text-[9px] text-[#9fc0cc] leading-relaxed"><Info className="w-3 h-3 mt-0.5 flex-shrink-0" /><span>{gomeraUploadSource === 'gomera-file-manager' ? 'Uses the same chunked GOMERA 3D-generation file-manager API as the companion viewer. Each image is sent in 512 KB parts with automatic retries, then submitted to WebODM.' : 'Sends the selected images directly through the AI panel to the GOMERA 3D-generation API. Use the chunked file-manager path for larger or less reliable uploads.'}</span></div>}
+
+                {worldError && <div className="flex items-start justify-between gap-2 bg-[#321d1d] border border-[#713333] text-[#ffb0b0] rounded p-1.5 text-[9.5px]"><div className="flex items-start gap-1.5 min-w-0"><AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" /><span>{worldError}</span></div>{/key|sign in/i.test(worldError) && <button onClick={() => /sign in/i.test(worldError) && !authToken ? onOpenAuth?.() : openProviderSettings()} className="shrink-0 rounded-[2px] bg-[#e88724] px-1.5 py-1 text-[8.5px] font-bold text-black hover:bg-[#ff9933] active:scale-[0.98] cursor-pointer">{/sign in/i.test(worldError) && !authToken ? 'Sign in' : 'Open API keys'}</button>}</div>}
+
+                {worldGenerating && <div className="space-y-1"><div className="flex items-center justify-between text-[9.5px] text-[#bbb]"><span className="flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin text-[#e88724]" />{worldStatus}</span><span className="font-mono text-[#e88724]">{worldProgress}%</span></div><div className="h-1.5 bg-[#171717] rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-[#b85d17] to-[#ffb04d] transition-all" style={{ width: `${worldProgress}%` }} /></div></div>}
+
+                <div className="flex items-center gap-2">
+                  <button onClick={handleWorldGenerate} disabled={worldGenerating || worldFilesLoading} aria-busy={worldGenerating} className="flex-1 py-2 bg-[#e88724] hover:bg-[#ff9933] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed text-black font-bold rounded-[2px] flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition-colors">
+                    {worldGenerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : worldProvider === 'marble' ? <Cloud className="w-3.5 h-3.5" /> : <Server className="w-3.5 h-3.5" />}
+                    <span>{worldGenerating ? 'Generating…' : worldProvider === 'marble' ? 'Generate Marble World' : 'Start GOMERA Reconstruction'}</span>
+                  </button>
+                  {worldProvider === 'marble' && worldCredits !== null && <span className="text-[9px] text-[#999] whitespace-nowrap">Credits: <span className="text-[#e88724] font-mono">{worldCredits}</span></span>}
+                </div>
+                {worldProvider === 'marble' && worldConfigured === false && <div className="text-[9px] text-[#caa37a]">{authToken ? 'Save a World Labs Marble API key in Provider settings before generating.' : 'Sign in with Google, then save a World Labs Marble API key in Provider settings.'}</div>}
+                {!worldGenerating && worldStatus !== 'Ready to generate a world.' && <div className="text-[9px] text-[#888]">{worldStatus}</div>}
+              </div>
+            </div>
+
+            {worldResult?.provider === 'marble' && (() => {
+              const world = worldResult.world || {};
+              const marbleUrl = world.world_marble_url || world.marble_url || world.world_url;
+              const thumbnail = world.assets?.thumbnail_url || world.thumbnail_url;
+              const spzUrls = world.assets?.splats?.spz_urls || {};
+              return <div className="bg-[#1f2620] border border-[#2e4d35] p-2.5 rounded-[3px] space-y-2 text-[10px]">
+                <div className="flex items-center justify-between text-[#4ade80] font-bold"><span>Marble world ready</span><span className="font-mono text-[9px] text-[#88bbdd]">{world.world_id || world.id || 'World Labs'}</span></div>
+                {thumbnail && <img src={thumbnail} alt="Generated Marble world thumbnail" className="w-full max-h-40 object-cover rounded border border-[#315438]" />}
+                <div className="grid grid-cols-2 gap-1.5">
+                  {marbleUrl && <a href={marbleUrl} target="_blank" rel="noreferrer" className="px-2 py-1.5 bg-[#315438] hover:bg-[#3d6847] text-[#b7f7c4] rounded flex items-center justify-center gap-1 font-semibold"><ExternalLink className="w-3 h-3" /> Open Marble World</a>}
+                  {spzUrls.full_res && <a href={spzUrls.full_res} target="_blank" rel="noreferrer" className="px-2 py-1.5 bg-[#303b33] hover:bg-[#415647] text-[#c8ead0] rounded flex items-center justify-center gap-1"><Download className="w-3 h-3" /> Full-res SPZ</a>}
+                </div>
+              </div>;
+            })()}
+
+            {worldResult?.provider === 'gomera' && <div className="bg-[#1f2620] border border-[#2e4d35] p-2.5 rounded-[3px] space-y-2 text-[10px]"><div className="flex items-center justify-between text-[#4ade80] font-bold"><span>GOMERA model ready</span><span className="font-mono text-[9px] text-[#88bbdd]">Job {worldResult.jobId}</span></div><a href={worldResult.modelUrl} className="w-full px-2 py-1.5 bg-[#315438] hover:bg-[#3d6847] text-[#b7f7c4] rounded flex items-center justify-center gap-1 font-semibold"><Download className="w-3 h-3" /> Download reconstructed GLB</a></div>}
+
             <div className="bg-[#242424] border border-[#383838] p-2.5 rounded-[3px] space-y-2">
               <div className="flex items-center justify-between border-b border-[#333] pb-1.5">
                 <span className="font-bold text-[#e88724] flex items-center space-x-1.5">
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>AI 3D Scene Reconstruction from Image Reference</span>
+                  <span>Procedural Scene Builder (Gemini / local rig)</span>
                 </span>
                 <span className="text-[9.5px] font-mono text-[#4ade80] bg-[#1a2e1f] px-1.5 py-0.5 rounded border border-[#2b5934]">
                   Active Photo Rig
@@ -1078,7 +1721,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
             <div className="bg-[#252525] border border-[#3a3a3a] p-2.5 rounded-[3px] space-y-2">
               <div className="font-semibold text-white flex items-center justify-between">
                 <span>Reference Photograph</span>
-                <span className="text-[9.5px] text-[#888] font-mono">Rugged_Timbered_Mine_Tunnel_53b5c504.png</span>
+                <span className="text-[9.5px] text-[#888] font-mono">rugged_timbered_mine_reference.png</span>
               </div>
 
               <div className="relative rounded overflow-hidden border border-[#444] bg-[#181818] flex items-center justify-center max-h-[160px]">
@@ -1110,7 +1753,8 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                 <button
                   onClick={handleReconstructScene}
                   disabled={isReconstructing}
-                  className="flex-1 py-1.5 bg-[#e88724] hover:bg-[#ff9933] disabled:opacity-50 text-black font-bold rounded-[2px] flex items-center justify-center space-x-1.5 cursor-pointer shadow-md transition-colors"
+                  aria-busy={isReconstructing}
+                  className="flex-1 py-1.5 bg-[#e88724] hover:bg-[#ff9933] active:scale-[0.99] disabled:opacity-50 disabled:cursor-wait text-black font-bold rounded-[2px] flex items-center justify-center space-x-1.5 cursor-pointer shadow-md transition-colors"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
                   <span>{isReconstructing ? 'Analyzing with Gemini Vision...' : 'Reconstruct 3D Scene with AI'}</span>

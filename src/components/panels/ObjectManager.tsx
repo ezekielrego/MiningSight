@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { C4DSceneObject } from '../../types/c4d';
 import { TunnelPresetId } from '../../types/tunnelScene';
-import { ChevronDown, Check } from 'lucide-react';
+import { AuthUser, ProjectAsset, ProjectSummary, StorageQuota } from '../../types/project';
+import { ChevronDown, Check, Upload, FolderPlus, Save, Box, Image as ImageIcon, Video, FileText, Folder, RotateCcw } from 'lucide-react';
 
 interface ObjectManagerProps {
   objects: C4DSceneObject[];
@@ -15,7 +16,21 @@ interface ObjectManagerProps {
   onSelectPreset?: (presetId: TunnelPresetId) => void;
   onSaveProject?: () => void;
   onOpenProject?: () => void;
+  onNewProject?: () => void;
   onRevertProject?: () => void;
+  projectName?: string;
+  activeProjectId?: string | null;
+  projects?: ProjectSummary[];
+  projectAssets?: ProjectAsset[];
+  activeAssetId?: string | null;
+  onSelectServerProject?: (projectId: string) => void;
+  onUploadAssets?: (files: FileList | File[]) => void;
+  onRetryUpload?: () => void;
+  onSelectAsset?: (asset: ProjectAsset) => void;
+  authUser?: AuthUser | null;
+  storageQuota?: StorageQuota | null;
+  onOpenAuth?: () => void;
+  uploadProgress?: { active: boolean; fileName: string; completed: number; total: number; percent: number; status: string; canRetry?: boolean };
 }
 
 export const ObjectManager: React.FC<ObjectManagerProps> = ({
@@ -30,11 +45,32 @@ export const ObjectManager: React.FC<ObjectManagerProps> = ({
   onSelectPreset,
   onSaveProject,
   onOpenProject,
+  onNewProject,
   onRevertProject,
+  projectName = 'Mining Site',
+  activeProjectId = null,
+  projects = [],
+  projectAssets = [],
+  activeAssetId = null,
+  onSelectServerProject,
+  onUploadAssets,
+  onRetryUpload,
+  onSelectAsset,
+  authUser = null,
+  storageQuota = null,
+  onOpenAuth,
+  uploadProgress,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [openMenu, setOpenMenu] = useState<'File' | 'Edit' | 'View' | 'Objects' | 'Tags' | null>(null);
+  const [openAssetFolders, setOpenAssetFolders] = useState<Record<ProjectAsset['kind'], boolean>>({
+    model: true,
+    video: true,
+    image: true,
+    document: true,
+    other: true,
+  });
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close menus on outside click
@@ -234,6 +270,20 @@ export const ObjectManager: React.FC<ObjectManagerProps> = ({
           obj.children!.map((child) => renderObjectRow(child, depth + 1))}
       </React.Fragment>
     );
+  };
+
+  const assetIcon = (asset: ProjectAsset) => asset.kind === 'video' ? Video : asset.kind === 'image' ? ImageIcon : asset.kind === 'model' ? Box : FileText;
+  const assetFolders: Array<{ kind: ProjectAsset['kind']; label: string }> = [
+    { kind: 'model', label: 'Models' },
+    { kind: 'video', label: 'Videos' },
+    { kind: 'image', label: 'Images' },
+    { kind: 'document', label: 'Documents' },
+    { kind: 'other', label: 'Other files' },
+  ];
+  const formatStorage = (bytes: number) => {
+    if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+    if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${Math.round(bytes / 1024)} KB`;
   };
 
   return (
@@ -547,6 +597,57 @@ export const ObjectManager: React.FC<ObjectManagerProps> = ({
         </div>
       )}
 
+      {/* Server project and asset strip */}
+      <div className="bg-[#2e2e2e] border-b border-[#222] p-1.5 space-y-1.5">
+        <div className="flex items-center gap-1">
+          <select
+            value={activeProjectId || ''}
+            onChange={(event) => event.target.value && onSelectServerProject?.(event.target.value)}
+            className="min-w-0 flex-1 bg-[#1d1d1d] border border-[#484848] rounded-[2px] px-1.5 py-1 text-[10px] text-[#eee] focus:outline-none focus:border-[#e88724]"
+            title="Load a saved server project"
+          >
+            <option value="">{projectName} · local session</option>
+            {projects.map((project) => <option key={project.id} value={project.id}>{project.projectName} · {project.assetCount} assets</option>)}
+          </select>
+          <button onClick={onNewProject} title="Create new named project" className="p-1.5 bg-[#3b516b] hover:bg-[#4c6684] text-white rounded-[2px] cursor-pointer"><FolderPlus className="w-3.5 h-3.5" /></button>
+          <button onClick={onSaveProject} title="Save project to server and download a local copy" className="p-1.5 bg-[#3a3a3a] hover:bg-[#e88724] hover:text-black text-[#ddd] rounded-[2px] cursor-pointer"><Save className="w-3.5 h-3.5" /></button>
+          <label title={authUser ? 'Upload models, videos, images, or documents to this project' : 'Sign in before uploading private project assets'} onClick={(event) => { if (!authUser) { event.preventDefault(); onOpenAuth?.(); } }} className="p-1.5 bg-[#3a3a3a] hover:bg-[#e88724] hover:text-black text-[#ddd] rounded-[2px] cursor-pointer">
+            <Upload className="w-3.5 h-3.5" />
+            <input type="file" multiple accept=".glb,.gltf,.obj,.fbx,.ply,.mp4,.webm,.mov,.m4v,.png,.jpg,.jpeg,.webp,.tif,.tiff,.pdf,.json" className="hidden" onChange={(event) => { if (event.target.files) onUploadAssets?.(event.target.files); event.currentTarget.value = ''; }} />
+          </label>
+        </div>
+        <div className="flex items-center justify-between text-[9px]">
+          {authUser ? <><span className="text-[#8fdaa3] truncate">Signed in as {authUser.username}</span><button onClick={onOpenAuth} className="text-[#aaa] hover:text-white cursor-pointer">Account</button></> : <><span className="text-[#d7ae76]">Private uploads</span><button onClick={onOpenAuth} className="px-1.5 py-0.5 bg-[#e88724] hover:bg-[#ff9933] text-black font-bold rounded-[2px] cursor-pointer">Sign in</button></>}
+        </div>
+        {authUser && storageQuota && <div className="space-y-0.5">
+          <div className="flex items-center justify-between text-[8.5px] text-[#999]"><span>Private storage</span><span className="font-mono">{formatStorage(storageQuota.usedBytes)} / 2 GB</span></div>
+          <div className="h-1 bg-[#171717] rounded-full overflow-hidden"><div className={`h-full transition-all ${storageQuota.usedPercent >= 90 ? 'bg-[#d96b4b]' : 'bg-[#4ea3e8]'}`} style={{ width: `${Math.min(100, storageQuota.usedPercent)}%` }} /></div>
+        </div>}
+        {uploadProgress?.active && <div className="space-y-0.5"><div className="flex items-center justify-between text-[8.5px] text-[#bbb]"><span className="truncate">{uploadProgress.status}</span><span className="font-mono text-[#e88724]">{uploadProgress.percent}%</span></div><div className="h-1 bg-[#171717] rounded-full overflow-hidden"><div className="h-full bg-[#e88724] transition-all" style={{ width: `${uploadProgress.percent}%` }} /></div></div>}
+        {!uploadProgress?.active && uploadProgress?.canRetry && onRetryUpload && <div className="flex items-center justify-between gap-2 bg-[#321d1d] border border-[#713333] rounded-[2px] px-1.5 py-1 text-[8.5px] text-[#ffb0b0]"><span className="truncate">{uploadProgress.status}</span><button onClick={onRetryUpload} className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#e88724] hover:bg-[#ff9933] text-black font-bold rounded cursor-pointer"><RotateCcw className="w-2.5 h-2.5" /> Retry</button></div>}
+        <div className="flex items-center justify-between text-[9px] text-[#888]"><span className="uppercase tracking-wider font-bold">Project Assets</span><span>{projectAssets.length} stored</span></div>
+        {projectAssets.length > 0 ? <div className="max-h-[150px] overflow-y-auto space-y-1 pr-0.5">
+          {assetFolders.map((folder) => {
+            const folderAssets = projectAssets.filter((asset) => asset.kind === folder.kind);
+            if (!folderAssets.length) return null;
+            const isOpen = openAssetFolders[folder.kind];
+            return <div key={folder.kind} className="border border-[#454545] rounded-[2px] overflow-hidden">
+              <button onClick={() => setOpenAssetFolders((current) => ({ ...current, [folder.kind]: !current[folder.kind] }))} className="w-full flex items-center gap-1 px-1.5 py-1 bg-[#292929] hover:bg-[#3b3b3b] text-left text-[9px] text-[#cfcfcf] cursor-pointer">
+                <ChevronDown className={`w-3 h-3 transition-transform ${isOpen ? '' : '-rotate-90'}`} /><Folder className="w-3 h-3 text-[#e88724]" /><span className="font-bold uppercase tracking-wide">{folder.label}</span><span className="ml-auto text-[#888]">{folderAssets.length}</span>
+              </button>
+              {isOpen && <div className="p-0.5 space-y-0.5 bg-[#333]">
+                {folderAssets.map((asset) => {
+                  const Icon = assetIcon(asset);
+                  return <button key={asset.id} onClick={() => onSelectAsset?.(asset)} className={`w-full flex items-center gap-1.5 px-1.5 py-1 rounded-[2px] text-left cursor-pointer ${activeAssetId === asset.id ? 'bg-[#e88724] text-black' : 'bg-[#373737] text-[#ccc] hover:bg-[#464646]'}`} title={`Click to render ${asset.name} in the viewport`}>
+                    <Icon className="w-3 h-3 flex-shrink-0" /><span className="truncate flex-1">{asset.name}</span><span className="text-[8px] opacity-70 uppercase">{asset.kind}</span>
+                  </button>;
+                })}
+              </div>}
+            </div>;
+          })}
+        </div> : <div className="border border-dashed border-[#4a4a4a] rounded-[2px] px-2 py-2 text-[9px] text-[#888] text-center">No files in this project. Upload an asset, then click its file here to render it.</div>}
+      </div>
+
       {/* Hierarchy Tree Area */}
       <div className="flex-1 overflow-y-auto bg-[#363636] py-0.5">
         {objects
@@ -557,7 +658,7 @@ export const ObjectManager: React.FC<ObjectManagerProps> = ({
       {/* Side Nav Footer Status Bar */}
       <div className="h-[18px] bg-[#2a2a2a] border-t border-[#222] px-2 flex items-center justify-between text-[9.5px] text-[#888]">
         <span className="truncate">Both 3D models available. Click any object to inspect and view.</span>
-        <span className="font-mono text-[#aaa]">{objects.length} Models</span>
+        <span className="font-mono text-[#aaa]">{objects.length} Objects · {projectAssets.length} Assets</span>
       </div>
     </div>
   );

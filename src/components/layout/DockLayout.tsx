@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
-import { Box, Video, Radio, FileText, Folder, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Box, Video, Radio, FileText, Folder, MapPin, ChevronRight, ChevronLeft } from 'lucide-react';
 
-export type UpperTabType = 'Objects' | 'AI Survey' | 'Camera Tours' | 'Takes' | 'Content Browser' | 'Structure';
+export type UpperTabType = 'Objects' | 'AI Survey' | 'Camera Tours' | 'Mark History' | 'Takes' | 'Content Browser' | 'Structure';
 
 interface DockLayoutProps {
   leftPalette: React.ReactNode;
@@ -13,10 +13,12 @@ interface DockLayoutProps {
   attributeManager: React.ReactNode;
   aiSurveyPanel?: React.ReactNode;
   cameraTourPanel?: React.ReactNode;
+  markHistoryPanel?: React.ReactNode;
   activeUpperTab?: UpperTabType;
   onUpperTabChange?: (tab: UpperTabType) => void;
   surveyImageCount?: number;
   tourKeyframeCount?: number;
+  markHistoryCount?: number;
 }
 
 export const DockLayout: React.FC<DockLayoutProps> = ({
@@ -29,10 +31,12 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
   attributeManager,
   aiSurveyPanel,
   cameraTourPanel,
+  markHistoryPanel,
   activeUpperTab: controlledUpperTab,
   onUpperTabChange,
   surveyImageCount = 3,
   tourKeyframeCount = 5,
+  markHistoryCount = 0,
 }) => {
   // Proportions:
   const [rightPanelWidthPercent, setRightPanelWidthPercent] = useState<number>(36);
@@ -111,6 +115,7 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
   const tabs: Array<{ id: UpperTabType; label: string; icon: React.ComponentType<{ className?: string }>; count?: number }> = [
     { id: 'Objects', label: 'Objects', icon: Box },
     { id: 'Camera Tours', label: 'Tours & Keyframes', icon: Video, count: tourKeyframeCount },
+    { id: 'Mark History', label: 'Mark History', icon: MapPin, count: markHistoryCount },
     { id: 'AI Survey', label: 'AI Survey', icon: Radio, count: surveyImageCount },
     { id: 'Takes', label: 'Takes', icon: FileText },
     { id: 'Content Browser', label: 'Browser', icon: Folder },
@@ -253,6 +258,8 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
                 aiSurveyPanel
               ) : activeUpperTab === 'Camera Tours' && cameraTourPanel ? (
                 cameraTourPanel
+              ) : activeUpperTab === 'Mark History' && markHistoryPanel ? (
+                markHistoryPanel
               ) : (
                 objectManager
               )}

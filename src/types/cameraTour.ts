@@ -1,3 +1,11 @@
+export interface KeyframeAnnotation {
+  id: string;
+  note: string;
+  position: { x: number; y: number; z: number };
+  color?: string;
+  createdAt: string;
+}
+
 export interface CameraKeyframe {
   id: string;
   name: string;
@@ -8,6 +16,7 @@ export interface CameraKeyframe {
   pitch?: number;
   yaw?: number;
   notes?: string;
+  annotations?: KeyframeAnnotation[];
 }
 
 export interface CameraTour {

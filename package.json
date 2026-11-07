@@ -1,7 +1,8 @@
 {
-  "name": "react-example",
+  "name": "miningsight",
   "private": true,
   "version": "0.0.0",
+  "description": "MiningSight surface and subsurface visualisation workstation by Ezekiel Rego.",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",

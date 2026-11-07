@@ -5,7 +5,7 @@ import { calculateCartZ, calculateWheelRotation } from '../utils/math3d';
 
 /**
  * Creates procedural texture for the rugged ochre quartzite rock strata
- * directly derived from the reference photo /public/assets/aistudio/Rugged_Timbered_Mine_Tunnel_53b5c504.png
+ * derived from the rugged timbered mine reference photo.
  */
 function createPhotoRockTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
@@ -221,7 +221,7 @@ function createPhotoDirtFloorTexture(): THREE.CanvasTexture {
  * after the reference photograph:
  * - 4-Tier horizontal side lagging planks between inward-battered timber posts
  * - Heavy square lintel cap beams with top longitudinal stringers
- * - Earthen drift floor with scattered 3D rock rubble chunks
+ * - Clean packed earthen wheel-cart path with no loose stones or rail hardware
  * - Transition into an unlined raw rock adit cavern bore at the vanishing depth
  * - Compatible with MiningTunnelRig (animatable cart, timeline, walk mode, C4D shading modes)
  */
@@ -244,10 +244,10 @@ export function createRuggedTimberedTunnel(userParams?: Partial<ProceduralTunnel
     rockRoughness: 0.9,
     rockColorPalette: 'ochre_quartzite',
     floorType: 'packed_earth',
-    includeRubbleDebris: true,
-    rubbleCount: 38,
-    includeRailwayTracks: true,
-    includeOreCart: true,
+    includeRubbleDebris: false,
+    rubbleCount: 0,
+    includeRailwayTracks: false,
+    includeOreCart: false,
     headlampIntensity: 3.5,
     ambientWarmth: 0.7,
     fogDensity: 0.012,
@@ -555,9 +555,9 @@ export function createRuggedTimberedTunnel(userParams?: Partial<ProceduralTunnel
   }
   root.add(timberGroup);
 
-  // 4. Scattered 3D Rock Rubble Chunks on the Drift Floor (Matching the Photo Debris)
+  // 4. Optional floor debris. The rugged timber preset keeps the wheel-cart path clear.
   const rubbleGroup = new THREE.Group();
-  rubbleGroup.name = 'Photo_Drift_Floor_Rubble';
+  rubbleGroup.name = 'Packed_Dirt_Cart_Path';
 
   if (params.includeRubbleDebris) {
     const rubbleCount = params.rubbleCount;
