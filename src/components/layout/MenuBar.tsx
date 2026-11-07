@@ -17,6 +17,8 @@ interface MenuBarProps {
   onSelectPreset?: (presetId: any) => void;
   onOpenPhotoRef?: () => void;
   onOpenSceneOptions?: () => void;
+  onOpenHelp?: () => void;
+  onOpenOnboarding?: () => void;
 }
 
 export const MenuBar: React.FC<MenuBarProps> = ({
@@ -35,6 +37,8 @@ export const MenuBar: React.FC<MenuBarProps> = ({
   onSelectPreset,
   onOpenPhotoRef,
   onOpenSceneOptions,
+  onOpenHelp,
+  onOpenOnboarding,
 }) => {
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
 
@@ -187,15 +191,18 @@ export const MenuBar: React.FC<MenuBarProps> = ({
     {
       name: 'Help',
       items: [
-        { label: 'Mining Site Visualisation Guide', shortcut: 'Ctrl+F1' },
-        { label: 'Photogrammetry Tagging Reference', action: onOpenAISurvey },
-        { label: 'About Mining Site 3D Workstation' },
+        { label: 'MiningSight User Guide', shortcut: 'Ctrl+F1', action: onOpenHelp },
+        { label: 'First-time Onboarding Tour', action: onOpenOnboarding },
+        { label: 'Viewer Controls & Keyboard Shortcuts', action: onOpenHelp },
+        { label: 'Projects, Uploads & Google Sign-in', action: onOpenHelp },
+        { label: 'AI Reconstruction Setup', action: onOpenAISurvey },
+        { label: 'About the MiningSight Workstation', action: onOpenHelp },
       ],
     },
   ];
 
   return (
-    <div className="relative w-full h-[22px] bg-[#323232] border-b border-[#1e1e1e] flex items-center justify-between px-1.5 text-[11px] text-[#cfcfcf] select-none font-sans z-30">
+    <div data-onboarding-target="top-navigation" className="relative w-full h-[22px] bg-[#323232] border-b border-[#1e1e1e] flex items-center justify-between px-1.5 text-[11px] text-[#cfcfcf] select-none font-sans z-30">
       {/* Horizontal Menu Items */}
       <div className="flex items-center space-x-0.5 overflow-visible whitespace-nowrap">
         {menuItems.map((menu) => (

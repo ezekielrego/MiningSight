@@ -1404,6 +1404,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   return (
     <div
       ref={mountRef}
+      data-onboarding-target="viewport"
       className="relative w-full h-full select-none overflow-hidden bg-[#555555]"
       onContextMenu={(e) => e.preventDefault()}
     >

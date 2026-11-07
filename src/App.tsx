@@ -22,6 +22,8 @@ import { StatusBar } from './components/layout/StatusBar';
 import { DockLayout, UpperTabType } from './components/layout/DockLayout';
 import { PictureViewerModal } from './components/modals/PictureViewerModal';
 import { RenderSettingsModal } from './components/modals/RenderSettingsModal';
+import { HelpGuideModal } from './components/modals/HelpGuideModal';
+import { OnboardingGuide } from './components/modals/OnboardingGuide';
 import { calculateCartZ, stepFrame } from './utils/math3d';
 import { CameraKeyframe, CameraTour, KeyframeAnnotation } from './types/cameraTour';
 import { getDefaultCameraTours } from './utils/cameraAnimation';
@@ -221,6 +223,31 @@ export default function App() {
   // Modal dialogs
   const [showPictureViewer, setShowPictureViewer] = useState<boolean>(false);
   const [showRenderSettings, setShowRenderSettings] = useState<boolean>(false);
+  const [showHelpGuide, setShowHelpGuide] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    try {
+      return localStorage.getItem('miningsight_onboarding_completed') !== 'true';
+    } catch (error) {
+      return true;
+    }
+  });
+
+  const openOnboarding = useCallback(() => {
+    setShowHelpGuide(false);
+    setShowOnboarding(true);
+  }, []);
+
+  const closeOnboarding = useCallback(() => {
+    try {
+      localStorage.setItem('miningsight_onboarding_completed', 'true');
+    } catch (error) {}
+    setShowOnboarding(false);
+  }, []);
+
+  const openHelpGuide = useCallback(() => {
+    setShowOnboarding(false);
+    setShowHelpGuide(true);
+  }, []);
 
   // Hidden File input for opening saved .c4d.json projects
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1030,7 +1057,10 @@ export default function App() {
         return;
       }
 
-      if (e.code === 'Space' || e.key === 'F8' || e.code === 'F8') {
+      if (e.code === 'F1' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        openHelpGuide();
+      } else if (e.code === 'Space' || e.key === 'F8' || e.code === 'F8') {
         e.preventDefault();
         setTimeline((prev) => ({ ...prev, isPlaying: !prev.isPlaying }));
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
@@ -1580,6 +1610,8 @@ export default function App() {
         onTriggerRender={() => setShowPictureViewer(true)}
         currentPresetId={currentPresetId}
         onSelectPreset={handleSelectPreset}
+        onOpenHelp={openHelpGuide}
+        onOpenOnboarding={openOnboarding}
       />
 
       {/* 2. Main Horizontal Toolbar */}
@@ -1793,6 +1825,22 @@ export default function App() {
             message: 'Ready. All systems operational.',
           })
         }
+      />
+
+      <HelpGuideModal
+        isOpen={showHelpGuide}
+        onClose={() => setShowHelpGuide(false)}
+        onStartOnboarding={openOnboarding}
+      />
+
+      <OnboardingGuide
+        isOpen={showOnboarding}
+        onClose={closeOnboarding}
+        onOpenAuth={() => {
+          closeOnboarding();
+          setAuthError('');
+          setShowAuthModal(true);
+        }}
       />
 
       {/* 5. Picture Viewer Modal */}
