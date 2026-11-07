@@ -230,12 +230,27 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   const flashlightOnRef = useRef(flashlightOn);
   const activeTourRef = useRef(activeTour);
   const isTourPlaybackEnabledRef = useRef(isTourPlaybackEnabled);
+  const manualNavigationRef = useRef(false);
+  const lastNavigationFrameRef = useRef(currentFrame);
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
   useEffect(() => { currentFrameRef.current = currentFrame; }, [currentFrame]);
   useEffect(() => { navModeRef.current = navMode; }, [navMode]);
   useEffect(() => { flashlightOnRef.current = flashlightOn; }, [flashlightOn]);
   useEffect(() => { activeTourRef.current = activeTour; }, [activeTour]);
   useEffect(() => { isTourPlaybackEnabledRef.current = isTourPlaybackEnabled; }, [isTourPlaybackEnabled]);
+  useEffect(() => {
+    // A timeline change is an explicit request to inspect the tour at that frame.
+    // It should re-enable the tour camera, while pointer/keyboard input below
+    // can take control again without being overwritten on the next render tick.
+    if (lastNavigationFrameRef.current !== currentFrame) {
+      lastNavigationFrameRef.current = currentFrame;
+      manualNavigationRef.current = false;
+    }
+  }, [currentFrame]);
+  useEffect(() => {
+    // Starting playback intentionally hands the camera back to the tour path.
+    if (isPlaying) manualNavigationRef.current = false;
+  }, [isPlaying]);
 
   // Align camera to exact perspective of reference photo
   const alignCameraToPhotoReference = useCallback(() => {
@@ -854,8 +869,15 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       // 2. Camera Positioning
       const tour = activeTourRef.current;
       const frame = currentFrameRef.current;
-      const exactKeyframe = Boolean(tour?.keyframes.some((kf) => kf.frame === frame));
-      if (navModeRef.current !== 'walk' && isTourPlaybackEnabledRef.current && tour && tour.keyframes.length > 0 && (isPlayingRef.current || frame > 0 || exactKeyframe)) {
+      const shouldFollowTour = navModeRef.current !== 'walk'
+        && isTourPlaybackEnabledRef.current
+        && !manualNavigationRef.current
+        && tour
+        && tour.keyframes.length > 0
+        // A paused/default viewport must remain manually orbitable. The tour
+        // camera is only restored for playback or an explicit non-zero frame.
+        && (isPlayingRef.current || frame > 0);
+      if (shouldFollowTour) {
         // TOUR PATH ANIMATION (Follows user's recorded tour path automatically!)
         const tourCam = interpolateCameraTour(tour.keyframes, frame, tour.durationFrames);
         camera.position.set(tourCam.position.x, tourCam.position.y, tourCam.position.z);
@@ -1030,6 +1052,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
           const clamped = clampWalkPosition(walkPosRef.current);
           walkPosRef.current.set(clamped.x, clamped.y, clamped.z);
         } else {
+          manualNavigationRef.current = true;
           const factor = zoomIn ? 0.86 : 1.16;
           sphericalRef.current.radius = Math.max(4, Math.min(320, sphericalRef.current.radius * factor));
         }
@@ -1064,6 +1087,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         if (e.shiftKey) isWalkingRef.current.shift = true;
       } else if (e.key.startsWith('Arrow') && cameraRef.current) {
         e.preventDefault();
+        manualNavigationRef.current = true;
         const orbitStep = e.shiftKey ? 0.16 : 0.08;
         if (e.key === 'ArrowLeft') sphericalRef.current.theta += orbitStep;
         if (e.key === 'ArrowRight') sphericalRef.current.theta -= orbitStep;
@@ -1209,6 +1233,8 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     if (navMode === 'walk') {
       dragModeRef.current = 'look';
     } else {
+      // Any direct pointer navigation takes ownership from a paused tour path.
+      manualNavigationRef.current = true;
       // Orbit owns the normal left-drag gesture. Hold Shift when a Move/Rotate/Scale
       // tool should transform the selected object, so the viewer can never feel stuck
       // just because an object-editing tool was active on load.
@@ -1343,6 +1369,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       const clamped = clampWalkPosition(walkPosRef.current);
       walkPosRef.current.set(clamped.x, clamped.y, clamped.z);
     } else {
+      manualNavigationRef.current = true;
       const normalizedDelta = Math.max(-120, Math.min(120, e.deltaY));
       const zoomFactor = Math.exp(normalizedDelta * 0.0018);
       sphericalRef.current.radius = Math.max(4, Math.min(320, sphericalRef.current.radius * zoomFactor));
@@ -1623,6 +1650,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
                 </button>
                 <button
                   onClick={() => {
+                    manualNavigationRef.current = true;
                     sphericalRef.current.set(33, 1.18, 0.44);
                     targetRef.current.set(-0.5, 3.0, 0);
                     setViewMenuOpen(false);
@@ -1750,6 +1778,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
                     <button
                       key={h.id}
                       onClick={() => {
+                        manualNavigationRef.current = true;
                         setSelectedHotspot(h);
                         restoreOverlay('hotspot');
                         targetRef.current.set(h.position.x, h.position.y, h.position.z);
@@ -1773,7 +1802,10 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
           {/* CAMERA NAVIGATION MODE TOGGLE (Orbit vs Walkable Tunnel) */}
           <div className="flex items-center bg-[#242424] p-0.5 rounded-[2px] border border-[#444]">
             <button
-              onClick={() => setNavMode('orbit')}
+              onClick={() => {
+                manualNavigationRef.current = true;
+                setNavMode('orbit');
+              }}
               className={`px-2 py-0.5 text-[10px] rounded-[1px] font-bold cursor-pointer transition-colors flex items-center space-x-1 ${
                 navMode === 'orbit' ? 'bg-[#3b516b] text-white shadow-sm' : 'text-[#888] hover:text-white'
               }`}
