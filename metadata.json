@@ -1,0 +1,6 @@
+{
+  "name": "Cinema 4D Studio - 3D Workspace",
+  "description": "Pixel-conscious recreation of the classic Cinema 4D desktop 3D modeling interface with interactive procedural Mining Tunnel diorama, animated rolling ore cart, and meshable wireframe and vertex modes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
