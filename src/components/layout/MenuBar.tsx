@@ -309,6 +309,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
 
         {/* AI Quick Button */}
         <button
+          data-onboarding-target="ai-survey"
           onClick={onOpenAISurvey}
           title="Open AI Photogrammetry Panel"
           className="px-1.5 py-0.5 bg-[#e88724] hover:bg-[#ff9933] text-black font-bold text-[10px] rounded-[2px] cursor-pointer"

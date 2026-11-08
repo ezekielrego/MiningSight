@@ -135,6 +135,7 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
       >
         {/* Upper Viewport */}
         <div
+          data-onboarding-target="viewport-area"
           className="w-full relative overflow-hidden"
           style={{ height: `calc(${100 - bottomPanelHeightPercent}% - 64px)` }}
         >
@@ -142,7 +143,7 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
         </div>
 
         {/* Timeline Bar (Fixed 64px height) */}
-        <div className="w-full h-[64px] flex-shrink-0">
+        <div data-onboarding-target="timeline" className="w-full h-[64px] flex-shrink-0">
           {timeline}
         </div>
 
@@ -201,6 +202,7 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
 
       {/* 3. Right Management Column: Object Manager, Camera Tours & Attribute Manager */}
       <div
+        data-onboarding-target="right-panel"
         className="h-full flex overflow-hidden flex-shrink-0 transition-all duration-150"
         style={{ width: isRightCollapsed ? '28px' : `${currentRightWidth}%` }}
       >

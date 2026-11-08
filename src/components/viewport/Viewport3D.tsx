@@ -1549,7 +1549,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       )}
 
       {/* Top Viewport Navigation and Mode Bar */}
-      <div className="absolute top-0 left-0 right-0 h-7 bg-[#383838]/95 border-b border-[#252525] flex items-center justify-between px-2 text-[11px] text-[#cfcfcf] z-10 backdrop-blur-sm overflow-x-auto scrollbar-none">
+      <div data-onboarding-target="viewport-controls" className="absolute top-0 left-0 right-0 h-7 bg-[#383838]/95 border-b border-[#252525] flex items-center justify-between px-2 text-[11px] text-[#cfcfcf] z-10 backdrop-blur-sm overflow-x-auto scrollbar-none">
         {/* Left Controls: Preset Selector, Menus, Orbit vs Walk, Flashlight, Ruler, Hotspots */}
         <div className="flex items-center space-x-1 sm:space-x-1.5 min-w-max">
           {/* SCENE PRESET SELECTOR (Classic Diorama vs Rugged Timbered Photo vs AI Custom) */}
