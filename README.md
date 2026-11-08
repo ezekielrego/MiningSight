@@ -46,7 +46,7 @@ The following screenshots are selected from the supplied system evidence package
 
 ![Reconstruction point-mode representation](docs/screenshots/10_Reconstruction_Point_Mode_View.png)
 
-*Preferred gas-mapping view showing faint, position-aware marking on the scene.*
+*Preferred college scene.*
 
 ![Alternative 3D representation modes](docs/screenshots/13_Alternative_3D_Representation_Modes_Composite.png)
 
