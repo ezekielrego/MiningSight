@@ -59,6 +59,8 @@ const resolveSelectableObjectId = (object: THREE.Object3D, fallback: string | nu
   return fallback;
 };
 
+const liveSelectionCursor = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M4 2l6 17 3-7 7-3L4 2z' fill='%23ffffff' stroke='%23000000' stroke-width='1.5'/%3E%3Ccircle cx='17' cy='17' r='4' fill='none' stroke='%23e88724' stroke-width='2'/%3E%3C/svg%3E\") 4 3, crosshair";
+
 interface ViewerOverlayProps {
   title: string;
   minimized: boolean;
@@ -1172,6 +1174,50 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     }
   }, [currentPresetId, proceduralParams]);
 
+  // Give the selected sample-scene part a clear, full-surface highlight. The
+  // materials are cloned only for selected meshes so shared materials elsewhere
+  // in the model keep their original appearance.
+  useEffect(() => {
+    const root = miningTunnelRigRef.current?.root;
+    if (!root || !selectedObject || activeProjectId || clearView) return;
+
+    const selectedNodes: THREE.Object3D[] = [];
+    root.traverse((node) => {
+      const id = node.userData?.selectionId || node.name;
+      if (id === selectedObject.id) selectedNodes.push(node);
+    });
+
+    const selectedMeshes = new Set<THREE.Mesh>();
+    selectedNodes.forEach((node) => node.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) selectedMeshes.add(child as THREE.Mesh);
+    }));
+
+    const originalMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
+    selectedMeshes.forEach((mesh) => {
+      originalMaterials.set(mesh, mesh.material);
+      const highlight = (material: THREE.Material) => {
+        const clone = material.clone() as THREE.MeshStandardMaterial;
+        if (clone.color) clone.color.set(0xff8a24);
+        if (clone.emissive) {
+          clone.emissive.set(0xff5a00);
+          clone.emissiveIntensity = 0.85;
+        }
+        clone.needsUpdate = true;
+        return clone;
+      };
+      mesh.material = Array.isArray(mesh.material) ? mesh.material.map(highlight) : highlight(mesh.material);
+    });
+
+    return () => {
+      originalMaterials.forEach((material, mesh) => {
+        const current = mesh.material;
+        if (Array.isArray(current)) current.forEach((item) => item.dispose());
+        else current.dispose();
+        mesh.material = material;
+      });
+    };
+  }, [selectedObject, currentPresetId, proceduralParams, activeProjectId, clearView, sceneObjects]);
+
   // Sync Shading Mode with Rig
   useEffect(() => {
     if (miningTunnelRigRef.current) {
@@ -1283,8 +1329,9 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), cameraRef.current);
         const hit = raycaster.intersectObject(interactiveRoot, true)[0]?.object;
         onSelectObject(hit ? resolveSelectableObjectId(hit, currentPresetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo') : null);
-        isDraggingRef.current = false;
-        dragModeRef.current = 'none';
+        // Selection is a click action, but the same gesture can still become
+        // an orbit drag so choosing Live Selection never freezes navigation.
+        dragModeRef.current = 'orbit';
         return;
       }
       // Orbit owns the normal left-drag gesture. Hold Shift when a Move/Rotate/Scale
@@ -1462,7 +1509,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         className={`w-full h-full block outline-none ${
           isGasBrushActive ? 'cursor-cell' : isAnnotationMode ? 'cursor-crosshair' : isRulerActive ? 'cursor-cell' : activeTool === 'live_selection' && navMode !== 'walk' ? 'cursor-crosshair' : navMode === 'walk' ? 'cursor-grab active:cursor-grabbing' : 'cursor-grab active:cursor-grabbing'
         }`}
-        style={{ touchAction: 'none' }}
+        style={{ touchAction: 'none', cursor: activeTool === 'live_selection' && navMode !== 'walk' ? liveSelectionCursor : undefined }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
