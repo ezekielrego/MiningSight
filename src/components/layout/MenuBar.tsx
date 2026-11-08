@@ -19,6 +19,9 @@ interface MenuBarProps {
   onOpenSceneOptions?: () => void;
   onOpenHelp?: () => void;
   onOpenOnboarding?: () => void;
+  onOpenAbout?: () => void;
+  onOpenTerms?: () => void;
+  onOpenPrivacy?: () => void;
 }
 
 export const MenuBar: React.FC<MenuBarProps> = ({
@@ -39,6 +42,9 @@ export const MenuBar: React.FC<MenuBarProps> = ({
   onOpenSceneOptions,
   onOpenHelp,
   onOpenOnboarding,
+  onOpenAbout,
+  onOpenTerms,
+  onOpenPrivacy,
 }) => {
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
 
@@ -197,6 +203,14 @@ export const MenuBar: React.FC<MenuBarProps> = ({
         { label: 'Projects, Uploads & Google Sign-in', action: onOpenHelp },
         { label: 'AI Reconstruction Setup', action: onOpenAISurvey },
         { label: 'About the MiningSight Workstation', action: onOpenHelp },
+      ],
+    },
+    {
+      name: 'About',
+      items: [
+        { label: 'About Ezekiel Rego & MiningSight', action: onOpenAbout },
+        { label: 'Terms of Use', action: onOpenTerms },
+        { label: 'Privacy & Data Use', action: onOpenPrivacy },
       ],
     },
   ];

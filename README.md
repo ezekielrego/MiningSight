@@ -13,6 +13,8 @@ MiningSight is an interactive surface and subsurface visualisation workstation f
 
 The main interface includes a top-navigation switcher for moving between the connected visualisation experiences. Both interfaces use the same hosted environment while keeping their application routes and provider workflows separate.
 
+The application includes an About menu with the author profile, software overview, Terms of Use, and Privacy & Data Use notices. The source versions are available as [`docs/TERMS_OF_USE.md`](docs/TERMS_OF_USE.md) and [`docs/PRIVACY_AND_DATA_USE.md`](docs/PRIVACY_AND_DATA_USE.md).
+
 ## Selected system evidence
 
 The following screenshots are selected from the supplied system evidence package to show the implemented workflows and interface states.

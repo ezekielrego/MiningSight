@@ -24,6 +24,7 @@ import { PictureViewerModal } from './components/modals/PictureViewerModal';
 import { RenderSettingsModal } from './components/modals/RenderSettingsModal';
 import { HelpGuideModal } from './components/modals/HelpGuideModal';
 import { OnboardingGuide } from './components/modals/OnboardingGuide';
+import { AboutModal, AboutSection } from './components/modals/AboutModal';
 import { calculateCartZ, stepFrame } from './utils/math3d';
 import { CameraKeyframe, CameraTour, KeyframeAnnotation } from './types/cameraTour';
 import { getDefaultCameraTours } from './utils/cameraAnimation';
@@ -224,6 +225,8 @@ export default function App() {
   const [showPictureViewer, setShowPictureViewer] = useState<boolean>(false);
   const [showRenderSettings, setShowRenderSettings] = useState<boolean>(false);
   const [showHelpGuide, setShowHelpGuide] = useState(false);
+  const [showAboutModal, setShowAboutModal] = useState(false);
+  const [aboutSection, setAboutSection] = useState<AboutSection>('about');
   const [showOnboarding, setShowOnboarding] = useState(() => {
     try {
       return localStorage.getItem('miningsight_onboarding_completed') !== 'true';
@@ -247,6 +250,13 @@ export default function App() {
   const openHelpGuide = useCallback(() => {
     setShowOnboarding(false);
     setShowHelpGuide(true);
+  }, []);
+
+  const openAboutSection = useCallback((section: AboutSection) => {
+    setShowHelpGuide(false);
+    setShowOnboarding(false);
+    setAboutSection(section);
+    setShowAboutModal(true);
   }, []);
 
   // Hidden File input for opening saved .c4d.json projects
@@ -1612,6 +1622,9 @@ export default function App() {
         onSelectPreset={handleSelectPreset}
         onOpenHelp={openHelpGuide}
         onOpenOnboarding={openOnboarding}
+        onOpenAbout={() => openAboutSection('about')}
+        onOpenTerms={() => openAboutSection('terms')}
+        onOpenPrivacy={() => openAboutSection('privacy')}
       />
 
       {/* 2. Main Horizontal Toolbar */}
@@ -1841,6 +1854,12 @@ export default function App() {
           setAuthError('');
           setShowAuthModal(true);
         }}
+      />
+
+      <AboutModal
+        isOpen={showAboutModal}
+        section={aboutSection}
+        onClose={() => setShowAboutModal(false)}
       />
 
       {/* 5. Picture Viewer Modal */}
