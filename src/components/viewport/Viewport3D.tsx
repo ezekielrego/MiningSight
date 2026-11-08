@@ -198,6 +198,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
 
   // Navigation mode: 'orbit' (C4D orbital viewer) vs 'walk' (First-Person walkable drift inspection)
   const [navMode, setNavMode] = useState<'orbit' | 'walk'>('orbit');
+  const [highlightedSelectionId, setHighlightedSelectionId] = useState<string | null>(null);
 
   // Miner's Headlamp / Flashlight state
   const [flashlightOn, setFlashlightOn] = useState<boolean>(true);
@@ -453,6 +454,20 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       gizmoGroupRef.current.visible = !activeProjectId && selectedObject.id === rootId && selectedObject.visibleInEditor && (activeTool === 'move' || activeTool === 'rotate' || activeTool === 'scale');
     }
   }, [selectedObject, activeProjectId, activeTool, currentPresetId]);
+
+  useEffect(() => {
+    setHighlightedSelectionId(null);
+  }, [currentPresetId]);
+
+  useEffect(() => {
+    const rootId = currentPresetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo';
+    if (!selectedObject) {
+      setHighlightedSelectionId(null);
+    } else if (selectedObject.id !== rootId) {
+      // Object Manager selections should also receive the same visual feedback.
+      setHighlightedSelectionId(selectedObject.id);
+    }
+  }, [selectedObject, currentPresetId]);
 
   useEffect(() => {
     const rig = miningTunnelRigRef.current;
@@ -1179,12 +1194,12 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   // in the model keep their original appearance.
   useEffect(() => {
     const root = miningTunnelRigRef.current?.root;
-    if (!root || !selectedObject || activeProjectId || clearView) return;
+    if (!root || !highlightedSelectionId || activeProjectId || clearView) return;
 
     const selectedNodes: THREE.Object3D[] = [];
     root.traverse((node) => {
       const id = node.userData?.selectionId || node.name;
-      if (id === selectedObject.id) selectedNodes.push(node);
+      if (id === highlightedSelectionId) selectedNodes.push(node);
     });
 
     const selectedMeshes = new Set<THREE.Mesh>();
@@ -1216,7 +1231,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         mesh.material = material;
       });
     };
-  }, [selectedObject, currentPresetId, proceduralParams, activeProjectId, clearView, sceneObjects]);
+  }, [highlightedSelectionId, currentPresetId, proceduralParams, activeProjectId, clearView, sceneObjects]);
 
   // Sync Shading Mode with Rig
   useEffect(() => {
@@ -1328,7 +1343,9 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), cameraRef.current);
         const hit = raycaster.intersectObject(interactiveRoot, true)[0]?.object;
-        onSelectObject(hit ? resolveSelectableObjectId(hit, currentPresetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo') : null);
+        const pickedId = hit ? resolveSelectableObjectId(hit, currentPresetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo') : null;
+        setHighlightedSelectionId(pickedId);
+        onSelectObject(pickedId);
         // Selection is a click action, but the same gesture can still become
         // an orbit drag so choosing Live Selection never freezes navigation.
         dragModeRef.current = 'orbit';
@@ -1374,7 +1391,9 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
           const intersects = raycaster.intersectObject(interactiveRoot, true);
           if (intersects.length > 0) {
             const hit = intersects[0].object;
-            onSelectObject(resolveSelectableObjectId(hit, currentPresetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo'));
+            const pickedId = resolveSelectableObjectId(hit, currentPresetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo');
+            setHighlightedSelectionId(pickedId);
+            onSelectObject(pickedId);
           }
         }
       }
