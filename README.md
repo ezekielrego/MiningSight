@@ -31,23 +31,20 @@ The following screenshots are selected from the supplied system evidence package
 
 ![Reconstructed tunnel model loaded in MiningSight](docs/screenshots/04_Reconstructed_Tunnel_Model_Loaded.png)
 
-*A returned reconstructed tunnel model loaded into the 3D workstation.*
-
-![Reconstructed tunnel interior view](docs/screenshots/05_Reconstructed_Tunnel_Interior_View.png)
 
 *Interior inspection view for reviewing the reconstructed mine tunnel.*
 
 ### Representation and gas-mapping views
 
-![Reconstruction mesh representation](docs/screenshots/08_Reconstruction_Mesh_View.png)
+![Primary gas-mapping view](docs/screenshots/12_Gas_Mapping_Primary_View.png)
 
 *Mesh representation used for structural inspection.*
 
-![Reconstruction point-mode representation](docs/screenshots/10_Reconstruction_Point_Mode_View.png)
+![Reconstruction mesh representation](docs/screenshots/08_Reconstruction_Mesh_View.png)
 
 *Point-mode representation for spatial and survey-style review.*
 
-![Primary gas-mapping view](docs/screenshots/12_Gas_Mapping_Primary_View.png)
+![Reconstruction point-mode representation](docs/screenshots/10_Reconstruction_Point_Mode_View.png)
 
 *Preferred gas-mapping view showing faint, position-aware marking on the scene.*
 
