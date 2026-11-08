@@ -355,6 +355,7 @@ export function createRuggedTimberedTunnel(userParams?: Partial<ProceduralTunnel
 
   const floorMesh = new THREE.Mesh(floorGeo, dirtFloorMaterial);
   floorMesh.name = 'Earthen_Drift_Floor';
+  floorMesh.userData.selectionId = 'Packed_Dirt_Cart_Path';
   floorMesh.position.set(0, 0, 0);
   root.add(floorMesh);
   attachC4DOverlays(floorMesh, 0x88bbdd);
@@ -452,12 +453,14 @@ export function createRuggedTimberedTunnel(userParams?: Partial<ProceduralTunnel
 
   const rockCavernMesh = new THREE.Mesh(rockCavernGeo, rockMaterial);
   rockCavernMesh.name = 'Bedrock_Cavern_Bore';
+  rockCavernMesh.userData.selectionId = 'Unlined_Adit_Cavern_Heading';
   root.add(rockCavernMesh);
   attachC4DOverlays(rockCavernMesh, 0xe88724);
 
   // 3. Multi-Set Heavy Square Timber Shoring (Square Set System matching Photo)
   const timberGroup = new THREE.Group();
   timberGroup.name = 'Photo_Timber_Square_Sets';
+  timberGroup.userData.selectionId = 'Photo_Timber_Square_Sets';
 
   const setsCount = params.timberSetCount;
   const setSpacing = params.timberSpacing;
@@ -479,6 +482,7 @@ export function createRuggedTimberedTunnel(userParams?: Partial<ProceduralTunnel
     // Left Vertical Post with inward batter
     const leftPost = new THREE.Mesh(postGeo, timberMaterial);
     leftPost.name = `Left_Post_Set_${s + 1}`;
+    leftPost.userData.selectionId = 'Timber_Posts_Battered';
     leftPost.position.set(-span / 2, postHeight / 2 - 0.05, 0);
     leftPost.rotation.z = -batterRad;
     archGroup.add(leftPost);
@@ -486,6 +490,7 @@ export function createRuggedTimberedTunnel(userParams?: Partial<ProceduralTunnel
     // Right Vertical Post with inward batter
     const rightPost = new THREE.Mesh(postGeo, timberMaterial);
     rightPost.name = `Right_Post_Set_${s + 1}`;
+    rightPost.userData.selectionId = 'Timber_Posts_Battered';
     rightPost.position.set(span / 2, postHeight / 2 - 0.05, 0);
     rightPost.rotation.z = batterRad;
     archGroup.add(rightPost);
@@ -493,6 +498,7 @@ export function createRuggedTimberedTunnel(userParams?: Partial<ProceduralTunnel
     // Overhead Cap / Lintel Timber Beam
     const capBeam = new THREE.Mesh(capGeo, timberMaterial);
     capBeam.name = `Cap_Beam_Set_${s + 1}`;
+    capBeam.userData.selectionId = 'Timber_Lintel_Caps';
     capBeam.position.set(0, postHeight - 0.1, 0);
     archGroup.add(capBeam);
 
@@ -500,10 +506,12 @@ export function createRuggedTimberedTunnel(userParams?: Partial<ProceduralTunnel
     if (params.includeTopStringers && s < setsCount - 1) {
       const stringerGeo = new THREE.BoxGeometry(postWidth * 0.75, postWidth * 0.75, setSpacing);
       const leftStringer = new THREE.Mesh(stringerGeo, timberMaterial);
+      leftStringer.userData.selectionId = 'Longitudinal_Ceiling_Stringers';
       leftStringer.position.set(-span / 2 + 0.15, postHeight - 0.1, -setSpacing / 2);
       archGroup.add(leftStringer);
 
       const rightStringer = new THREE.Mesh(stringerGeo, timberMaterial);
+      rightStringer.userData.selectionId = 'Longitudinal_Ceiling_Stringers';
       rightStringer.position.set(span / 2 - 0.15, postHeight - 0.1, -setSpacing / 2);
       archGroup.add(rightStringer);
     }
@@ -524,6 +532,7 @@ export function createRuggedTimberedTunnel(userParams?: Partial<ProceduralTunnel
         // Left wall lagging plank
         const leftPlank = new THREE.Mesh(plankGeo, timberMaterial);
         leftPlank.name = `Left_Lagging_Tier_${t + 1}_Set_${s + 1}`;
+        leftPlank.userData.selectionId = 'Four_Tier_Side_Lagging_Planks';
         leftPlank.position.set(-span / 2 + inset - 0.08, tierY, -setSpacing / 2);
         leftPlank.rotation.y = (Math.random() - 0.5) * 0.02; // slight organic variation
         archGroup.add(leftPlank);
@@ -531,6 +540,7 @@ export function createRuggedTimberedTunnel(userParams?: Partial<ProceduralTunnel
         // Right wall lagging plank
         const rightPlank = new THREE.Mesh(plankGeo, timberMaterial);
         rightPlank.name = `Right_Lagging_Tier_${t + 1}_Set_${s + 1}`;
+        rightPlank.userData.selectionId = 'Four_Tier_Side_Lagging_Planks';
         rightPlank.position.set(span / 2 - inset + 0.08, tierY, -setSpacing / 2);
         rightPlank.rotation.y = (Math.random() - 0.5) * 0.02;
         archGroup.add(rightPlank);
@@ -545,6 +555,7 @@ export function createRuggedTimberedTunnel(userParams?: Partial<ProceduralTunnel
         for (let rp = 0; rp < roofPlanksCount; rp++) {
           const rpx = -span / 2 + 0.5 + rp * roofPlankW;
           const roofPlank = new THREE.Mesh(roofPlankGeo, timberMaterial);
+          roofPlank.userData.selectionId = 'Overhead_Roof_Lagging';
           roofPlank.position.set(rpx, postHeight + 0.12, -setSpacing / 2);
           archGroup.add(roofPlank);
         }
@@ -558,6 +569,7 @@ export function createRuggedTimberedTunnel(userParams?: Partial<ProceduralTunnel
   // 4. Optional floor debris. The rugged timber preset keeps the wheel-cart path clear.
   const rubbleGroup = new THREE.Group();
   rubbleGroup.name = 'Packed_Dirt_Cart_Path';
+  rubbleGroup.userData.selectionId = 'Packed_Dirt_Cart_Path';
 
   if (params.includeRubbleDebris) {
     const rubbleCount = params.rubbleCount;
@@ -583,6 +595,7 @@ export function createRuggedTimberedTunnel(userParams?: Partial<ProceduralTunnel
   // 5. Optional Railway Track (can be toggled in params, positioned along the floor)
   const trackGroup = new THREE.Group();
   trackGroup.name = 'Railway_Tracks';
+  trackGroup.userData.selectionId = 'Railway_Tracks';
   const trackGauge = 2.0;
 
   if (params.includeRailwayTracks) {
@@ -612,6 +625,7 @@ export function createRuggedTimberedTunnel(userParams?: Partial<ProceduralTunnel
   // 6. Mine Cart Loaded with Ore (Matches MiningTunnelRig interface)
   const mineCart = new THREE.Group();
   mineCart.name = 'Mine_Cart_Ore';
+  mineCart.userData.selectionId = 'Mine_Cart_Ore';
   const wheels: THREE.Mesh[] = [];
 
   if (params.includeOreCart) {
@@ -705,6 +719,7 @@ export function createRuggedTimberedTunnel(userParams?: Partial<ProceduralTunnel
   lanternZPositions.forEach((lz, idx) => {
     const lantern = new THREE.Group();
     lantern.name = `Timber_Wall_Lantern_${idx + 1}`;
+    lantern.userData.selectionId = 'Workstation_Lantern_Brackets';
     // Mounted on right timber post
     lantern.position.set(span / 2 - 0.25, 2.6, lz);
 

@@ -304,6 +304,7 @@ export function createMiningTunnel(): MiningTunnelRig {
 
   const tunnelMesh = new THREE.Mesh(tunnelGeo, rockMaterial);
   tunnelMesh.name = 'Rock_Tunnel_Mesh';
+  tunnelMesh.userData.selectionId = 'Rock_Tunnel_Mesh';
   root.add(tunnelMesh);
 
   // Meshable wireframe line overlay for Gouraud Shading (Lines) & Wireframe modes
@@ -333,6 +334,7 @@ export function createMiningTunnel(): MiningTunnelRig {
   // 2. Heavy Timber Support Arches (Mine Sets spaced every 6 units)
   const timberGroup = new THREE.Group();
   timberGroup.name = 'Timber_Support_Arches';
+  timberGroup.userData.selectionId = 'Timber_Support_Arches';
   const archCount = 9;
   const archSpacing = tunnelLength / (archCount + 1);
 
@@ -394,6 +396,7 @@ export function createMiningTunnel(): MiningTunnelRig {
   // 3. Railway Tracks & Ballast Bed
   const trackGroup = new THREE.Group();
   trackGroup.name = 'Railway_Tracks';
+  trackGroup.userData.selectionId = 'Railway_Tracks';
 
   // Ballast gravel rock bed
   const ballastGeo = new THREE.BoxGeometry(4.2, 0.25, tunnelLength);
@@ -427,6 +430,7 @@ export function createMiningTunnel(): MiningTunnelRig {
   // 4. Mine Cart Loaded with Ore & Crystals
   const mineCart = new THREE.Group();
   mineCart.name = 'Mine_Cart_Ore';
+  mineCart.userData.selectionId = 'Mine_Cart_Ore';
   const wheels: THREE.Mesh[] = [];
 
   // Cart Chassis / Undercarriage
@@ -552,6 +556,7 @@ export function createMiningTunnel(): MiningTunnelRig {
   lanternPositionsZ.forEach((lz, idx) => {
     const lantern = new THREE.Group();
     lantern.name = `Hanging_Work_Lantern_${idx + 1}`;
+    lantern.userData.selectionId = 'Hanging_Work_Lights';
     lantern.position.set(0, 5.2, lz);
 
     // Hanging chain/cable suspended from timber cap
@@ -595,6 +600,7 @@ export function createMiningTunnel(): MiningTunnelRig {
   // 6. Ventilation Pipe along the Upper Wall
   const ventGroup = new THREE.Group();
   ventGroup.name = 'Ventilation_Duct';
+  ventGroup.userData.selectionId = 'Ventilation_Duct';
   const ventRadius = 0.65;
   const ventGeo = new THREE.CylinderGeometry(ventRadius, ventRadius, tunnelLength, 32, 32);
   ventGeo.rotateX(Math.PI / 2);

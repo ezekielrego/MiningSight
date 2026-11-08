@@ -41,6 +41,24 @@ import {
   getDefaultTunnelHotspots,
 } from '../../utils/cameraAnimation';
 
+const flattenSceneObjects = (objects: C4DSceneObject[], result = new Map<string, C4DSceneObject>()) => {
+  objects.forEach((object) => {
+    result.set(object.id, object);
+    if (object.children) flattenSceneObjects(object.children, result);
+  });
+  return result;
+};
+
+const resolveSelectableObjectId = (object: THREE.Object3D, fallback: string | null) => {
+  let current: THREE.Object3D | null = object;
+  while (current) {
+    const selectionId = current.userData?.selectionId;
+    if (typeof selectionId === 'string') return selectionId;
+    current = current.parent;
+  }
+  return fallback;
+};
+
 interface ViewerOverlayProps {
   title: string;
   minimized: boolean;
@@ -77,6 +95,7 @@ interface Viewport3DProps {
   activeTool: ToolMode;
   activeLeftMode?: ToolMode;
   materials: C4DMaterial[];
+  sceneObjects?: C4DSceneObject[];
   isPlaying: boolean;
   currentFrame: number;
   timelineMinFrame?: number;
@@ -124,6 +143,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   activeTool,
   activeLeftMode,
   materials,
+  sceneObjects = [],
   isPlaying,
   currentFrame,
   timelineMinFrame = 0,
@@ -413,25 +433,38 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     if (!miningTunnelRigRef.current || !selectedObject) return;
     const tunnel = miningTunnelRigRef.current.root;
 
-    tunnel.position.set(selectedObject.position.x * 0.01, selectedObject.position.y * 0.01, selectedObject.position.z * 0.01);
-    tunnel.rotation.set(
-      degToRad(selectedObject.rotation.x),
-      degToRad(selectedObject.rotation.y),
-      degToRad(selectedObject.rotation.z)
-    );
-    tunnel.scale.set(selectedObject.scale.x, selectedObject.scale.y, selectedObject.scale.z);
-    tunnel.visible = !activeProjectId && selectedObject.visibleInEditor && !clearView;
+    const rootId = currentPresetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo';
+    // Only the model root owns the scene transform. Selecting a child should
+    // select that part without snapping or transforming the entire tunnel.
+    if (selectedObject.id === rootId) {
+      tunnel.position.set(selectedObject.position.x * 0.01, selectedObject.position.y * 0.01, selectedObject.position.z * 0.01);
+      tunnel.rotation.set(
+        degToRad(selectedObject.rotation.x),
+        degToRad(selectedObject.rotation.y),
+        degToRad(selectedObject.rotation.z)
+      );
+      tunnel.scale.set(selectedObject.scale.x, selectedObject.scale.y, selectedObject.scale.z);
+    }
 
     if (gizmoGroupRef.current) {
       gizmoGroupRef.current.position.copy(tunnel.position);
-      gizmoGroupRef.current.visible = !activeProjectId && selectedObject.visibleInEditor && (activeTool === 'move' || activeTool === 'rotate' || activeTool === 'scale');
+      gizmoGroupRef.current.visible = !activeProjectId && selectedObject.id === rootId && selectedObject.visibleInEditor && (activeTool === 'move' || activeTool === 'rotate' || activeTool === 'scale');
     }
-  }, [selectedObject, activeProjectId, activeTool, clearView]);
+  }, [selectedObject, activeProjectId, activeTool, currentPresetId]);
 
   useEffect(() => {
-    if (miningTunnelRigRef.current) miningTunnelRigRef.current.root.visible = !activeProjectId && !clearView && (selectedObject?.visibleInEditor ?? true);
-    if (gizmoGroupRef.current) gizmoGroupRef.current.visible = !activeProjectId && !clearView && (activeTool === 'move' || activeTool === 'rotate' || activeTool === 'scale');
-  }, [activeProjectId, activeTool, clearView, selectedObject]);
+    const rig = miningTunnelRigRef.current;
+    if (!rig) return;
+    const visibility = flattenSceneObjects(sceneObjects);
+    const rootId = currentPresetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo';
+    rig.root.visible = !activeProjectId && !clearView && (visibility.get(rootId)?.visibleInEditor ?? true);
+
+    rig.root.traverse((node) => {
+      if (node === rig.root) return;
+      const id = node.userData?.selectionId || node.name;
+      if (visibility.has(id)) node.visible = Boolean(visibility.get(id)?.visibleInEditor);
+    });
+  }, [sceneObjects, currentPresetId, activeProjectId, clearView]);
 
   useEffect(() => {
     if (gridHelperRef.current) gridHelperRef.current.visible = showGrid && !clearView;
@@ -1124,7 +1157,14 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     const newRig = createTunnelRigByPreset(currentPresetId, proceduralParams);
     miningTunnelRigRef.current = newRig;
     scene.add(newRig.root);
-    newRig.root.visible = !activeProjectId && !clearView && (selectedObject?.visibleInEditor ?? true);
+    const rootId = currentPresetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo';
+    const visibility = flattenSceneObjects(sceneObjects);
+    newRig.root.visible = !activeProjectId && !clearView && (visibility.get(rootId)?.visibleInEditor ?? true);
+    newRig.root.traverse((node) => {
+      if (node === newRig.root) return;
+      const id = node.userData?.selectionId || node.name;
+      if (visibility.has(id)) node.visible = Boolean(visibility.get(id)?.visibleInEditor);
+    });
     newRig.setDisplayMode(shadingMode);
 
     if (gizmoGroupRef.current) {
@@ -1235,6 +1275,18 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     } else {
       // Any direct pointer navigation takes ownership from a paused tour path.
       manualNavigationRef.current = true;
+      if (e.button === 0 && activeTool === 'live_selection' && !e.shiftKey && interactiveRoot && cameraRef.current) {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        const mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), cameraRef.current);
+        const hit = raycaster.intersectObject(interactiveRoot, true)[0]?.object;
+        onSelectObject(hit ? resolveSelectableObjectId(hit, currentPresetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo') : null);
+        isDraggingRef.current = false;
+        dragModeRef.current = 'none';
+        return;
+      }
       // Orbit owns the normal left-drag gesture. Hold Shift when a Move/Rotate/Scale
       // tool should transform the selected object, so the viewer can never feel stuck
       // just because an object-editing tool was active on load.
@@ -1248,7 +1300,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         if (intersects.length > 0) {
           const hit = intersects[0].object;
           const rootId = currentPresetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo';
-          const hitId = hit.name.includes('Cart') || hit.parent?.name.includes('Cart') ? 'Mine_Cart_Ore' : rootId;
+          const hitId = resolveSelectableObjectId(hit, rootId);
           if (selectedObject.id === hitId) {
             transformDragRef.current = {
               position: { ...selectedObject.position },
@@ -1275,11 +1327,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
           const intersects = raycaster.intersectObject(interactiveRoot, true);
           if (intersects.length > 0) {
             const hit = intersects[0].object;
-            if (hit.name.includes('Cart') || hit.parent?.name.includes('Cart')) {
-              onSelectObject('Mine_Cart_Ore');
-            } else {
-              onSelectObject(currentPresetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo');
-            }
+            onSelectObject(resolveSelectableObjectId(hit, currentPresetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo'));
           }
         }
       }
@@ -1412,7 +1460,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       <canvas
         ref={canvasRef}
         className={`w-full h-full block outline-none ${
-          isGasBrushActive ? 'cursor-cell' : isAnnotationMode ? 'cursor-crosshair' : isRulerActive ? 'cursor-cell' : navMode === 'walk' ? 'cursor-grab active:cursor-grabbing' : 'cursor-grab active:cursor-grabbing'
+          isGasBrushActive ? 'cursor-cell' : isAnnotationMode ? 'cursor-crosshair' : isRulerActive ? 'cursor-cell' : activeTool === 'live_selection' && navMode !== 'walk' ? 'cursor-crosshair' : navMode === 'walk' ? 'cursor-grab active:cursor-grabbing' : 'cursor-grab active:cursor-grabbing'
         }`}
         style={{ touchAction: 'none' }}
         onPointerDown={handlePointerDown}

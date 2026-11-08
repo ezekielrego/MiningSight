@@ -171,6 +171,41 @@ const getBaselineMaterials = (): C4DMaterial[] => [
   },
 ];
 
+const findSceneObjectPath = (objects: C4DSceneObject[], targetId: string, path: C4DSceneObject[] = []): C4DSceneObject[] | null => {
+  for (const object of objects) {
+    const nextPath = [...path, object];
+    if (object.id === targetId) return nextPath;
+    if (object.children) {
+      const found = findSceneObjectPath(object.children, targetId, nextPath);
+      if (found) return found;
+    }
+  }
+  return null;
+};
+
+const setObjectSubtreeVisibility = (object: C4DSceneObject, visible: boolean): C4DSceneObject => ({
+  ...object,
+  visibleInEditor: visible,
+  children: object.children?.map((child) => setObjectSubtreeVisibility(child, visible)),
+});
+
+const isolateSceneObject = (object: C4DSceneObject, targetId: string): C4DSceneObject => {
+  if (object.id === targetId) return setObjectSubtreeVisibility(object, true);
+  const containsTarget = Boolean(object.children?.some((child) => findSceneObjectPath([child], targetId)));
+  if (!containsTarget) return setObjectSubtreeVisibility(object, false);
+  return {
+    ...object,
+    visibleInEditor: true,
+    children: object.children?.map((child) => isolateSceneObject(child, targetId)),
+  };
+};
+
+const restoreSceneVisibility = (object: C4DSceneObject, savedVisibility: Record<string, boolean>): C4DSceneObject => ({
+  ...object,
+  visibleInEditor: savedVisibility[object.id] ?? object.visibleInEditor,
+  children: object.children?.map((child) => restoreSceneVisibility(child, savedVisibility)),
+});
+
 export default function App() {
   const [layout, setLayout] = useState<string>('Startup');
   const [activeUpperTab, setActiveUpperTab] = useState<UpperTabType>('Objects');
@@ -783,24 +818,22 @@ export default function App() {
       setStatusAlert({ type: 'idle', message: 'Select an object before enabling Solo Mode.' });
       return;
     }
-    const selectedRoot = objects.find(
-      (obj) => obj.id === selectedObjectId || obj.children?.some((child) => child.id === selectedObjectId)
-    );
-    if (!selectedRoot) return;
+    const selectedPath = findSceneObjectPath(objects, selectedObjectId);
+    if (!selectedPath) return;
 
     if (!isSoloMode) {
-      soloVisibilityRef.current = Object.fromEntries(objects.map((obj) => [obj.id, obj.visibleInEditor]));
-      setObjects((prev) => prev.map((obj) => ({ ...obj, visibleInEditor: obj.id === selectedRoot.id })));
-      setSelectedObjectId(selectedRoot.id);
+      const allObjects: C4DSceneObject[] = [];
+      const collect = (nodes: C4DSceneObject[]) => nodes.forEach((node) => {
+        allObjects.push(node);
+        if (node.children) collect(node.children);
+      });
+      collect(objects);
+      soloVisibilityRef.current = Object.fromEntries(allObjects.map((object) => [object.id, object.visibleInEditor]));
+      setObjects((prev) => prev.map((object) => isolateSceneObject(object, selectedObjectId)));
       setIsSoloMode(true);
-      setStatusAlert({ type: 'idle', message: `Solo Mode: isolated ${selectedRoot.name}.` });
+      setStatusAlert({ type: 'idle', message: `Solo Mode: isolated ${selectedPath[selectedPath.length - 1].name}.` });
     } else {
-      setObjects((prev) =>
-        prev.map((obj) => ({
-          ...obj,
-          visibleInEditor: soloVisibilityRef.current[obj.id] ?? obj.visibleInEditor,
-        }))
-      );
+      setObjects((prev) => prev.map((object) => restoreSceneVisibility(object, soloVisibilityRef.current)));
       setIsSoloMode(false);
       setStatusAlert({ type: 'idle', message: 'Solo Mode disabled. Restored scene visibility.' });
     }
@@ -1709,6 +1742,7 @@ export default function App() {
             activeTool={activeTool}
             activeLeftMode={activeLeftMode}
             materials={materials}
+            sceneObjects={objects}
             isPlaying={timeline.isPlaying}
             currentFrame={timeline.currentFrame}
             timelineMinFrame={timeline.minFrame}
