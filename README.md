@@ -13,6 +13,48 @@ MiningSight is an interactive surface and subsurface visualisation workstation f
 
 The main interface includes a top-navigation switcher for moving between the connected visualisation experiences. Both interfaces use the same hosted environment while keeping their application routes and provider workflows separate.
 
+## Selected system evidence
+
+The following screenshots are selected from the supplied system evidence package to show the implemented workflows and interface states.
+
+### Authentication and AI survey workflow
+
+![MiningSight Google authentication and private project access](docs/screenshots/01_MiningSight_Login_Authentication.png)
+
+*Google authentication used before accessing private projects and uploads.*
+
+![AI Survey image sequence and distance tags](docs/screenshots/02_AI_Survey_Image_Sequence_Distance_Tags.png)
+
+*AI Survey workspace for loading reference images and recording inter-frame distance tags.*
+
+### Reconstructed model review
+
+![Reconstructed tunnel model loaded in MiningSight](docs/screenshots/04_Reconstructed_Tunnel_Model_Loaded.png)
+
+*A returned reconstructed tunnel model loaded into the 3D workstation.*
+
+![Reconstructed tunnel interior view](docs/screenshots/05_Reconstructed_Tunnel_Interior_View.png)
+
+*Interior inspection view for reviewing the reconstructed mine tunnel.*
+
+### Representation and gas-mapping views
+
+![Reconstruction mesh representation](docs/screenshots/08_Reconstruction_Mesh_View.png)
+
+*Mesh representation used for structural inspection.*
+
+![Reconstruction point-mode representation](docs/screenshots/10_Reconstruction_Point_Mode_View.png)
+
+*Point-mode representation for spatial and survey-style review.*
+
+![Primary gas-mapping view](docs/screenshots/12_Gas_Mapping_Primary_View.png)
+
+*Preferred gas-mapping view showing faint, position-aware marking on the scene.*
+
+![Alternative 3D representation modes](docs/screenshots/13_Alternative_3D_Representation_Modes_Composite.png)
+
+*Composite evidence of the available 3D representation modes.*
+
 ## What the system does
 
 - Loads and presents mine scenes, reference objects, images, and video inside a resizable viewer.
