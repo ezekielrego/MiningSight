@@ -5,7 +5,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { C4DMaterial, C4DSceneObject, TimelineState, ToolMode, Vector3D } from './types/c4d';
-import { createDefaultReconstructionMap, createEmptyReconstructionMap, ReconstructionBrief, ReconstructionMapGeometry, ReconstructionMapPoint, ReconstructionMapSelection, StatusAlert } from './types/aiSurvey';
+import { createDefaultReconstructionMap, createEmptyReconstructionMap, ReconstructionBrief, ReconstructionMapFeature, ReconstructionMapGeometry, ReconstructionMapPoint, ReconstructionMapSelection, StatusAlert } from './types/aiSurvey';
 import { MenuBar } from './components/layout/MenuBar';
 import { MainToolbar } from './components/layout/MainToolbar';
 import { LeftToolPalette } from './components/layout/LeftToolPalette';
@@ -309,6 +309,9 @@ export default function App() {
   const [mapMarkingEnabled, setMapMarkingEnabled] = useState(false);
   const [mapDrawingMode, setMapDrawingMode] = useState(false);
   const [showMap, setShowMap] = useState(false);
+  const [mapHistoryStack, setMapHistoryStack] = useState<ReconstructionMapGeometry[]>([]);
+  const [mapRedoStack, setMapRedoStack] = useState<ReconstructionMapGeometry[]>([]);
+  const mapGeometryRef = useRef<ReconstructionMapGeometry | null>(null);
   const [capturedReferenceImage, setCapturedReferenceImage] = useState<{ dataUrl: string; name: string } | null>(null);
   const [mediaMarkers, setMediaMarkers] = useState<MediaMarker[]>([]);
   const [gasMarks, setGasMarks] = useState<GasMark[]>([]);
@@ -328,6 +331,10 @@ export default function App() {
   const [pendingUploadFiles, setPendingUploadFiles] = useState<File[] | null>(null);
   const [uploadProgress, setUploadProgress] = useState<{ active: boolean; fileName: string; completed: number; total: number; percent: number; status: string; canRetry?: boolean }>({ active: false, fileName: '', completed: 0, total: 0, percent: 0, status: '' });
   const [uploadRetryAction, setUploadRetryAction] = useState<(() => void) | null>(null);
+
+  useEffect(() => {
+    mapGeometryRef.current = reconstructionMapGeometry;
+  }, [reconstructionMapGeometry]);
 
   // Active Scene Preset ('classic_diorama' | 'rugged_timbered_photo' | 'ai_custom')
   const [currentPresetId, setCurrentPresetId] = useState<TunnelPresetId>('rugged_timbered_photo');
@@ -443,6 +450,8 @@ export default function App() {
     setReconstructionMapSelection(null);
     setMapMarkingEnabled(false);
     setMapDrawingMode(false);
+    setMapHistoryStack([]);
+    setMapRedoStack([]);
     setShowMap(false);
     setCapturedReferenceImage(null);
     gasMarksRef.current = [];
@@ -648,6 +657,8 @@ export default function App() {
       setReconstructionMapSelection(project.reconstructionBrief?.mapSelection || null);
       setMapMarkingEnabled(false);
       setMapDrawingMode(false);
+      setMapHistoryStack([]);
+      setMapRedoStack([]);
       setShowMap(false);
       setCapturedReferenceImage(null);
       setMediaMarkers(Array.isArray(project.mediaMarkers) ? project.mediaMarkers : []);
@@ -701,6 +712,8 @@ export default function App() {
       setReconstructionMapSelection(null);
       setMapMarkingEnabled(false);
       setMapDrawingMode(false);
+      setMapHistoryStack([]);
+      setMapRedoStack([]);
       setShowMap(false);
       setCapturedReferenceImage(null);
       setMediaMarkers([]);
@@ -1125,6 +1138,18 @@ export default function App() {
 
   // Undo Handler
   const handleUndo = useCallback(() => {
+    if (showMap) {
+      const previousMap = mapHistoryStack[mapHistoryStack.length - 1];
+      if (!previousMap) {
+        setStatusAlert({ type: 'idle', message: 'Nothing left to undo in the map.', timestamp: new Date().toLocaleTimeString() });
+        return;
+      }
+      setMapHistoryStack((prev) => prev.slice(0, -1));
+      if (reconstructionMapGeometry) setMapRedoStack((prev) => [...prev, reconstructionMapGeometry]);
+      setReconstructionMapGeometry(previousMap);
+      setStatusAlert({ type: 'idle', message: 'Map undo executed.', timestamp: new Date().toLocaleTimeString() });
+      return;
+    }
     if (historyStack.length === 0) {
       setStatusAlert({
         type: 'idle',
@@ -1141,10 +1166,22 @@ export default function App() {
       message: 'Undo executed.',
       timestamp: new Date().toLocaleTimeString(),
     });
-  }, [historyStack, objects]);
+  }, [historyStack, mapHistoryStack, objects, reconstructionMapGeometry, showMap]);
 
   // Redo Handler
   const handleRedo = useCallback(() => {
+    if (showMap) {
+      const nextMap = mapRedoStack[mapRedoStack.length - 1];
+      if (!nextMap) {
+        setStatusAlert({ type: 'idle', message: 'Nothing left to redo in the map.', timestamp: new Date().toLocaleTimeString() });
+        return;
+      }
+      setMapRedoStack((prev) => prev.slice(0, -1));
+      if (reconstructionMapGeometry) setMapHistoryStack((prev) => [...prev, reconstructionMapGeometry]);
+      setReconstructionMapGeometry(nextMap);
+      setStatusAlert({ type: 'idle', message: 'Map redo executed.', timestamp: new Date().toLocaleTimeString() });
+      return;
+    }
     if (redoStack.length === 0) {
       setStatusAlert({
         type: 'idle',
@@ -1161,7 +1198,7 @@ export default function App() {
       message: 'Redo executed.',
       timestamp: new Date().toLocaleTimeString(),
     });
-  }, [redoStack, objects]);
+  }, [mapRedoStack, objects, reconstructionMapGeometry, redoStack, showMap]);
 
   // Keyboard Shortcuts (Standard Cinema 4D keys + F8 Play/Pause)
   useEffect(() => {
@@ -1247,6 +1284,8 @@ export default function App() {
     setReconstructionMapSelection(null);
     setMapMarkingEnabled(false);
     setMapDrawingMode(false);
+    setMapHistoryStack([]);
+    setMapRedoStack([]);
     setShowMap(false);
     setCapturedReferenceImage(null);
     setProjectAssets([]);
@@ -1613,6 +1652,8 @@ export default function App() {
           setReconstructionMapSelection(parsed.reconstructionBrief?.mapSelection || null);
           setMapMarkingEnabled(false);
           setMapDrawingMode(false);
+          setMapHistoryStack([]);
+          setMapRedoStack([]);
           setShowMap(false);
           setCapturedReferenceImage(null);
           if (parsed.tours && Array.isArray(parsed.tours)) {
@@ -1647,6 +1688,8 @@ export default function App() {
   };
 
   const handleMapGeometryChange = useCallback((geometry: ReconstructionMapGeometry | null) => {
+    if (mapGeometryRef.current) setMapHistoryStack((prev) => [...prev.slice(-29), mapGeometryRef.current as ReconstructionMapGeometry]);
+    setMapRedoStack([]);
     setReconstructionMapGeometry(geometry);
   }, []);
 
@@ -1683,6 +1726,12 @@ export default function App() {
       setMapMarkingEnabled(false);
     }
   }, [mapDrawingMode, projectName, reconstructionMapGeometry, reconstructionMapSelection]);
+
+  const handleMapFeaturePicked = useCallback((feature: ReconstructionMapFeature) => {
+    setReconstructionMapSelection({ featureId: feature.id, featureLabel: feature.label });
+    setMapMarkingEnabled(false);
+    setStatusAlert({ type: 'success', message: `Next reconstruction section selected: ${feature.label}.`, details: 'The existing map line is highlighted; no new marker was created.', timestamp: new Date().toLocaleTimeString() });
+  }, []);
 
   // Selected Object lookup (recursive through all child levels)
   const findObjectById = (list: C4DSceneObject[], targetId: string | null): C4DSceneObject | null => {
@@ -1943,6 +1992,7 @@ export default function App() {
             mapMarkingEnabled={mapMarkingEnabled}
             mapDrawingMode={mapDrawingMode}
             onMapPointPicked={handleMapPointPicked}
+            onMapFeaturePicked={handleMapFeaturePicked}
             showMap={showMap}
             onToggleMap={() => setShowMap((current) => !current)}
             onMapGeometryChange={handleMapGeometryChange}

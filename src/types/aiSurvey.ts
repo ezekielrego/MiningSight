@@ -161,6 +161,8 @@ export interface ReconstructionMapGeometry {
 export interface ReconstructionMapSelection {
   start?: { x: number; y: number; label?: string };
   end?: { x: number; y: number; label?: string };
+  featureId?: string;
+  featureLabel?: string;
 }
 
 /** The shared long-drift plan used to orient the built-in MiningSight scenes. */

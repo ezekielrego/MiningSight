@@ -147,6 +147,7 @@ interface Viewport3DProps {
   mapMarkingEnabled?: boolean;
   mapDrawingMode?: boolean;
   onMapPointPicked?: (point: { x: number; y: number }) => void;
+  onMapFeaturePicked?: (feature: import('../../types/aiSurvey').ReconstructionMapFeature) => void;
   showMap?: boolean;
   onToggleMap?: () => void;
   onMapGeometryChange?: (geometry: ReconstructionMapGeometry) => void;
@@ -192,6 +193,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   mapMarkingEnabled = false,
   mapDrawingMode = false,
   onMapPointPicked,
+  onMapFeaturePicked,
   showMap = false,
   onToggleMap,
   onMapGeometryChange,
@@ -1618,6 +1620,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
             mapMarkingEnabled={mapMarkingEnabled}
             onMapMarkingChange={onMapMarkingChange}
             onMapPointPicked={onMapPointPicked}
+            onMapFeaturePicked={onMapFeaturePicked}
             mapSelection={mapSelection}
           />
         </div>
@@ -1806,7 +1809,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
           <button
             onClick={onToggleMap}
             disabled={!mapGeometry}
-            className={`hover:text-white hover:bg-[#484848] px-1.5 py-0.5 rounded-[2px] cursor-pointer flex items-center space-x-1 border border-transparent disabled:cursor-not-allowed disabled:opacity-40 ${showMap ? 'text-[#ffb35d] bg-[#49321e]' : 'text-[#b7d7e9]'}`}
+            className={`px-1.5 py-0.5 cursor-pointer flex items-center space-x-1 border-b-2 transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${showMap ? 'border-[#e88724] text-[#ffb35d] font-bold' : 'border-transparent text-[#b7d7e9] hover:border-[#777] hover:text-white'}`}
             title={showMap ? 'Hide project map' : 'Show project map'}
           >
             <MapIcon className="w-3 h-3" />

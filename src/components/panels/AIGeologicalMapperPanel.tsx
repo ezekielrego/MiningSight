@@ -2087,13 +2087,14 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                   {mapInterpreting ? <span className="inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" />Reading map…</span> : 'Interpret map with Gemini'}
                 </button>
                 <button onClick={() => { onMapDrawingChange?.(false); onMapMarkingChange?.(!mapMarkingEnabled); }} disabled={!mapGeometry || mapInterpreting || mapDrawingMode} className={`rounded border px-2 py-1 font-semibold cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${mapMarkingEnabled && !mapDrawingMode ? 'border-[#55dd88] bg-[#214a31] text-[#a8f2bb]' : 'border-[#555] bg-[#303030] text-[#ddd]'}`}>
-                  {mapMarkingEnabled ? 'Finish start/end picks' : 'Pick start/end in viewer'}
+                  {mapMarkingEnabled ? 'Finish next-section pick' : 'Pick next section'}
                 </button>
                 <button onClick={() => { const next = !mapDrawingMode; onMapDrawingChange?.(next); onMapMarkingChange?.(next); }} disabled={!mapGeometry || mapInterpreting} className={`rounded border px-2 py-1 font-semibold cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${mapDrawingMode ? 'border-[#4ea3e8] bg-[#203b53] text-[#a7d8ff]' : 'border-[#555] bg-[#303030] text-[#ddd]'}`}>
                   {mapDrawingMode ? 'Finish manual drawing' : 'Draw map manually'}
                 </button>
                 {mapSelection?.start && <span className="text-[#8ee8a5]">Start set</span>}
                 {mapSelection?.end && <span className="text-[#ff9d9d]">End set</span>}
+                {mapSelection?.featureLabel && <span className="w-full basis-full truncate text-[#ffb35d]">Next section: {mapSelection.featureLabel}</span>}
               </div>
 
               <div className="flex items-center justify-between gap-2 text-[9px]">
