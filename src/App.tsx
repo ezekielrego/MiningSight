@@ -347,6 +347,7 @@ export default function App() {
     loop: true,
   });
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  const [cameraResetRequest, setCameraResetRequest] = useState(0);
 
   const classifyAsset = (file: File): ProjectAsset['kind'] => {
     if (file.type.startsWith('video/') || /\.(mp4|webm|mov|m4v|ogg)$/i.test(file.name)) return 'video';
@@ -1092,6 +1093,46 @@ export default function App() {
     handleUpdateTour({ ...activeTour, keyframes: nextKfs });
   };
 
+  // Undo Handler
+  const handleUndo = useCallback(() => {
+    if (historyStack.length === 0) {
+      setStatusAlert({
+        type: 'idle',
+        message: 'Nothing left to undo.',
+      });
+      return;
+    }
+    const previous = historyStack[historyStack.length - 1];
+    setRedoStack((prev) => [...prev, JSON.parse(JSON.stringify(objects))]);
+    setHistoryStack((prev) => prev.slice(0, prev.length - 1));
+    setObjects(previous);
+    setStatusAlert({
+      type: 'idle',
+      message: 'Undo executed.',
+      timestamp: new Date().toLocaleTimeString(),
+    });
+  }, [historyStack, objects]);
+
+  // Redo Handler
+  const handleRedo = useCallback(() => {
+    if (redoStack.length === 0) {
+      setStatusAlert({
+        type: 'idle',
+        message: 'Nothing left to redo.',
+      });
+      return;
+    }
+    const next = redoStack[redoStack.length - 1];
+    setHistoryStack((prev) => [...prev, JSON.parse(JSON.stringify(objects))]);
+    setRedoStack((prev) => prev.slice(0, prev.length - 1));
+    setObjects(next);
+    setStatusAlert({
+      type: 'idle',
+      message: 'Redo executed.',
+      timestamp: new Date().toLocaleTimeString(),
+    });
+  }, [redoStack, objects]);
+
   // Keyboard Shortcuts (Standard Cinema 4D keys + F8 Play/Pause)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1106,6 +1147,12 @@ export default function App() {
       } else if (e.code === 'Space' || e.key === 'F8' || e.code === 'F8') {
         e.preventDefault();
         setTimeline((prev) => ({ ...prev, isPlaying: !prev.isPlaying }));
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        handleUndo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        handleRedo();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
         e.preventDefault();
         setShowNewProjectDialog(true);
@@ -1139,7 +1186,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [handleRedo, handleUndo, openHelpGuide]);
 
   // Record undo state before modification
   const pushUndoState = () => {
@@ -1147,59 +1194,58 @@ export default function App() {
     setRedoStack([]);
   };
 
-  // Undo Handler
-  const handleUndo = useCallback(() => {
-    if (historyStack.length === 0) {
-      setStatusAlert({
-        type: 'idle',
-        message: 'Nothing left to undo.',
-      });
-      return;
-    }
-    const previous = historyStack[historyStack.length - 1];
-    setRedoStack((prev) => [...prev, JSON.parse(JSON.stringify(objects))]);
-    setHistoryStack((prev) => prev.slice(0, prev.length - 1));
-    setObjects(previous);
-    setStatusAlert({
-      type: 'idle',
-      message: 'Undo executed.',
-    });
-  }, [historyStack, objects]);
-
-  // Redo Handler
-  const handleRedo = useCallback(() => {
-    if (redoStack.length === 0) {
-      setStatusAlert({
-        type: 'idle',
-        message: 'Nothing left to redo.',
-      });
-      return;
-    }
-    const next = redoStack[redoStack.length - 1];
-    setHistoryStack((prev) => [...prev, JSON.parse(JSON.stringify(objects))]);
-    setRedoStack((prev) => prev.slice(0, prev.length - 1));
-    setObjects(next);
-    setStatusAlert({
-      type: 'idle',
-      message: 'Redo executed.',
-    });
-  }, [redoStack, objects]);
-
   // Revert Project Baseline (Working Revert Arrow ↺)
   const handleRevertProject = useCallback(() => {
     pushUndoState();
     setObjects(getCombinedSceneObjects('rugged_timbered_photo'));
     setMaterials(getAllCombinedMaterials());
     setCurrentPresetId('rugged_timbered_photo');
+    setProceduralParams(TUNNEL_PRESETS.rugged_timbered_photo.defaultParams);
     setSelectedObjectId('Rugged_Timbered_Mine_Tunnel_Photo');
     setSelectedMaterialId('mat_photo_rock');
     setTimeline((prev) => ({ ...prev, currentFrame: 0, isPlaying: false }));
+    setPlaybackSpeed(1);
+    setIsSoloMode(false);
+    soloVisibilityRef.current = {};
+    // Returning to the local baseline must also leave any loaded server asset
+    // view. The server project and its files remain stored; only the current
+    // viewer selection is cleared.
+    setActiveProjectId(null);
+    setActiveAssetId(null);
+    setProjectAssets([]);
+    setMediaMarkers([]);
+    gasMarksRef.current = [];
+    setGasMarks([]);
+    setCameraResetRequest((value) => value + 1);
     setStatusAlert({
       type: 'success',
-      message: 'Mining Site project reverted to default surface & subsurface baseline.',
-      details: 'Restored both 3D models: Rugged Timbered Drift (Photo Reference) and Classic Diorama Tunnel.',
+      message: 'Viewer reverted to the default MiningSight baseline.',
+      details: 'Restored the built-in models, camera, timeline, selection, and local viewer state. Server projects and uploaded files were not deleted.',
+      timestamp: new Date().toLocaleTimeString(),
     });
   }, [objects]);
+
+  const handleResetView = useCallback(() => {
+    setCameraResetRequest((value) => value + 1);
+    setStatusAlert({
+      type: 'success',
+      message: 'Camera reset to the default orbit view.',
+      details: 'Playback was stopped and the viewer returned to the Startup camera position.',
+      timestamp: new Date().toLocaleTimeString(),
+    });
+  }, []);
+
+  const handleResetLayout = useCallback(() => {
+    setLayout('Startup');
+    setActiveUpperTab('Objects');
+    setCameraResetRequest((value) => value + 1);
+    setStatusAlert({
+      type: 'success',
+      message: 'Workspace layout reset to Startup.',
+      details: 'Restored the Objects panel and default camera view.',
+      timestamp: new Date().toLocaleTimeString(),
+    });
+  }, []);
 
   // Object Selection Handler with Auto-Scene Activation
   const handleSelectObject = useCallback((id: string | null) => {
@@ -1625,9 +1671,10 @@ export default function App() {
         currentLayout={layout}
         onSelectLayout={handleSelectLayout}
         onNewObject={handleAddObject}
-        onResetView={() =>
-          setStatusAlert({ type: 'idle', message: 'Layout reset to Startup default.' })
-        }
+        onResetView={handleResetView}
+        onResetLayout={handleResetLayout}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
         onSaveProject={handleSaveProject}
         onOpenProject={handleOpenProjectClick}
         onNewProject={() => {
@@ -1743,6 +1790,7 @@ export default function App() {
             activeLeftMode={activeLeftMode}
             materials={materials}
             sceneObjects={objects}
+            cameraResetRequest={cameraResetRequest}
             isPlaying={timeline.isPlaying}
             currentFrame={timeline.currentFrame}
             timelineMinFrame={timeline.minFrame}

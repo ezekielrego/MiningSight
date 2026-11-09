@@ -128,6 +128,7 @@ interface Viewport3DProps {
   onJumpToSurveyTab?: () => void;
   currentPresetId?: TunnelPresetId;
   activeProjectId?: string | null;
+  cameraResetRequest?: number;
   onSelectPreset?: (presetId: TunnelPresetId) => void;
   proceduralParams?: ProceduralTunnelParams;
   onUpdateProceduralParams?: (params: ProceduralTunnelParams) => void;
@@ -161,6 +162,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   onJumpToSurveyTab,
   currentPresetId = 'rugged_timbered_photo',
   activeProjectId = null,
+  cameraResetRequest = 0,
   onSelectPreset,
   proceduralParams = TUNNEL_PRESETS.rugged_timbered_photo.defaultParams,
   onUpdateProceduralParams,
@@ -352,6 +354,11 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     sphericalRef.current.set(radius, phi, theta);
     targetRef.current.set(target.x, target.y, target.z);
   }, [onSetPlayback]);
+
+  useEffect(() => {
+    if (!cameraResetRequest) return;
+    setOrbitView(33, 1.18, 0.44, { x: -0.5, y: 3.0, z: 0 });
+  }, [cameraResetRequest, setOrbitView]);
 
   const focusSelectedObject = useCallback(() => {
     const root = externalModelGroupRef.current || (!activeProjectId ? miningTunnelRigRef.current?.root : null);

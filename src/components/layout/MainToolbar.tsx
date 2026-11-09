@@ -48,7 +48,7 @@ export const MainToolbar: React.FC<MainToolbarProps> = ({
   }, []);
 
   return (
-    <div className="w-full h-[40px] bg-[#3a3a3a] border-b border-[#232323] flex items-center px-1.5 space-x-1 select-none overflow-x-auto text-[#dfdfdf] z-20">
+    <div className="w-full h-[40px] bg-[#3a3a3a] border-b border-[#232323] flex items-center px-1.5 space-x-1 select-none overflow-x-auto text-[#dfdfdf] z-[90]">
       {/* Group A: Undo, Redo & Revert Project */}
       <div className="flex items-center space-x-0.5 bg-[#313131] p-0.5 rounded-[2px] border border-[#222]">
         <button

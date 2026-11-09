@@ -6,6 +6,9 @@ interface MenuBarProps {
   onSelectLayout: (layout: string) => void;
   onNewObject?: (type: string) => void;
   onResetView?: () => void;
+  onResetLayout?: () => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
   onSaveProject?: () => void;
   onOpenProject?: () => void;
   onNewProject?: () => void;
@@ -29,6 +32,9 @@ export const MenuBar: React.FC<MenuBarProps> = ({
   onSelectLayout,
   onNewObject,
   onResetView,
+  onResetLayout,
+  onUndo,
+  onRedo,
   onSaveProject,
   onOpenProject,
   onNewProject,
@@ -89,8 +95,8 @@ export const MenuBar: React.FC<MenuBarProps> = ({
     {
       name: 'Edit',
       items: [
-        { label: 'Undo', shortcut: 'Ctrl+Z' },
-        { label: 'Redo', shortcut: 'Ctrl+Y' },
+        { label: 'Undo', shortcut: 'Ctrl+Z', action: onUndo },
+        { label: 'Redo', shortcut: 'Ctrl+Y', action: onRedo },
         { divider: true, label: '' },
         { label: 'Select All Objects', shortcut: 'Ctrl+A' },
         { label: 'Deselect All', shortcut: 'Ctrl+Shift+A' },
@@ -182,16 +188,16 @@ export const MenuBar: React.FC<MenuBarProps> = ({
     {
       name: 'Window',
       items: [
-        { label: 'Objects Manager (Hierarchy)', action: onResetView },
-        { label: 'Attribute Manager', action: onResetView },
-        { label: 'Material Manager', action: onResetView },
-        { label: 'Coordinate Manager', action: onResetView },
+        { label: 'Objects Manager (Hierarchy)', action: onResetLayout },
+        { label: 'Attribute Manager', action: onResetLayout },
+        { label: 'Material Manager', action: onResetLayout },
+        { label: 'Coordinate Manager', action: onResetLayout },
         { divider: true, label: '' },
         { label: 'Camera Tours & Keyframe Path Manager', shortcut: 'F8', action: onOpenTours },
         { label: 'AI Geological Mapper Panel', action: onOpenAISurvey },
-        { label: 'Timeline Workspace Bar', action: onResetView },
+        { label: 'Timeline Workspace Bar', action: onResetLayout },
         { divider: true, label: '' },
-        { label: 'Reset Layout to Default', action: onResetView },
+        { label: 'Reset Layout to Default', action: onResetLayout },
       ],
     },
     {
@@ -216,7 +222,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
   ];
 
   return (
-    <div data-onboarding-target="top-navigation" className="relative w-full h-[22px] bg-[#323232] border-b border-[#1e1e1e] flex items-center justify-between px-1.5 text-[11px] text-[#cfcfcf] select-none font-sans z-30">
+    <div data-onboarding-target="top-navigation" className="relative w-full h-[22px] bg-[#323232] border-b border-[#1e1e1e] flex items-center justify-between px-1.5 text-[11px] text-[#cfcfcf] select-none font-sans z-[100]">
       {/* Horizontal Menu Items */}
       <div className="flex items-center space-x-0.5 overflow-visible whitespace-nowrap">
         {menuItems.map((menu) => (
@@ -244,7 +250,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
                   className="fixed inset-0 z-40"
                   onClick={() => setActiveMenu(null)}
                 />
-                <div className="absolute top-[21px] left-0 min-w-[270px] bg-[#2e2e2e] border border-[#444] shadow-2xl py-1 z-50 rounded-[1px] text-[#e0e0e0]">
+                <div className="absolute top-[21px] left-0 min-w-[270px] bg-[#2e2e2e] border border-[#444] shadow-2xl py-1 z-[110] rounded-[1px] text-[#e0e0e0]">
                   {menu.items.map((item, idx) => {
                     if (item.divider) {
                       return <div key={idx} className="border-t border-[#3e3e3e] my-1" />;

@@ -203,7 +203,7 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
       {/* 3. Right Management Column: Object Manager, Camera Tours & Attribute Manager */}
       <div
         data-onboarding-target="right-panel"
-        className="h-full flex overflow-hidden flex-shrink-0 transition-all duration-150"
+        className="relative z-[70] h-full flex overflow-hidden flex-shrink-0 transition-all duration-150"
         style={{ width: isRightCollapsed ? '28px' : `${currentRightWidth}%` }}
       >
         {!isRightCollapsed ? (
