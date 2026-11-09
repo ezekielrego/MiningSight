@@ -109,6 +109,33 @@ export interface ReconstructionMapSegment {
   label?: string;
   color?: string;
   width?: number;
+  widthMeters?: number;
+}
+
+export type ReconstructionMapLayerId = 'excavations' | 'geology' | 'ventilation' | 'utilities' | 'annotations' | 'survey';
+
+export interface ReconstructionMapLayer {
+  id: ReconstructionMapLayerId;
+  name: string;
+  visible: boolean;
+  editable: boolean;
+  color: string;
+}
+
+export interface ReconstructionMapFeature {
+  id: string;
+  type: 'tunnel' | 'decline' | 'drive' | 'crosscut' | 'shaft' | 'raise' | 'winze' | 'junction' | 'ore-body' | 'fault' | 'stope' | 'mined-out' | 'rock-fill' | 'boundary' | 'utility' | 'annotation';
+  layer: ReconstructionMapLayerId;
+  label: string;
+  points: Array<{ x: number; y: number }>;
+  closed?: boolean;
+  widthMeters?: number;
+  hatch?: 'diagonal' | 'cross' | 'dots' | 'none';
+  stroke?: string;
+  fill?: string;
+  opacity?: number;
+  lineStyle?: 'solid' | 'dashed' | 'dotted';
+  metadata?: Record<string, string | number | boolean>;
 }
 
 export interface ReconstructionMapGeometry {
@@ -116,6 +143,18 @@ export interface ReconstructionMapGeometry {
   source: 'gemini' | 'manual' | 'text-fallback';
   points: ReconstructionMapPoint[];
   segments: ReconstructionMapSegment[];
+  features?: ReconstructionMapFeature[];
+  layers?: ReconstructionMapLayer[];
+  metadata?: {
+    title?: string;
+    level?: string;
+    datum?: string;
+    scale?: string;
+    date?: string;
+    revision?: string;
+    coordinateSystem?: string;
+  };
+  accuracy?: 'illustrative' | 'calibrated' | 'surveyed';
   assumptions?: string[];
 }
 
@@ -125,48 +164,76 @@ export interface ReconstructionMapSelection {
 }
 
 /** The shared long-drift plan used to orient the built-in MiningSight scenes. */
+const webaLayers: ReconstructionMapLayer[] = [
+  { id: 'excavations', name: 'Excavations', visible: true, editable: true, color: '#374151' },
+  { id: 'geology', name: 'Geology & stopes', visible: true, editable: true, color: '#dc2626' },
+  { id: 'ventilation', name: 'Ventilation', visible: true, editable: true, color: '#2563eb' },
+  { id: 'utilities', name: 'Utilities', visible: true, editable: true, color: '#eab308' },
+  { id: 'annotations', name: 'Annotations & hazards', visible: true, editable: true, color: '#ef4444' },
+  { id: 'survey', name: 'Survey measurements', visible: true, editable: true, color: '#16a34a' },
+];
+
 export const createDefaultReconstructionMap = (): ReconstructionMapGeometry => ({
-  name: 'MiningSight Main Drift Network',
+  name: 'WEBA Mine Underground Plan · 210 mL',
   source: 'manual',
+  accuracy: 'illustrative',
+  metadata: { title: 'WEBA MINE — UNDERGROUND PLAN', level: '210 mL', datum: 'Mine Grid (Local)', scale: '1 : 2 000', date: '06 Nov 2026', revision: 'A', coordinateSystem: 'Local mine grid; normalize before survey use' },
+  layers: webaLayers.map((layer) => ({ ...layer })),
   points: [
-    { id: 'main_start', label: 'Portal / current start', x: 0.06, y: 0.78, kind: 'start' },
-    { id: 'main_01', label: 'Station 01 · 12 m', x: 0.16, y: 0.72, kind: 'station' },
-    { id: 'main_02', label: 'Station 02 · 27 m', x: 0.25, y: 0.66, kind: 'station' },
-    { id: 'main_03', label: 'Bend A · 41 m', x: 0.35, y: 0.68, kind: 'feature' },
-    { id: 'main_04', label: 'Station 04 · 56 m', x: 0.44, y: 0.58, kind: 'station' },
-    { id: 'main_05', label: 'Timber set zone · 70 m', x: 0.54, y: 0.55, kind: 'feature' },
-    { id: 'main_06', label: 'Station 06 · 85 m', x: 0.63, y: 0.47, kind: 'station' },
-    { id: 'main_07', label: 'Bend B · 101 m', x: 0.72, y: 0.39, kind: 'feature' },
-    { id: 'main_end', label: 'Current heading / next part', x: 0.92, y: 0.30, kind: 'end' },
-    { id: 'branch_west', label: 'West branch junction', x: 0.44, y: 0.58, kind: 'feature' },
-    { id: 'branch_west_end', label: 'West branch face', x: 0.39, y: 0.28, kind: 'end' },
-    { id: 'branch_west_station', label: 'West branch station', x: 0.54, y: 0.20, kind: 'station' },
-    { id: 'branch_east', label: 'East branch junction', x: 0.72, y: 0.39, kind: 'feature' },
-    { id: 'branch_east_station', label: 'East branch station', x: 0.82, y: 0.58, kind: 'station' },
-    { id: 'branch_east_end', label: 'East branch face', x: 0.94, y: 0.70, kind: 'end' },
+    { id: 'surface', label: 'Main decline to surface', x: 0.28, y: 0.08, kind: 'start' },
+    { id: 'decline_mid', label: 'Decline station', x: 0.39, y: 0.28, kind: 'station' },
+    { id: 'decline_low', label: 'Crosscut access', x: 0.49, y: 0.46, kind: 'station' },
+    { id: 'central_junction', label: 'Ventilation / gas monitoring junction', x: 0.57, y: 0.58, kind: 'feature' },
+    { id: 'service_junction', label: 'Service drive junction', x: 0.67, y: 0.57, kind: 'feature' },
+    { id: 'stope_access', label: 'Stope access S1', x: 0.69, y: 0.66, kind: 'feature' },
+    { id: 'footwall', label: 'Footwall drive / next part', x: 0.86, y: 0.78, kind: 'end' },
+    { id: 'haulage_start', label: 'Haulage drive', x: 0.35, y: 0.80, kind: 'station' },
+    { id: 'haulage_junction', label: 'Loading bay connection', x: 0.49, y: 0.66, kind: 'feature' },
+    { id: 'raise_base', label: 'Raise base', x: 0.69, y: 0.48, kind: 'feature' },
+    { id: 'raise_top', label: 'Raise to 195 mL', x: 0.70, y: 0.27, kind: 'end' },
+    { id: 'west_branch', label: 'West branch face', x: 0.62, y: 0.69, kind: 'end' },
+    { id: 'east_branch', label: 'East branch face', x: 0.82, y: 0.59, kind: 'end' },
+    { id: 'ore_pass', label: 'Ore pass Ø 2.0 m', x: 0.61, y: 0.72, kind: 'feature' },
+    { id: 'sump', label: 'Sump', x: 0.60, y: 0.79, kind: 'feature' },
+    { id: 'pump', label: 'Pump station', x: 0.70, y: 0.79, kind: 'feature' },
   ],
   segments: [
-    { id: 'main_seg_01', from: 'main_start', to: 'main_01', label: 'Main drift', color: '#e88724', width: 9 },
-    { id: 'main_seg_02', from: 'main_01', to: 'main_02', label: 'Main drift', color: '#e88724', width: 8 },
-    { id: 'main_seg_03', from: 'main_02', to: 'main_03', label: 'Main drift bend', color: '#f0a24a', width: 7 },
-    { id: 'main_seg_04', from: 'main_03', to: 'main_04', label: 'Main drift', color: '#e88724', width: 8 },
-    { id: 'main_seg_05', from: 'main_04', to: 'main_05', label: 'Timbered continuation', color: '#55dd88', width: 11 },
-    { id: 'main_seg_06', from: 'main_05', to: 'main_06', label: 'Main drift', color: '#e88724', width: 8 },
-    { id: 'main_seg_07', from: 'main_06', to: 'main_07', label: 'Main drift bend', color: '#f0a24a', width: 7 },
-    { id: 'main_seg_08', from: 'main_07', to: 'main_end', label: 'Heading / next generation zone', color: '#ff6b6b', width: 12 },
-    { id: 'west_seg_01', from: 'branch_west', to: 'branch_west_end', label: 'West branch', color: '#4ea3e8', width: 5 },
-    { id: 'west_seg_02', from: 'branch_west_end', to: 'branch_west_station', label: 'West branch extension', color: '#4ea3e8', width: 4 },
-    { id: 'east_seg_01', from: 'branch_east', to: 'branch_east_station', label: 'East branch', color: '#b98cff', width: 5 },
-    { id: 'east_seg_02', from: 'branch_east_station', to: 'branch_east_end', label: 'East branch face', color: '#b98cff', width: 4 },
+    { id: 'main_seg_01', from: 'surface', to: 'decline_mid', label: 'Main decline 1:7', color: '#374151', width: 9, widthMeters: 4.5 },
+    { id: 'main_seg_02', from: 'decline_mid', to: 'decline_low', label: 'Main decline', color: '#374151', width: 8, widthMeters: 4.5 },
+    { id: 'main_seg_03', from: 'decline_low', to: 'central_junction', label: 'Development drive', color: '#374151', width: 8, widthMeters: 4.5 },
+    { id: 'main_seg_04', from: 'central_junction', to: 'service_junction', label: 'Main level drive', color: '#374151', width: 10, widthMeters: 5.0 },
+    { id: 'main_seg_05', from: 'service_junction', to: 'stope_access', label: 'Stope access', color: '#374151', width: 7, widthMeters: 4.0 },
+    { id: 'main_seg_06', from: 'stope_access', to: 'footwall', label: 'Footwall drive', color: '#374151', width: 9, widthMeters: 4.5 },
+    { id: 'haulage_seg', from: 'haulage_start', to: 'haulage_junction', label: 'Haulage drive to loading bay', color: '#374151', width: 8, widthMeters: 4.5 },
+    { id: 'raise_seg', from: 'raise_base', to: 'raise_top', label: 'Raise to 195 mL', color: '#374151', width: 5, widthMeters: 3.0 },
+    { id: 'west_seg', from: 'stope_access', to: 'west_branch', label: 'West crosscut', color: '#374151', width: 5, widthMeters: 3.5 },
+    { id: 'east_seg', from: 'service_junction', to: 'east_branch', label: 'East service drive', color: '#374151', width: 5, widthMeters: 3.5 },
   ],
-  assumptions: ['Shared orientation map for the built-in rugged and classic demonstration scenes.', 'Station distances are illustrative and should be replaced by project survey data.'],
+  features: [
+    { id: 'feature_main_decline', type: 'decline', layer: 'excavations', label: 'Main Decline (1:7) to Surface', points: [{ x: 0.28, y: 0.08 }, { x: 0.39, y: 0.28 }, { x: 0.49, y: 0.46 }, { x: 0.57, y: 0.58 }], widthMeters: 4.5, stroke: '#111827', lineStyle: 'solid' },
+    { id: 'feature_main_level', type: 'drive', layer: 'excavations', label: 'Main development drive', points: [{ x: 0.57, y: 0.58 }, { x: 0.67, y: 0.57 }, { x: 0.69, y: 0.66 }, { x: 0.86, y: 0.78 }], widthMeters: 4.5, stroke: '#111827', lineStyle: 'solid' },
+    { id: 'feature_haulage', type: 'drive', layer: 'excavations', label: 'Haulage drive to loading bay', points: [{ x: 0.35, y: 0.80 }, { x: 0.42, y: 0.72 }, { x: 0.49, y: 0.66 }], widthMeters: 4.5, stroke: '#111827', lineStyle: 'solid' },
+    { id: 'feature_crosscuts', type: 'crosscut', layer: 'excavations', label: 'Crosscuts and service drives', points: [{ x: 0.49, y: 0.66 }, { x: 0.57, y: 0.66 }, { x: 0.69, y: 0.66 }, { x: 0.82, y: 0.59 }], widthMeters: 3.5, stroke: '#111827', lineStyle: 'solid' },
+    { id: 'feature_raise', type: 'raise', layer: 'excavations', label: 'Raise to 195 mL (ventilation)', points: [{ x: 0.69, y: 0.48 }, { x: 0.70, y: 0.39 }, { x: 0.70, y: 0.27 }], widthMeters: 3.0, stroke: '#111827', lineStyle: 'dashed' },
+    { id: 'feature_stope', type: 'stope', layer: 'geology', label: 'Stope S2 mined-out', points: [{ x: 0.74, y: 0.62 }, { x: 0.82, y: 0.53 }, { x: 0.91, y: 0.50 }, { x: 0.86, y: 0.74 }, { x: 0.76, y: 0.78 }], closed: true, hatch: 'diagonal', stroke: '#dc2626', fill: '#fecaca', opacity: 0.58 },
+    { id: 'feature_ore', type: 'ore-body', layer: 'geology', label: 'Ore Zone (Quartz–Sulphide)', points: [{ x: 0.86, y: 0.52 }, { x: 0.95, y: 0.48 }, { x: 0.98, y: 0.70 }, { x: 0.88, y: 0.81 }, { x: 0.84, y: 0.67 }], closed: true, hatch: 'dots', stroke: '#92400e', fill: '#fde68a', opacity: 0.46 },
+    { id: 'feature_ventilation', type: 'utility', layer: 'ventilation', label: 'Fresh-air ventilation route', points: [{ x: 0.49, y: 0.46 }, { x: 0.57, y: 0.58 }, { x: 0.67, y: 0.57 }, { x: 0.70, y: 0.39 }], stroke: '#2563eb', lineStyle: 'dashed' },
+    { id: 'feature_return_air', type: 'utility', layer: 'ventilation', label: 'Return-air route', points: [{ x: 0.67, y: 0.57 }, { x: 0.76, y: 0.57 }, { x: 0.86, y: 0.64 }], stroke: '#dc2626', lineStyle: 'dashed' },
+    { id: 'feature_power', type: 'utility', layer: 'utilities', label: 'Electrical cable route', points: [{ x: 0.57, y: 0.61 }, { x: 0.69, y: 0.66 }, { x: 0.70, y: 0.79 }], stroke: '#eab308', lineStyle: 'solid' },
+    { id: 'feature_water', type: 'utility', layer: 'utilities', label: 'Water pipeline', points: [{ x: 0.57, y: 0.64 }, { x: 0.70, y: 0.72 }, { x: 0.70, y: 0.79 }], stroke: '#2563eb', lineStyle: 'solid' },
+    { id: 'feature_hazard', type: 'annotation', layer: 'annotations', label: 'Hazard / restricted area', points: [{ x: 0.65, y: 0.67 }], stroke: '#ef4444', fill: '#facc15', closed: true },
+  ],
+  assumptions: ['Initial editable demonstration geometry traced conceptually from Weba Mine Underground Plan.png.', 'Coordinates, lengths, widths, scale, and station positions are illustrative until calibrated against genuine survey data.'],
 });
 
 export const createEmptyReconstructionMap = (name = 'New project map'): ReconstructionMapGeometry => ({
   name,
   source: 'manual',
+  accuracy: 'illustrative',
+  layers: webaLayers.map((layer) => ({ ...layer })),
   points: [],
   segments: [],
+  features: [],
   assumptions: ['Empty project map. Add a map file, describe the route, or draw the route manually in the viewer.'],
 });
 

@@ -1611,6 +1611,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
             <rect x="0" y="0" width="1" height="1" fill="#202629" />
             {!mapGeometry.points.length && <text x="0.5" y="0.48" textAnchor="middle" fill="#a9a9a9" fontSize="0.045">EMPTY PROJECT MAP</text>}
             {!mapGeometry.points.length && <text x="0.5" y="0.56" textAnchor="middle" fill="#777" fontSize="0.028">Use Draw map manually or attach a reference</text>}
+            {mapGeometry.features?.map((feature) => feature.closed ? <polygon key={feature.id} points={feature.points.map((point) => `${point.x},${point.y}`).join(' ')} fill={feature.fill || '#dc2626'} fillOpacity={feature.opacity || 0.35} stroke={feature.stroke || '#374151'} strokeWidth={feature.widthMeters ? Math.max(0.006, Math.min(0.04, feature.widthMeters / 180)) : 0.008} strokeLinejoin="round" /> : <polyline key={feature.id} points={feature.points.map((point) => `${point.x},${point.y}`).join(' ')} fill="none" stroke={feature.stroke || '#374151'} strokeWidth={feature.widthMeters ? Math.max(0.006, Math.min(0.04, feature.widthMeters / 180)) : 0.008} strokeDasharray={feature.lineStyle === 'dashed' ? '0.025 0.015' : undefined} strokeLinejoin="round" />)}
             {mapGeometry.segments.map((segment) => {
               const from = mapGeometry.points.find((point) => point.id === segment.from);
               const to = mapGeometry.points.find((point) => point.id === segment.to);

@@ -883,8 +883,19 @@ app.post('/api/ai/reconstruction-map', async (req, res) => {
     const fallbackGeometry = {
       name: mapName,
       source: mapText ? 'text-fallback' : 'manual',
+      accuracy: 'illustrative',
+      metadata: { title: mapName, scale: 'Not calibrated', coordinateSystem: 'Normalized image coordinates' },
+      layers: [
+        { id: 'excavations', name: 'Excavations', visible: true, editable: true, color: '#374151' },
+        { id: 'geology', name: 'Geology & stopes', visible: true, editable: true, color: '#dc2626' },
+        { id: 'ventilation', name: 'Ventilation', visible: true, editable: true, color: '#2563eb' },
+        { id: 'utilities', name: 'Utilities', visible: true, editable: true, color: '#eab308' },
+        { id: 'annotations', name: 'Annotations & hazards', visible: true, editable: true, color: '#ef4444' },
+        { id: 'survey', name: 'Survey measurements', visible: true, editable: true, color: '#16a34a' },
+      ],
       points: fallbackPoints,
       segments: [{ id: 'map_segment_1', from: 'map_start', to: 'map_end', label: 'Reference alignment', color: '#e88724', width: 4 }],
+      features: [],
       assumptions: ['No station coordinates were confidently extracted; place the start and end anchors manually on the overlay.'],
     };
     try {
@@ -903,11 +914,15 @@ ${mapText || '(The attached image is the primary source.)'}
 Return only JSON in this exact shape:
 {
   "name": "string",
+  "accuracy": "illustrative|calibrated|surveyed",
+  "metadata": {"title":"string","level":"string","datum":"string","scale":"string","date":"string","revision":"string","coordinateSystem":"string"},
+  "layers": [{"id":"excavations|geology|ventilation|utilities|annotations|survey","name":"string","visible":true,"editable":true,"color":"#hex"}],
   "points": [{"id":"string","label":"string","x":0.0,"y":0.0,"kind":"station|start|end|feature"}],
   "segments": [{"id":"string","from":"point id","to":"point id","label":"string","color":"#hex","width":number}],
+  "features": [{"id":"string","type":"tunnel|decline|drive|crosscut|shaft|raise|winze|junction|ore-body|fault|stope|mined-out|rock-fill|boundary|utility|annotation","layer":"excavations|geology|ventilation|utilities|annotations|survey","label":"string","points":[{"x":0.0,"y":0.0}],"closed":false,"widthMeters":4.5,"hatch":"diagonal|cross|dots|none","stroke":"#hex","fill":"#hex","opacity":0.5,"lineStyle":"solid|dashed|dotted"}],
   "assumptions": ["string"]
 }
-Keep coordinates between 0 and 1, create at least a start and end point, and connect ordered route segments.` });
+Keep coordinates between 0 and 1, create at least a start and end point, connect ordered route segments, and keep every geometry element editable. Set accuracy to illustrative unless the source contains a real survey calibration.` });
       const response: any = await ai.models.generateContent({
         model: settings?.geminiModel || defaultGeminiModel,
         contents: { parts: contentParts },
@@ -930,7 +945,25 @@ Keep coordinates between 0 and 1, create at least a start and end point, and con
         color: /^#[0-9a-f]{6}$/i.test(String(segment.color || '')) ? segment.color : '#e88724',
         width: Math.max(1, Math.min(12, Number(segment.width) || 4)),
       })) : [];
-      return res.json({ success: true, source: settings?.geminiModel || defaultGeminiModel, mapGeometry: { name: String(parsed.name || mapName), source: 'gemini', points, segments: segments.length ? segments : fallbackGeometry.segments, assumptions: Array.isArray(parsed.assumptions) ? parsed.assumptions.map(String).slice(0, 20) : [] } });
+      const layerIds = new Set(['excavations', 'geology', 'ventilation', 'utilities', 'annotations', 'survey']);
+      const featureTypes = new Set(['tunnel', 'decline', 'drive', 'crosscut', 'shaft', 'raise', 'winze', 'junction', 'ore-body', 'fault', 'stope', 'mined-out', 'rock-fill', 'boundary', 'utility', 'annotation']);
+      const features = Array.isArray(parsed.features) ? parsed.features.slice(0, 300).map((feature: any, index: number) => ({
+        id: String(feature.id || `map_feature_${index + 1}`),
+        type: featureTypes.has(feature.type) ? feature.type : 'drive',
+        layer: layerIds.has(feature.layer) ? feature.layer : 'excavations',
+        label: String(feature.label || `Map feature ${index + 1}`),
+        points: Array.isArray(feature.points) ? feature.points.slice(0, 300).map((point: any) => ({ x: Math.max(0, Math.min(1, Number(point.x) || 0)), y: Math.max(0, Math.min(1, Number(point.y) || 0)) })) : [],
+        closed: Boolean(feature.closed),
+        widthMeters: Number.isFinite(Number(feature.widthMeters)) ? Math.max(0.1, Math.min(100, Number(feature.widthMeters))) : undefined,
+        hatch: ['diagonal', 'cross', 'dots', 'none'].includes(feature.hatch) ? feature.hatch : 'none',
+        stroke: /^#[0-9a-f]{6}$/i.test(String(feature.stroke || '')) ? feature.stroke : undefined,
+        fill: /^#[0-9a-f]{6}$/i.test(String(feature.fill || '')) ? feature.fill : undefined,
+        opacity: Math.max(0.1, Math.min(1, Number(feature.opacity) || 0.5)),
+        lineStyle: ['solid', 'dashed', 'dotted'].includes(feature.lineStyle) ? feature.lineStyle : 'solid',
+      })).filter((feature: any) => feature.points.length > 0) : [];
+      const layers = Array.isArray(parsed.layers) ? parsed.layers.filter((layer: any) => layerIds.has(layer.id)).map((layer: any) => ({ id: layer.id, name: String(layer.name || layer.id), visible: layer.visible !== false, editable: layer.editable !== false, color: /^#[0-9a-f]{6}$/i.test(String(layer.color || '')) ? layer.color : '#888888' })) : fallbackGeometry.layers;
+      const metadata = parsed.metadata && typeof parsed.metadata === 'object' ? Object.fromEntries(['title', 'level', 'datum', 'scale', 'date', 'revision', 'coordinateSystem'].map((key) => [key, String(parsed.metadata[key] || '')])) : fallbackGeometry.metadata;
+      return res.json({ success: true, source: settings?.geminiModel || defaultGeminiModel, mapGeometry: { name: String(parsed.name || mapName), source: 'gemini', accuracy: ['illustrative', 'calibrated', 'surveyed'].includes(parsed.accuracy) ? parsed.accuracy : 'illustrative', metadata, layers, points, segments: segments.length ? segments : fallbackGeometry.segments, features, assumptions: Array.isArray(parsed.assumptions) ? parsed.assumptions.map(String).slice(0, 20) : [] } });
     } catch (error: any) {
       return res.json({ success: true, source: 'text-fallback', notice: `Gemini map interpretation fallback used: ${error.message}`, mapGeometry: fallbackGeometry });
     }

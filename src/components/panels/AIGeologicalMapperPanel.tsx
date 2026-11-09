@@ -35,6 +35,7 @@ import {
   ReconstructionMapGeometry,
   ReconstructionMapSelection,
 } from '../../types/aiSurvey';
+import { UndergroundMapEditor } from './UndergroundMapEditor';
 
 interface AIGeologicalMapperPanelProps {
   onStatusChange: (status: StatusAlert) => void;
@@ -496,6 +497,22 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
       } else {
         const text = await file.text();
         setReconstructMapText(text.slice(0, 120000));
+        try {
+          const parsed = JSON.parse(text);
+          if (Array.isArray(parsed.points) && Array.isArray(parsed.segments)) {
+            onMapGeometryChange?.({
+              ...parsed,
+              name: String(parsed.name || file.name),
+              source: parsed.source === 'gemini' || parsed.source === 'text-fallback' ? parsed.source : 'manual',
+              points: parsed.points,
+              segments: parsed.segments,
+            } as ReconstructionMapGeometry);
+            onMapMarkingChange?.(false);
+            onStatusChange({ type: 'success', message: 'Editable MiningSight map JSON reopened.', details: 'Layers, features, points, widths, and metadata were restored.', timestamp: new Date().toLocaleTimeString() });
+          }
+        } catch {
+          // Plain JSON/GeoJSON remains available as readable input for Gemini.
+        }
       }
       setWorldError('');
     } catch (error: any) {
@@ -2084,6 +2101,14 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                 <span className="text-[#999]">{reconstructTargetMode === 'rebuild-scene' ? 'Map is optional for a complete rebuild.' : 'A map and positive next-part offset are required to extend or add a part.'}</span>
                 <button onClick={saveReconstructionBrief} className="shrink-0 rounded border border-[#555] bg-[#3a3a3a] px-2 py-1 font-semibold text-[#ddd] hover:bg-[#e88724] hover:text-black cursor-pointer">{briefSavedMessage || 'Save brief'}</button>
               </div>
+
+              {mapGeometry && (
+                <UndergroundMapEditor
+                  geometry={mapGeometry}
+                  onChange={(nextGeometry) => onMapGeometryChange?.(nextGeometry)}
+                  onStatusChange={(message) => onStatusChange({ type: 'success', message, details: 'Map edits remain structured and can be saved with the reconstruction brief.', timestamp: new Date().toLocaleTimeString() })}
+                />
+              )}
             </div>
 
             {/* Reference Image Card */}

@@ -1648,9 +1648,6 @@ export default function App() {
 
   const handleMapGeometryChange = useCallback((geometry: ReconstructionMapGeometry | null) => {
     setReconstructionMapGeometry(geometry);
-    setReconstructionMapSelection(null);
-    setMapMarkingEnabled(false);
-    setMapDrawingMode(false);
   }, []);
 
   const handleMapPointPicked = useCallback((point: { x: number; y: number }) => {
