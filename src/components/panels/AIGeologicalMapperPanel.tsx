@@ -54,8 +54,10 @@ interface AIGeologicalMapperPanelProps {
   mapGeometry?: ReconstructionMapGeometry | null;
   mapSelection?: ReconstructionMapSelection | null;
   mapMarkingEnabled?: boolean;
+  mapDrawingMode?: boolean;
   onMapGeometryChange?: (geometry: ReconstructionMapGeometry | null) => void;
   onMapMarkingChange?: (enabled: boolean) => void;
+  onMapDrawingChange?: (enabled: boolean) => void;
 }
 
 type WorldProvider = 'marble' | 'gomera';
@@ -113,8 +115,10 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   mapGeometry = null,
   mapSelection = null,
   mapMarkingEnabled = false,
+  mapDrawingMode = false,
   onMapGeometryChange,
   onMapMarkingChange,
+  onMapDrawingChange,
 }) => {
   const [activeTab, setActiveTab] = useState<'input' | 'preview' | 'analysis' | 'records' | 'reconstruct'>('input');
   const [images, setImages] = useState<SurveyImageItem[]>(getDefaultSampleSurveyImages());
@@ -135,6 +139,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   const [reconstructMapImageName, setReconstructMapImageName] = useState('');
   const [reconstructMapLoading, setReconstructMapLoading] = useState(false);
   const [mapInterpreting, setMapInterpreting] = useState(false);
+  const [mapDropActive, setMapDropActive] = useState(false);
   const [nextPartDistanceMeters, setNextPartDistanceMeters] = useState(2.5);
   const [partWidthMeters, setPartWidthMeters] = useState(4.6);
   const [partHeightMeters, setPartHeightMeters] = useState(4.6);
@@ -498,6 +503,12 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
     } finally {
       setReconstructMapLoading(false);
     }
+  };
+
+  const handleMapDrop = (event: React.DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    setMapDropActive(false);
+    void handleReconstructionMap(event.dataTransfer.files?.[0]);
   };
 
   const interpretReconstructionMap = async () => {
@@ -2018,7 +2029,12 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
               </div>
 
               <div className="grid grid-cols-2 gap-2">
-                <label className="rounded border border-dashed border-[#505050] bg-[#1c1c1c] p-2 text-center cursor-pointer hover:border-[#e88724]">
+                <label
+                  onDragOver={(event) => { event.preventDefault(); setMapDropActive(true); }}
+                  onDragLeave={() => setMapDropActive(false)}
+                  onDrop={handleMapDrop}
+                  className={`rounded border border-dashed p-2 text-center cursor-pointer transition-colors ${mapDropActive ? 'border-[#e88724] bg-[#3b2918]' : 'border-[#505050] bg-[#1c1c1c] hover:border-[#e88724]'}`}
+                >
                   <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={reconstructReferenceLoading || isReconstructing} onChange={(event) => { void handleReconstructionReference(event.target.files?.[0]); event.currentTarget.value = ''; }} />
                   <ImagePlus className="mx-auto mb-1 h-4 w-4 text-[#e88724]" />
                   <span className="block truncate text-[9.5px] text-[#ddd]">{reconstructReferenceLoading ? 'Reading screenshot…' : reconstructImageName}</span>
@@ -2027,8 +2043,8 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                 <label className="rounded border border-dashed border-[#505050] bg-[#1c1c1c] p-2 text-center cursor-pointer hover:border-[#e88724]">
                   <input type="file" accept="image/jpeg,image/png,image/webp,.json,.geojson,.csv,.txt,.md,.yaml,.yml,text/plain,application/json" className="hidden" disabled={reconstructMapLoading || isReconstructing || mapInterpreting} onChange={(event) => { void handleReconstructionMap(event.target.files?.[0]); event.currentTarget.value = ''; }} />
                   <Upload className="mx-auto mb-1 h-4 w-4 text-[#e88724]" />
-                  <span className="block truncate text-[9.5px] text-[#ddd]">{reconstructMapName || 'Attach map image or data'}</span>
-                  <span className="mt-0.5 block text-[8.5px] text-[#888]">Image, JSON, GeoJSON, CSV, TXT · {reconstructMapImage || reconstructMapText ? 'ready to interpret' : 'required for extensions'}</span>
+                  <span className="block truncate text-[9.5px] text-[#ddd]">{mapDropActive ? 'Drop map here' : reconstructMapName || 'Attach map image or data'}</span>
+                  <span className="mt-0.5 block text-[8.5px] text-[#888]">Drag/drop image, JSON, GeoJSON, CSV, TXT · {reconstructMapImage || reconstructMapText ? 'ready to interpret' : 'required for extensions'}</span>
                 </label>
               </div>
 
@@ -2050,12 +2066,15 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
               <textarea value={reconstructMapText} onChange={(event) => setReconstructMapText(event.target.value)} rows={3} maxLength={120000} placeholder="Paste a readable map or section here: station IDs, chainages, distances, width/height, curve radius, heading, and the next part location…" className="w-full resize-y bg-[#1c1c1c] border border-[#414141] rounded px-1.5 py-1.5 text-[10px] text-[#ddd] leading-relaxed focus:outline-none focus:border-[#e88724]" />
 
               <div className="flex flex-wrap items-center gap-1.5 rounded border border-[#3f3427] bg-[#211d18] px-2 py-1.5 text-[9px]">
-                <span className="mr-auto text-[#cbb79d]">{mapGeometry ? `Map overlay ready · ${mapGeometry.points.length} points` : 'Map has not been interpreted yet.'}</span>
+                <span className="mr-auto text-[#cbb79d]">{mapGeometry?.points.length ? `Map overlay ready · ${mapGeometry.points.length} points` : 'Empty map · add a file, describe it, or draw it manually.'}</span>
                 <button onClick={interpretReconstructionMap} disabled={mapInterpreting || isReconstructing || (!reconstructMapImage && !reconstructMapText.trim())} className="rounded border border-[#e88724] bg-[#e88724] px-2 py-1 font-bold text-black disabled:cursor-wait disabled:opacity-50 cursor-pointer">
                   {mapInterpreting ? <span className="inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" />Reading map…</span> : 'Interpret map with Gemini'}
                 </button>
-                <button onClick={() => onMapMarkingChange?.(!mapMarkingEnabled)} disabled={!mapGeometry || mapInterpreting} className={`rounded border px-2 py-1 font-semibold cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${mapMarkingEnabled ? 'border-[#55dd88] bg-[#214a31] text-[#a8f2bb]' : 'border-[#555] bg-[#303030] text-[#ddd]'}`}>
+                <button onClick={() => { onMapDrawingChange?.(false); onMapMarkingChange?.(!mapMarkingEnabled); }} disabled={!mapGeometry || mapInterpreting || mapDrawingMode} className={`rounded border px-2 py-1 font-semibold cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${mapMarkingEnabled && !mapDrawingMode ? 'border-[#55dd88] bg-[#214a31] text-[#a8f2bb]' : 'border-[#555] bg-[#303030] text-[#ddd]'}`}>
                   {mapMarkingEnabled ? 'Finish start/end picks' : 'Pick start/end in viewer'}
+                </button>
+                <button onClick={() => { const next = !mapDrawingMode; onMapDrawingChange?.(next); onMapMarkingChange?.(next); }} disabled={!mapGeometry || mapInterpreting} className={`rounded border px-2 py-1 font-semibold cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${mapDrawingMode ? 'border-[#4ea3e8] bg-[#203b53] text-[#a7d8ff]' : 'border-[#555] bg-[#303030] text-[#ddd]'}`}>
+                  {mapDrawingMode ? 'Finish manual drawing' : 'Draw map manually'}
                 </button>
                 {mapSelection?.start && <span className="text-[#8ee8a5]">Start set</span>}
                 {mapSelection?.end && <span className="text-[#ff9d9d]">End set</span>}

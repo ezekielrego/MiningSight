@@ -25,6 +25,7 @@ import {
   Crosshair,
   Image as ImageIcon,
   Sliders as SlidersIcon,
+  Map as MapIcon,
 } from 'lucide-react';
 import { MiningTunnelRig, ShadingDisplayMode } from '../../scene/miningTunnelGenerator';
 import { TunnelPresetId, ProceduralTunnelParams } from '../../types/tunnelScene';
@@ -143,7 +144,10 @@ interface Viewport3DProps {
   mapGeometry?: ReconstructionMapGeometry | null;
   mapSelection?: ReconstructionMapSelection | null;
   mapMarkingEnabled?: boolean;
+  mapDrawingMode?: boolean;
   onMapPointPicked?: (point: { x: number; y: number }) => void;
+  showMap?: boolean;
+  onToggleMap?: () => void;
 }
 
 export const Viewport3D: React.FC<Viewport3DProps> = ({
@@ -182,7 +186,10 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   mapGeometry = null,
   mapSelection = null,
   mapMarkingEnabled = false,
+  mapDrawingMode = false,
   onMapPointPicked,
+  showMap = false,
+  onToggleMap,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1594,14 +1601,16 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         onWheel={handleWheel}
       />
 
-      {mapGeometry && (
+      {showMap && mapGeometry && (
         <div className="pointer-events-auto absolute bottom-3 left-3 z-[45] w-64 max-w-[42%] rounded-[4px] border border-[#e88724]/70 bg-[#141414]/90 p-2 shadow-2xl backdrop-blur-md">
           <div className="mb-1 flex items-center justify-between gap-2 text-[9px]">
             <span className="truncate font-bold uppercase tracking-wide text-[#f1c18b]">2D map · {mapGeometry.name}</span>
-            <span className={`shrink-0 rounded px-1 py-0.5 font-mono ${mapMarkingEnabled ? 'bg-[#e88724] text-black' : 'bg-[#333] text-[#aaa]'}`}>{mapMarkingEnabled ? 'PICK 2 POINTS' : 'VIEW'}</span>
+            <span className={`shrink-0 rounded px-1 py-0.5 font-mono ${mapMarkingEnabled ? 'bg-[#e88724] text-black' : 'bg-[#333] text-[#aaa]'}`}>{mapDrawingMode ? 'DRAW MAP' : mapMarkingEnabled ? 'PICK 2 POINTS' : 'VIEW'}</span>
           </div>
           <svg viewBox="0 0 1 1" preserveAspectRatio="none" onClick={handleMapOverlayClick} className={`block aspect-[4/3] w-full rounded border border-[#4c4c4c] bg-[#222] ${mapMarkingEnabled ? 'cursor-crosshair' : 'cursor-default'}`}>
             <rect x="0" y="0" width="1" height="1" fill="#202629" />
+            {!mapGeometry.points.length && <text x="0.5" y="0.48" textAnchor="middle" fill="#a9a9a9" fontSize="0.045">EMPTY PROJECT MAP</text>}
+            {!mapGeometry.points.length && <text x="0.5" y="0.56" textAnchor="middle" fill="#777" fontSize="0.028">Use Draw map manually or attach a reference</text>}
             {mapGeometry.segments.map((segment) => {
               const from = mapGeometry.points.find((point) => point.id === segment.from);
               const to = mapGeometry.points.find((point) => point.id === segment.to);
@@ -1795,6 +1804,17 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
               </div>
             )}
           </div>
+
+          {/* Project map toggle */}
+          <button
+            onClick={onToggleMap}
+            disabled={!mapGeometry}
+            className={`hover:text-white hover:bg-[#484848] px-1.5 py-0.5 rounded-[2px] cursor-pointer flex items-center space-x-1 border border-transparent disabled:cursor-not-allowed disabled:opacity-40 ${showMap ? 'text-[#ffb35d] bg-[#49321e]' : 'text-[#b7d7e9]'}`}
+            title={showMap ? 'Hide project map' : 'Show project map'}
+          >
+            <MapIcon className="w-3 h-3" />
+            <span>{showMap ? 'Hide Map' : 'Show Map'}</span>
+          </button>
 
           {/* Quick Photo Reference Comparison Button */}
           <button

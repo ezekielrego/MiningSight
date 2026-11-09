@@ -124,6 +124,52 @@ export interface ReconstructionMapSelection {
   end?: { x: number; y: number; label?: string };
 }
 
+/** The shared long-drift plan used to orient the built-in MiningSight scenes. */
+export const createDefaultReconstructionMap = (): ReconstructionMapGeometry => ({
+  name: 'MiningSight Main Drift Network',
+  source: 'manual',
+  points: [
+    { id: 'main_start', label: 'Portal / current start', x: 0.06, y: 0.78, kind: 'start' },
+    { id: 'main_01', label: 'Station 01 · 12 m', x: 0.16, y: 0.72, kind: 'station' },
+    { id: 'main_02', label: 'Station 02 · 27 m', x: 0.25, y: 0.66, kind: 'station' },
+    { id: 'main_03', label: 'Bend A · 41 m', x: 0.35, y: 0.68, kind: 'feature' },
+    { id: 'main_04', label: 'Station 04 · 56 m', x: 0.44, y: 0.58, kind: 'station' },
+    { id: 'main_05', label: 'Timber set zone · 70 m', x: 0.54, y: 0.55, kind: 'feature' },
+    { id: 'main_06', label: 'Station 06 · 85 m', x: 0.63, y: 0.47, kind: 'station' },
+    { id: 'main_07', label: 'Bend B · 101 m', x: 0.72, y: 0.39, kind: 'feature' },
+    { id: 'main_end', label: 'Current heading / next part', x: 0.92, y: 0.30, kind: 'end' },
+    { id: 'branch_west', label: 'West branch junction', x: 0.44, y: 0.58, kind: 'feature' },
+    { id: 'branch_west_end', label: 'West branch face', x: 0.39, y: 0.28, kind: 'end' },
+    { id: 'branch_west_station', label: 'West branch station', x: 0.54, y: 0.20, kind: 'station' },
+    { id: 'branch_east', label: 'East branch junction', x: 0.72, y: 0.39, kind: 'feature' },
+    { id: 'branch_east_station', label: 'East branch station', x: 0.82, y: 0.58, kind: 'station' },
+    { id: 'branch_east_end', label: 'East branch face', x: 0.94, y: 0.70, kind: 'end' },
+  ],
+  segments: [
+    { id: 'main_seg_01', from: 'main_start', to: 'main_01', label: 'Main drift', color: '#e88724', width: 9 },
+    { id: 'main_seg_02', from: 'main_01', to: 'main_02', label: 'Main drift', color: '#e88724', width: 8 },
+    { id: 'main_seg_03', from: 'main_02', to: 'main_03', label: 'Main drift bend', color: '#f0a24a', width: 7 },
+    { id: 'main_seg_04', from: 'main_03', to: 'main_04', label: 'Main drift', color: '#e88724', width: 8 },
+    { id: 'main_seg_05', from: 'main_04', to: 'main_05', label: 'Timbered continuation', color: '#55dd88', width: 11 },
+    { id: 'main_seg_06', from: 'main_05', to: 'main_06', label: 'Main drift', color: '#e88724', width: 8 },
+    { id: 'main_seg_07', from: 'main_06', to: 'main_07', label: 'Main drift bend', color: '#f0a24a', width: 7 },
+    { id: 'main_seg_08', from: 'main_07', to: 'main_end', label: 'Heading / next generation zone', color: '#ff6b6b', width: 12 },
+    { id: 'west_seg_01', from: 'branch_west', to: 'branch_west_end', label: 'West branch', color: '#4ea3e8', width: 5 },
+    { id: 'west_seg_02', from: 'branch_west_end', to: 'branch_west_station', label: 'West branch extension', color: '#4ea3e8', width: 4 },
+    { id: 'east_seg_01', from: 'branch_east', to: 'branch_east_station', label: 'East branch', color: '#b98cff', width: 5 },
+    { id: 'east_seg_02', from: 'branch_east_station', to: 'branch_east_end', label: 'East branch face', color: '#b98cff', width: 4 },
+  ],
+  assumptions: ['Shared orientation map for the built-in rugged and classic demonstration scenes.', 'Station distances are illustrative and should be replaced by project survey data.'],
+});
+
+export const createEmptyReconstructionMap = (name = 'New project map'): ReconstructionMapGeometry => ({
+  name,
+  source: 'manual',
+  points: [],
+  segments: [],
+  assumptions: ['Empty project map. Add a map file, describe the route, or draw the route manually in the viewer.'],
+});
+
 /**
  * Generates an authentic simulated geological borehole/tunnel survey image with
  * rock strata, mineral veins, and metric measurement grid in base64 data URL format.

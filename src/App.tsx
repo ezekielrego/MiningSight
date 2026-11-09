@@ -5,7 +5,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { C4DMaterial, C4DSceneObject, TimelineState, ToolMode, Vector3D } from './types/c4d';
-import { ReconstructionBrief, ReconstructionMapGeometry, ReconstructionMapSelection, StatusAlert } from './types/aiSurvey';
+import { createDefaultReconstructionMap, createEmptyReconstructionMap, ReconstructionBrief, ReconstructionMapGeometry, ReconstructionMapPoint, ReconstructionMapSelection, StatusAlert } from './types/aiSurvey';
 import { MenuBar } from './components/layout/MenuBar';
 import { MainToolbar } from './components/layout/MainToolbar';
 import { LeftToolPalette } from './components/layout/LeftToolPalette';
@@ -304,9 +304,11 @@ export default function App() {
   const [projectAssets, setProjectAssets] = useState<ProjectAsset[]>([]);
   const [activeAssetId, setActiveAssetId] = useState<string | null>(null);
   const [reconstructionBrief, setReconstructionBrief] = useState<ReconstructionBrief | null>(null);
-  const [reconstructionMapGeometry, setReconstructionMapGeometry] = useState<ReconstructionMapGeometry | null>(null);
+  const [reconstructionMapGeometry, setReconstructionMapGeometry] = useState<ReconstructionMapGeometry | null>(() => createDefaultReconstructionMap());
   const [reconstructionMapSelection, setReconstructionMapSelection] = useState<ReconstructionMapSelection | null>(null);
   const [mapMarkingEnabled, setMapMarkingEnabled] = useState(false);
+  const [mapDrawingMode, setMapDrawingMode] = useState(false);
+  const [showMap, setShowMap] = useState(false);
   const [capturedReferenceImage, setCapturedReferenceImage] = useState<{ dataUrl: string; name: string } | null>(null);
   const [mediaMarkers, setMediaMarkers] = useState<MediaMarker[]>([]);
   const [gasMarks, setGasMarks] = useState<GasMark[]>([]);
@@ -440,6 +442,8 @@ export default function App() {
     setReconstructionMapGeometry(null);
     setReconstructionMapSelection(null);
     setMapMarkingEnabled(false);
+    setMapDrawingMode(false);
+    setShowMap(false);
     setCapturedReferenceImage(null);
     gasMarksRef.current = [];
     setGasMarks([]);
@@ -640,9 +644,11 @@ export default function App() {
       setMaterials(Array.isArray(project.materials) ? project.materials : getAllCombinedMaterials());
       setProjectAssets(Array.isArray(project.assets) ? project.assets : []);
       setReconstructionBrief(project.reconstructionBrief || null);
-      setReconstructionMapGeometry(project.reconstructionBrief?.mapGeometry || null);
+      setReconstructionMapGeometry(project.reconstructionBrief?.mapGeometry || (Array.isArray(project.assets) && project.assets.length ? createDefaultReconstructionMap() : createEmptyReconstructionMap(project.projectName || 'New project map')));
       setReconstructionMapSelection(project.reconstructionBrief?.mapSelection || null);
       setMapMarkingEnabled(false);
+      setMapDrawingMode(false);
+      setShowMap(false);
       setCapturedReferenceImage(null);
       setMediaMarkers(Array.isArray(project.mediaMarkers) ? project.mediaMarkers : []);
       const loadedGasMarks = Array.isArray(project.gasMarks) ? project.gasMarks : [];
@@ -691,9 +697,11 @@ export default function App() {
       setProceduralParams(TUNNEL_PRESETS.rugged_timbered_photo.defaultParams);
       setProjectAssets([]);
       setReconstructionBrief(null);
-      setReconstructionMapGeometry(null);
+      setReconstructionMapGeometry(createEmptyReconstructionMap(`${name} map`));
       setReconstructionMapSelection(null);
       setMapMarkingEnabled(false);
+      setMapDrawingMode(false);
+      setShowMap(false);
       setCapturedReferenceImage(null);
       setMediaMarkers([]);
       gasMarksRef.current = [];
@@ -1235,9 +1243,11 @@ export default function App() {
     setActiveProjectId(null);
     setActiveAssetId(null);
     setReconstructionBrief(null);
-    setReconstructionMapGeometry(null);
+    setReconstructionMapGeometry(createDefaultReconstructionMap());
     setReconstructionMapSelection(null);
     setMapMarkingEnabled(false);
+    setMapDrawingMode(false);
+    setShowMap(false);
     setCapturedReferenceImage(null);
     setProjectAssets([]);
     setMediaMarkers([]);
@@ -1599,9 +1609,11 @@ export default function App() {
             setGasMarks([]);
           }
           if (parsed.reconstructionBrief) setReconstructionBrief(parsed.reconstructionBrief);
-          setReconstructionMapGeometry(parsed.reconstructionBrief?.mapGeometry || null);
+          setReconstructionMapGeometry(parsed.reconstructionBrief?.mapGeometry || createDefaultReconstructionMap());
           setReconstructionMapSelection(parsed.reconstructionBrief?.mapSelection || null);
           setMapMarkingEnabled(false);
+          setMapDrawingMode(false);
+          setShowMap(false);
           setCapturedReferenceImage(null);
           if (parsed.tours && Array.isArray(parsed.tours)) {
             saveTours(parsed.tours);
@@ -1638,9 +1650,34 @@ export default function App() {
     setReconstructionMapGeometry(geometry);
     setReconstructionMapSelection(null);
     setMapMarkingEnabled(false);
+    setMapDrawingMode(false);
   }, []);
 
   const handleMapPointPicked = useCallback((point: { x: number; y: number }) => {
+    if (mapDrawingMode) {
+      const geometry = reconstructionMapGeometry || createEmptyReconstructionMap(`${projectName} map`);
+      const nextPoint: ReconstructionMapPoint = {
+        id: `manual_point_${Date.now()}`,
+        label: `Manual point ${geometry.points.length + 1}`,
+        x: point.x,
+        y: point.y,
+        kind: geometry.points.length === 0 ? 'start' : 'feature',
+      };
+      const previousPoint = geometry.points[geometry.points.length - 1];
+      const nextSegments = previousPoint ? [
+        ...geometry.segments,
+        {
+          id: `manual_segment_${Date.now()}`,
+          from: previousPoint.id,
+          to: nextPoint.id,
+          label: 'Manual route segment',
+          color: '#e88724',
+          width: 7,
+        },
+      ] : geometry.segments;
+      setReconstructionMapGeometry({ ...geometry, source: 'manual', points: [...geometry.points, nextPoint], segments: nextSegments });
+      return;
+    }
     if (!reconstructionMapSelection?.start || reconstructionMapSelection.end) {
       setReconstructionMapSelection({ start: point });
       setMapMarkingEnabled(true);
@@ -1648,7 +1685,7 @@ export default function App() {
       setReconstructionMapSelection({ ...reconstructionMapSelection, end: point });
       setMapMarkingEnabled(false);
     }
-  }, [reconstructionMapSelection]);
+  }, [mapDrawingMode, projectName, reconstructionMapGeometry, reconstructionMapSelection]);
 
   // Selected Object lookup (recursive through all child levels)
   const findObjectById = (list: C4DSceneObject[], targetId: string | null): C4DSceneObject | null => {
@@ -1844,8 +1881,10 @@ export default function App() {
             mapGeometry={reconstructionMapGeometry}
             mapSelection={reconstructionMapSelection}
             mapMarkingEnabled={mapMarkingEnabled}
+            mapDrawingMode={mapDrawingMode}
             onMapGeometryChange={handleMapGeometryChange}
             onMapMarkingChange={setMapMarkingEnabled}
+            onMapDrawingChange={(enabled) => { setMapDrawingMode(enabled); setMapMarkingEnabled(enabled); }}
             onSaveReconstructionBrief={(brief) => {
               const nextBrief = { ...brief, mapGeometry: reconstructionMapGeometry, mapSelection: reconstructionMapSelection };
               setReconstructionBrief(nextBrief);
@@ -1905,7 +1944,10 @@ export default function App() {
             mapGeometry={reconstructionMapGeometry}
             mapSelection={reconstructionMapSelection}
             mapMarkingEnabled={mapMarkingEnabled}
+            mapDrawingMode={mapDrawingMode}
             onMapPointPicked={handleMapPointPicked}
+            showMap={showMap}
+            onToggleMap={() => setShowMap((current) => !current)}
           />
         }
         timeline={
