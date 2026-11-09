@@ -1813,7 +1813,6 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
             title={showMap ? 'Hide project map' : 'Show project map'}
           >
             <MapIcon className="w-3 h-3" />
-            <span>{showMap ? 'Hide Map' : 'Show Map'}</span>
           </button>
 
           {/* Quick Photo Reference Comparison Button */}
