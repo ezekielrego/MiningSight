@@ -277,6 +277,8 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
 
   // Align camera to exact perspective of reference photo
   const alignCameraToPhotoReference = useCallback(() => {
+    manualNavigationRef.current = true;
+    onSetPlayback?.(false);
     setNavMode('walk');
     walkPosRef.current.set(0, 1.85, 17.5);
     walkYawRef.current = Math.PI;
@@ -288,7 +290,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       cameraRef.current.fov = 46;
       cameraRef.current.updateProjectionMatrix();
     }
-  }, []);
+  }, [onSetPlayback]);
 
   // Camera navigation coordinates
   // Orbit coordinates:
@@ -338,6 +340,33 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     restoreOverlay('walkBanner');
     restoreOverlay('walkControls');
   }, [restoreOverlay]);
+
+  const setOrbitView = useCallback((radius: number, phi: number, theta: number, target: { x: number; y: number; z: number }) => {
+    manualNavigationRef.current = true;
+    isWalkingRef.current.w = false;
+    isWalkingRef.current.a = false;
+    isWalkingRef.current.s = false;
+    isWalkingRef.current.d = false;
+    onSetPlayback?.(false);
+    setNavMode('orbit');
+    sphericalRef.current.set(radius, phi, theta);
+    targetRef.current.set(target.x, target.y, target.z);
+  }, [onSetPlayback]);
+
+  const focusSelectedObject = useCallback(() => {
+    const root = externalModelGroupRef.current || (!activeProjectId ? miningTunnelRigRef.current?.root : null);
+    if (!root || !selectedObject) return;
+    let selectedNode: THREE.Object3D = root;
+    root.traverse((node) => {
+      const id = node.userData?.selectionId || node.name;
+      if (id === selectedObject.id) selectedNode = node;
+    });
+    const bounds = new THREE.Box3().setFromObject(selectedNode);
+    if (bounds.isEmpty()) return;
+    const center = bounds.getCenter(new THREE.Vector3());
+    const size = bounds.getSize(new THREE.Vector3());
+    setOrbitView(Math.max(6, Math.min(140, size.length() * 1.6)), Math.PI / 2.6, Math.PI / 4, center);
+  }, [selectedObject, activeProjectId, setOrbitView]);
 
   // Expose current camera state for recording keyframes
   const captureCurrentCameraState = useCallback(() => {
@@ -1663,7 +1692,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       )}
 
       {/* Top Viewport Navigation and Mode Bar */}
-      <div data-onboarding-target="viewport-controls" className="absolute top-0 left-0 right-0 h-7 bg-[#383838]/95 border-b border-[#252525] flex items-center justify-between px-2 text-[11px] text-[#cfcfcf] z-10 backdrop-blur-sm overflow-x-auto scrollbar-none">
+      <div data-onboarding-target="viewport-controls" className="absolute top-0 left-0 right-0 h-7 bg-[#383838]/95 border-b border-[#252525] flex items-center justify-between px-2 text-[11px] text-[#cfcfcf] z-50 backdrop-blur-sm overflow-visible">
         {/* Left Controls: Preset Selector, Menus, Orbit vs Walk, Flashlight, Ruler, Hotspots */}
         <div className="flex items-center space-x-1 sm:space-x-1.5 min-w-max">
           {/* SCENE PRESET SELECTOR (Classic Diorama vs Rugged Timbered Photo vs AI Custom) */}
@@ -1765,9 +1794,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
                 </button>
                 <button
                   onClick={() => {
-                    manualNavigationRef.current = true;
-                    sphericalRef.current.set(33, 1.18, 0.44);
-                    targetRef.current.set(-0.5, 3.0, 0);
+                    setOrbitView(33, 1.18, 0.44, { x: -0.5, y: 3.0, z: 0 });
                     setViewMenuOpen(false);
                   }}
                   className="w-full text-left px-3 py-1 hover:bg-[#e88724] hover:text-black cursor-pointer"
@@ -1777,6 +1804,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
                 <button
                   onClick={() => {
                     resetWalkPosition(true);
+                    onSetPlayback?.(false);
                     setNavMode('walk');
                     setViewMenuOpen(false);
                   }}
@@ -1804,6 +1832,55 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
                   {clearView && <Check className="w-3 h-3 text-[#e88724]" />}
                   <span>{clearView ? 'Restore Scene View' : 'Clear View (Objects)'}</span>
                 </button>
+                <div className="my-1 border-t border-[#454545]" />
+                <div className="px-3 py-1 text-[9px] font-bold uppercase tracking-wider text-[#888]">Representation</div>
+                {([
+                  ['gouraud', 'Textured Shading'],
+                  ['gouraud_lines', 'Shading with Lines'],
+                  ['wireframe', 'Wireframe Mesh'],
+                  ['points', 'Point Cloud Vertices'],
+                ] as const).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    onClick={() => {
+                      setShadingMode(mode);
+                      setViewMenuOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-1 hover:bg-[#e88724] hover:text-black cursor-pointer flex items-center justify-between"
+                  >
+                    <span>{label}</span>
+                    {shadingMode === mode && <Check className="w-3 h-3 text-[#e88724]" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Camera positioning and reset menu */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setCameraMenuOpen(!cameraMenuOpen);
+                setViewMenuOpen(false);
+                setDisplayMenuOpen(false);
+                setHotspotMenuOpen(false);
+                setPresetMenuOpen(false);
+              }}
+              className="hover:text-white hover:bg-[#505050] px-1.5 py-0.5 rounded-[2px] cursor-pointer flex items-center space-x-1"
+              title="Position, focus, and reset the camera"
+            >
+              <Camera className="w-3 h-3 text-[#88bbdd]" />
+              <span>Camera ▾</span>
+            </button>
+            {cameraMenuOpen && (
+              <div className="absolute top-7 left-0 w-52 bg-[#303030] border border-[#202020] shadow-xl py-1 z-[60] text-[11px] text-[#e0e0e0] rounded-[2px]">
+                <button onClick={() => { setOrbitView(33, 1.18, 0.44, { x: -0.5, y: 3.0, z: 0 }); setCameraMenuOpen(false); }} className="w-full text-left px-3 py-1 hover:bg-[#e88724] hover:text-black cursor-pointer">Reset Orbit Camera</button>
+                <button onClick={() => { setOrbitView(33, Math.PI / 2, 0, { x: -0.5, y: 3.0, z: 0 }); setCameraMenuOpen(false); }} className="w-full text-left px-3 py-1 hover:bg-[#e88724] hover:text-black cursor-pointer">Front View</button>
+                <button onClick={() => { setOrbitView(33, 0.42, 0.44, { x: -0.5, y: 2.5, z: 0 }); setCameraMenuOpen(false); }} className="w-full text-left px-3 py-1 hover:bg-[#e88724] hover:text-black cursor-pointer">Top View</button>
+                <button onClick={() => { focusSelectedObject(); setCameraMenuOpen(false); }} disabled={!selectedObject} className="w-full text-left px-3 py-1 hover:bg-[#e88724] hover:text-black disabled:text-[#666] disabled:hover:bg-transparent cursor-pointer disabled:cursor-not-allowed">Frame Selected Object</button>
+                <div className="my-1 border-t border-[#454545]" />
+                <button onClick={() => { alignCameraToPhotoReference(); setCameraMenuOpen(false); }} className="w-full text-left px-3 py-1 hover:bg-[#e88724] hover:text-black cursor-pointer">Photo Reference Walk View</button>
+                <button onClick={() => { resetWalkPosition(true); onSetPlayback?.(false); setNavMode('walk'); setCameraMenuOpen(false); }} className="w-full text-left px-3 py-1 hover:bg-[#e88724] hover:text-black cursor-pointer">Walk Entrance View</button>
               </div>
             )}
           </div>
@@ -1897,8 +1974,12 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
                         setSelectedHotspot(h);
                         restoreOverlay('hotspot');
                         targetRef.current.set(h.position.x, h.position.y, h.position.z);
-                        walkPosRef.current.set(h.position.x + 3.0, h.position.y + 0.5, h.position.z + 4.0);
+                        const walkTarget = new THREE.Vector3(h.position.x + 3.0, h.position.y + 0.5, h.position.z + 4.0);
+                        walkPosRef.current.copy(walkTarget);
+                        walkYawRef.current = Math.atan2(-(h.position.x - walkTarget.x), -(h.position.z - walkTarget.z));
+                        walkPitchRef.current = -0.04;
                         sphericalRef.current.set(12, Math.PI / 3, Math.PI / 4);
+                        onSetPlayback?.(false);
                         setHotspotMenuOpen(false);
                       }}
                       className="w-full text-left px-3 py-1.5 hover:bg-[#e88724] hover:text-black cursor-pointer flex items-center space-x-2 transition-colors"
