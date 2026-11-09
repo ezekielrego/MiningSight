@@ -1945,6 +1945,9 @@ export default function App() {
             onMapPointPicked={handleMapPointPicked}
             showMap={showMap}
             onToggleMap={() => setShowMap((current) => !current)}
+            onMapGeometryChange={handleMapGeometryChange}
+            onMapEditorStatus={(message) => setStatusAlert({ type: 'success', message, details: 'Map edits remain structured and can be saved with the reconstruction brief.', timestamp: new Date().toLocaleTimeString() })}
+            onMapMarkingChange={setMapMarkingEnabled}
           />
         }
         timeline={

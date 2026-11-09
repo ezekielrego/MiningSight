@@ -19,6 +19,7 @@ import {
   ReconstructionMapGeometry,
   ReconstructionMapLayerId,
   ReconstructionMapPoint,
+  ReconstructionMapSelection,
 } from '../../types/aiSurvey';
 
 type EditorTool = 'select' | 'draw-line' | 'draw-area' | 'point' | 'pan' | 'calibrate';
@@ -27,6 +28,11 @@ interface UndergroundMapEditorProps {
   geometry: ReconstructionMapGeometry;
   onChange: (geometry: ReconstructionMapGeometry) => void;
   onStatusChange?: (message: string) => void;
+  fullViewport?: boolean;
+  mapMarkingEnabled?: boolean;
+  onMapMarkingChange?: (enabled: boolean) => void;
+  onMapPointPicked?: (point: { x: number; y: number }) => void;
+  mapSelection?: ReconstructionMapSelection | null;
 }
 
 const defaultLayerColors: Record<ReconstructionMapLayerId, string> = {
@@ -63,7 +69,7 @@ const downloadBlob = (content: BlobPart, name: string, type: string) => {
   URL.revokeObjectURL(url);
 };
 
-export const UndergroundMapEditor: React.FC<UndergroundMapEditorProps> = ({ geometry, onChange, onStatusChange }) => {
+export const UndergroundMapEditor: React.FC<UndergroundMapEditorProps> = ({ geometry, onChange, onStatusChange, fullViewport = false, mapMarkingEnabled = false, onMapMarkingChange, onMapPointPicked, mapSelection = null }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const [tool, setTool] = useState<EditorTool>('select');
   const [activeLayer, setActiveLayer] = useState<ReconstructionMapLayerId>('excavations');
@@ -113,6 +119,10 @@ export const UndergroundMapEditor: React.FC<UndergroundMapEditorProps> = ({ geom
   const handleCanvasPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
     if (tool === 'pan' || event.button === 1 || event.altKey) {
       setPanState({ x: event.clientX, y: event.clientY, viewX: viewBox.x, viewY: viewBox.y });
+      return;
+    }
+    if (mapMarkingEnabled && onMapPointPicked) {
+      onMapPointPicked(pointFromEvent(event));
       return;
     }
     if (tool === 'select') {
@@ -282,7 +292,7 @@ export const UndergroundMapEditor: React.FC<UndergroundMapEditorProps> = ({ geom
   };
 
   return (
-    <div className="rounded border border-[#3f3f3f] bg-[#1b1b1b] text-[10px] text-[#ddd] overflow-hidden">
+    <div className={`${fullViewport ? 'h-full w-full' : ''} rounded border border-[#3f3f3f] bg-[#1b1b1b] text-[10px] text-[#ddd] overflow-hidden`}>
       <div className="flex flex-wrap items-center gap-1 border-b border-[#3d3d3d] bg-[#242424] p-1.5">
         <span className="mr-1 font-bold uppercase tracking-wide text-[#f1c18b]">Interactive mine-plan editor</span>
         <button onClick={() => setTool('select')} className={`rounded border px-1.5 py-1 ${tool === 'select' ? 'border-[#e88724] bg-[#4b311b] text-[#ffb35d]' : 'border-[#555] bg-[#303030]'}`} title="Select and edit map geometry"><MousePointer2 className="inline h-3 w-3" /></button>
@@ -291,6 +301,7 @@ export const UndergroundMapEditor: React.FC<UndergroundMapEditorProps> = ({ geom
         <button onClick={() => setTool('point')} className={`rounded border px-1.5 py-1 ${tool === 'point' ? 'border-[#55dd88] bg-[#214a31]' : 'border-[#555] bg-[#303030]'}`}>Add point</button>
         <button onClick={() => setTool('pan')} className={`rounded border px-1.5 py-1 ${tool === 'pan' ? 'border-[#88bbdd] bg-[#203b53]' : 'border-[#555] bg-[#303030]'}`} title="Pan map"><Hand className="inline h-3 w-3" /></button>
         <button onClick={() => { setTool('calibrate'); setCalibrationPoints([]); }} className={`rounded border px-1.5 py-1 ${tool === 'calibrate' ? 'border-[#55dd88] bg-[#214a31]' : 'border-[#555] bg-[#303030]'}`} title="Calibrate map scale using two points"><Ruler className="inline h-3 w-3" /> Calibrate</button>
+        <button onClick={() => onMapMarkingChange?.(!mapMarkingEnabled)} className={`rounded border px-1.5 py-1 ${mapMarkingEnabled ? 'border-[#e88724] bg-[#4b311b] text-[#ffb35d]' : 'border-[#555] bg-[#303030]'}`}>{mapMarkingEnabled ? 'Finish anchor picks' : 'Pick next section'}</button>
         <span className="h-4 w-px bg-[#555]" />
         <button onClick={undo} disabled={!history.length} className="rounded border border-[#555] bg-[#303030] p-1 disabled:opacity-30" title="Undo"><Undo2 className="h-3 w-3" /></button>
         <button onClick={redo} disabled={!future.length} className="rounded border border-[#555] bg-[#303030] p-1 disabled:opacity-30" title="Redo"><Redo2 className="h-3 w-3" /></button>
@@ -303,7 +314,7 @@ export const UndergroundMapEditor: React.FC<UndergroundMapEditorProps> = ({ geom
         </div>
       </div>
 
-      <div className="flex min-h-[360px] flex-col lg:flex-row">
+      <div className={`flex ${fullViewport ? 'h-[calc(100%-45px)]' : 'min-h-[360px]'} flex-col lg:flex-row`}>
         <div className="relative min-h-[360px] flex-1 overflow-hidden bg-[#f5f5f2]">
           <svg ref={svgRef} viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`} className={`h-full min-h-[360px] w-full ${tool === 'pan' ? 'cursor-grab' : tool === 'select' ? 'cursor-default' : 'cursor-crosshair'}`} onPointerDown={handleCanvasPointerDown} onPointerMove={handleCanvasPointerMove} onPointerUp={finishPointer} onPointerLeave={finishPointer} onWheel={(event) => { event.preventDefault(); const direction = event.deltaY > 0 ? 1.12 : 0.88; setViewBox((current) => ({ ...current, w: Math.min(2.5, Math.max(0.25, current.w * direction)), h: Math.min(2.5, Math.max(0.25, current.h * direction)) })); }}>
             <defs>
@@ -335,6 +346,9 @@ export const UndergroundMapEditor: React.FC<UndergroundMapEditorProps> = ({ geom
               return <line key={segment.id} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={segment.color || '#374151'} strokeWidth={Math.max(0.004, (segment.width || 5) / 260)} strokeLinecap="round" opacity="0.78" />;
             })}
             {geometry.points.filter((point) => visibleLayers.has('survey')).map((point) => <circle key={point.id} cx={point.x} cy={point.y} r={selectedPointId === point.id ? 0.018 : 0.009} fill={point.kind === 'start' ? '#16a34a' : point.kind === 'end' ? '#dc2626' : '#2563eb'} stroke={selectedPointId === point.id ? '#f59e0b' : '#ffffff'} strokeWidth="0.004" onClick={(event) => { event.stopPropagation(); setSelectedPointId(point.id); setSelectedFeatureId(null); }} onPointerDown={(event) => { event.stopPropagation(); if (tool === 'select') { setSelectedPointId(point.id); setDraggingPointId(point.id); } }} />)}
+            {mapSelection?.start && <circle cx={mapSelection.start.x} cy={mapSelection.start.y} r="0.025" fill="none" stroke="#16a34a" strokeWidth="0.008" />}
+            {mapSelection?.end && <circle cx={mapSelection.end.x} cy={mapSelection.end.y} r="0.025" fill="none" stroke="#dc2626" strokeWidth="0.008" />}
+            {mapSelection?.start && mapSelection?.end && <line x1={mapSelection.start.x} y1={mapSelection.start.y} x2={mapSelection.end.x} y2={mapSelection.end.y} stroke="#111827" strokeWidth="0.004" strokeDasharray="0.015 0.01" />}
             {draftPoints.length > 0 && <path d={linePath(draftPoints, tool === 'draw-area')} fill={tool === 'draw-area' ? '#fca5a5' : 'none'} fillOpacity="0.35" stroke="#f59e0b" strokeWidth="0.008" strokeDasharray="0.014 0.01" />}
             {draftPoints.map((point, index) => <circle key={`draft-${index}`} cx={point.x} cy={point.y} r="0.012" fill="#f59e0b" />)}
             <g transform="translate(0.91 0.08)"><text x="0" y="0" fontSize="0.055" fontWeight="700" fill="#111827">N</text><path d="M 0.012 0.012 L 0.03 0.075 L 0.048 0.012 L 0.03 0.027 Z" fill="#111827" /></g>

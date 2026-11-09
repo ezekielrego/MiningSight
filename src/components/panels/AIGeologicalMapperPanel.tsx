@@ -35,7 +35,6 @@ import {
   ReconstructionMapGeometry,
   ReconstructionMapSelection,
 } from '../../types/aiSurvey';
-import { UndergroundMapEditor } from './UndergroundMapEditor';
 
 interface AIGeologicalMapperPanelProps {
   onStatusChange: (status: StatusAlert) => void;
@@ -2102,13 +2101,6 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                 <button onClick={saveReconstructionBrief} className="shrink-0 rounded border border-[#555] bg-[#3a3a3a] px-2 py-1 font-semibold text-[#ddd] hover:bg-[#e88724] hover:text-black cursor-pointer">{briefSavedMessage || 'Save brief'}</button>
               </div>
 
-              {mapGeometry && (
-                <UndergroundMapEditor
-                  geometry={mapGeometry}
-                  onChange={(nextGeometry) => onMapGeometryChange?.(nextGeometry)}
-                  onStatusChange={(message) => onStatusChange({ type: 'success', message, details: 'Map edits remain structured and can be saved with the reconstruction brief.', timestamp: new Date().toLocaleTimeString() })}
-                />
-              )}
             </div>
 
             {/* Reference Image Card */}

@@ -32,6 +32,7 @@ import { TunnelPresetId, ProceduralTunnelParams } from '../../types/tunnelScene'
 import { TUNNEL_PRESETS, createTunnelRigByPreset } from '../../scene/tunnelPresetRegistry';
 import { ReferencePhotoModal } from '../modals/ReferencePhotoModal';
 import { SceneParametersModal } from '../modals/SceneParametersModal';
+import { UndergroundMapEditor } from '../panels/UndergroundMapEditor';
 import { C4DMaterial, C4DSceneObject, ToolMode, Vector3D } from '../../types/c4d';
 import { CameraKeyframe, CameraTour, HotspotInfo, KeyframeAnnotation } from '../../types/cameraTour';
 import { degToRad } from '../../utils/math3d';
@@ -148,6 +149,9 @@ interface Viewport3DProps {
   onMapPointPicked?: (point: { x: number; y: number }) => void;
   showMap?: boolean;
   onToggleMap?: () => void;
+  onMapGeometryChange?: (geometry: ReconstructionMapGeometry) => void;
+  onMapEditorStatus?: (message: string) => void;
+  onMapMarkingChange?: (enabled: boolean) => void;
 }
 
 export const Viewport3D: React.FC<Viewport3DProps> = ({
@@ -190,6 +194,9 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   onMapPointPicked,
   showMap = false,
   onToggleMap,
+  onMapGeometryChange,
+  onMapEditorStatus,
+  onMapMarkingChange,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1602,28 +1609,17 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       />
 
       {showMap && mapGeometry && (
-        <div className="pointer-events-auto absolute bottom-3 left-3 z-[45] w-64 max-w-[42%] rounded-[4px] border border-[#e88724]/70 bg-[#141414]/90 p-2 shadow-2xl backdrop-blur-md">
-          <div className="mb-1 flex items-center justify-between gap-2 text-[9px]">
-            <span className="truncate font-bold uppercase tracking-wide text-[#f1c18b]">2D map · {mapGeometry.name}</span>
-            <span className={`shrink-0 rounded px-1 py-0.5 font-mono ${mapMarkingEnabled ? 'bg-[#e88724] text-black' : 'bg-[#333] text-[#aaa]'}`}>{mapDrawingMode ? 'DRAW MAP' : mapMarkingEnabled ? 'PICK 2 POINTS' : 'VIEW'}</span>
-          </div>
-          <svg viewBox="0 0 1 1" preserveAspectRatio="none" onClick={handleMapOverlayClick} className={`block aspect-[4/3] w-full rounded border border-[#4c4c4c] bg-[#222] ${mapMarkingEnabled ? 'cursor-crosshair' : 'cursor-default'}`}>
-            <rect x="0" y="0" width="1" height="1" fill="#202629" />
-            {!mapGeometry.points.length && <text x="0.5" y="0.48" textAnchor="middle" fill="#a9a9a9" fontSize="0.045">EMPTY PROJECT MAP</text>}
-            {!mapGeometry.points.length && <text x="0.5" y="0.56" textAnchor="middle" fill="#777" fontSize="0.028">Use Draw map manually or attach a reference</text>}
-            {mapGeometry.features?.map((feature) => feature.closed ? <polygon key={feature.id} points={feature.points.map((point) => `${point.x},${point.y}`).join(' ')} fill={feature.fill || '#dc2626'} fillOpacity={feature.opacity || 0.35} stroke={feature.stroke || '#374151'} strokeWidth={feature.widthMeters ? Math.max(0.006, Math.min(0.04, feature.widthMeters / 180)) : 0.008} strokeLinejoin="round" /> : <polyline key={feature.id} points={feature.points.map((point) => `${point.x},${point.y}`).join(' ')} fill="none" stroke={feature.stroke || '#374151'} strokeWidth={feature.widthMeters ? Math.max(0.006, Math.min(0.04, feature.widthMeters / 180)) : 0.008} strokeDasharray={feature.lineStyle === 'dashed' ? '0.025 0.015' : undefined} strokeLinejoin="round" />)}
-            {mapGeometry.segments.map((segment) => {
-              const from = mapGeometry.points.find((point) => point.id === segment.from);
-              const to = mapGeometry.points.find((point) => point.id === segment.to);
-              if (!from || !to) return null;
-              return <line key={segment.id} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={segment.color || '#e88724'} strokeWidth={(segment.width || 4) / 100} strokeLinecap="round" opacity="0.9" />;
-            })}
-            {mapGeometry.points.map((point) => <circle key={point.id} cx={point.x} cy={point.y} r="0.018" fill={point.kind === 'start' ? '#55dd88' : point.kind === 'end' ? '#ff6b6b' : '#4ea3e8'} stroke="#0d1112" strokeWidth="0.006" />)}
-            {mapSelection?.start && <circle cx={mapSelection.start.x} cy={mapSelection.start.y} r="0.035" fill="none" stroke="#55dd88" strokeWidth="0.012" />}
-            {mapSelection?.end && <circle cx={mapSelection.end.x} cy={mapSelection.end.y} r="0.035" fill="none" stroke="#ff6b6b" strokeWidth="0.012" />}
-            {mapSelection?.start && mapSelection?.end && <line x1={mapSelection.start.x} y1={mapSelection.start.y} x2={mapSelection.end.x} y2={mapSelection.end.y} stroke="#ffffff" strokeWidth="0.008" strokeDasharray="0.025 0.015" />}
-          </svg>
-          <div className="mt-1 text-[8.5px] leading-relaxed text-[#aaa]">{mapMarkingEnabled ? 'Click the previous/last part, then click the endpoint for the next generated part.' : 'Gemini-normalized thick-line plan overlay.'}</div>
+        <div className="pointer-events-auto absolute inset-0 z-[70] bg-[#171717]">
+          <UndergroundMapEditor
+            geometry={mapGeometry}
+            fullViewport
+            onChange={(nextGeometry) => onMapGeometryChange?.(nextGeometry)}
+            onStatusChange={onMapEditorStatus}
+            mapMarkingEnabled={mapMarkingEnabled}
+            onMapMarkingChange={onMapMarkingChange}
+            onMapPointPicked={onMapPointPicked}
+            mapSelection={mapSelection}
+          />
         </div>
       )}
 
