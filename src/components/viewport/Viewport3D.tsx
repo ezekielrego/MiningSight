@@ -35,6 +35,7 @@ import { C4DMaterial, C4DSceneObject, ToolMode, Vector3D } from '../../types/c4d
 import { CameraKeyframe, CameraTour, HotspotInfo, KeyframeAnnotation } from '../../types/cameraTour';
 import { degToRad } from '../../utils/math3d';
 import { GasMark, MediaMarker, ProjectAsset } from '../../types/project';
+import { ReconstructionMapGeometry, ReconstructionMapSelection } from '../../types/aiSurvey';
 import {
   interpolateCameraTour,
   calculateDistanceMeters,
@@ -138,6 +139,11 @@ interface Viewport3DProps {
   gasMarks?: GasMark[];
   onAddGasMark?: (mark: GasMark) => void;
   onSetPlayback?: (isPlaying: boolean) => void;
+  onCaptureReferenceImage?: (dataUrl: string, name: string) => void;
+  mapGeometry?: ReconstructionMapGeometry | null;
+  mapSelection?: ReconstructionMapSelection | null;
+  mapMarkingEnabled?: boolean;
+  onMapPointPicked?: (point: { x: number; y: number }) => void;
 }
 
 export const Viewport3D: React.FC<Viewport3DProps> = ({
@@ -172,6 +178,11 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   gasMarks = [],
   onAddGasMark,
   onSetPlayback,
+  onCaptureReferenceImage,
+  mapGeometry = null,
+  mapSelection = null,
+  mapMarkingEnabled = false,
+  onMapPointPicked,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1529,10 +1540,20 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   const handleCaptureScreenshot = () => {
     if (!rendererRef.current) return;
     const dataUrl = rendererRef.current.domElement.toDataURL('image/png');
+    onCaptureReferenceImage?.(dataUrl, `MiningSight_Keyframe_${Date.now()}.png`);
     const a = document.createElement('a');
     a.href = dataUrl;
     a.download = `MiningSight_3D_${Date.now()}.png`;
     a.click();
+  };
+
+  const handleMapOverlayClick = (event: React.MouseEvent<SVGSVGElement>) => {
+    if (!mapMarkingEnabled || !onMapPointPicked) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    onMapPointPicked({
+      x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
+      y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)),
+    });
   };
 
   const handleAddVideoMarker = () => {
@@ -1572,6 +1593,29 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         onDoubleClick={focusCameraAtPointer}
         onWheel={handleWheel}
       />
+
+      {mapGeometry && (
+        <div className="pointer-events-auto absolute bottom-3 left-3 z-[45] w-64 max-w-[42%] rounded-[4px] border border-[#e88724]/70 bg-[#141414]/90 p-2 shadow-2xl backdrop-blur-md">
+          <div className="mb-1 flex items-center justify-between gap-2 text-[9px]">
+            <span className="truncate font-bold uppercase tracking-wide text-[#f1c18b]">2D map · {mapGeometry.name}</span>
+            <span className={`shrink-0 rounded px-1 py-0.5 font-mono ${mapMarkingEnabled ? 'bg-[#e88724] text-black' : 'bg-[#333] text-[#aaa]'}`}>{mapMarkingEnabled ? 'PICK 2 POINTS' : 'VIEW'}</span>
+          </div>
+          <svg viewBox="0 0 1 1" preserveAspectRatio="none" onClick={handleMapOverlayClick} className={`block aspect-[4/3] w-full rounded border border-[#4c4c4c] bg-[#222] ${mapMarkingEnabled ? 'cursor-crosshair' : 'cursor-default'}`}>
+            <rect x="0" y="0" width="1" height="1" fill="#202629" />
+            {mapGeometry.segments.map((segment) => {
+              const from = mapGeometry.points.find((point) => point.id === segment.from);
+              const to = mapGeometry.points.find((point) => point.id === segment.to);
+              if (!from || !to) return null;
+              return <line key={segment.id} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={segment.color || '#e88724'} strokeWidth={(segment.width || 4) / 100} strokeLinecap="round" opacity="0.9" />;
+            })}
+            {mapGeometry.points.map((point) => <circle key={point.id} cx={point.x} cy={point.y} r="0.018" fill={point.kind === 'start' ? '#55dd88' : point.kind === 'end' ? '#ff6b6b' : '#4ea3e8'} stroke="#0d1112" strokeWidth="0.006" />)}
+            {mapSelection?.start && <circle cx={mapSelection.start.x} cy={mapSelection.start.y} r="0.035" fill="none" stroke="#55dd88" strokeWidth="0.012" />}
+            {mapSelection?.end && <circle cx={mapSelection.end.x} cy={mapSelection.end.y} r="0.035" fill="none" stroke="#ff6b6b" strokeWidth="0.012" />}
+            {mapSelection?.start && mapSelection?.end && <line x1={mapSelection.start.x} y1={mapSelection.start.y} x2={mapSelection.end.x} y2={mapSelection.end.y} stroke="#ffffff" strokeWidth="0.008" strokeDasharray="0.025 0.015" />}
+          </svg>
+          <div className="mt-1 text-[8.5px] leading-relaxed text-[#aaa]">{mapMarkingEnabled ? 'Click the previous/last part, then click the endpoint for the next generated part.' : 'Gemini-normalized thick-line plan overlay.'}</div>
+        </div>
+      )}
 
       {activeProjectId && !activeAsset && (
         <div className="absolute inset-0 z-[5] flex items-center justify-center pointer-events-none">

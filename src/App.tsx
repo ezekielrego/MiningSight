@@ -5,7 +5,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { C4DMaterial, C4DSceneObject, TimelineState, ToolMode, Vector3D } from './types/c4d';
-import { ReconstructionBrief, StatusAlert } from './types/aiSurvey';
+import { ReconstructionBrief, ReconstructionMapGeometry, ReconstructionMapSelection, StatusAlert } from './types/aiSurvey';
 import { MenuBar } from './components/layout/MenuBar';
 import { MainToolbar } from './components/layout/MainToolbar';
 import { LeftToolPalette } from './components/layout/LeftToolPalette';
@@ -304,6 +304,10 @@ export default function App() {
   const [projectAssets, setProjectAssets] = useState<ProjectAsset[]>([]);
   const [activeAssetId, setActiveAssetId] = useState<string | null>(null);
   const [reconstructionBrief, setReconstructionBrief] = useState<ReconstructionBrief | null>(null);
+  const [reconstructionMapGeometry, setReconstructionMapGeometry] = useState<ReconstructionMapGeometry | null>(null);
+  const [reconstructionMapSelection, setReconstructionMapSelection] = useState<ReconstructionMapSelection | null>(null);
+  const [mapMarkingEnabled, setMapMarkingEnabled] = useState(false);
+  const [capturedReferenceImage, setCapturedReferenceImage] = useState<{ dataUrl: string; name: string } | null>(null);
   const [mediaMarkers, setMediaMarkers] = useState<MediaMarker[]>([]);
   const [gasMarks, setGasMarks] = useState<GasMark[]>([]);
   const gasMarksRef = useRef<GasMark[]>([]);
@@ -433,8 +437,12 @@ export default function App() {
     setProjectAssets([]);
     setActiveAssetId(null);
     setReconstructionBrief(null);
-      gasMarksRef.current = [];
-      setGasMarks([]);
+    setReconstructionMapGeometry(null);
+    setReconstructionMapSelection(null);
+    setMapMarkingEnabled(false);
+    setCapturedReferenceImage(null);
+    gasMarksRef.current = [];
+    setGasMarks([]);
   };
 
   const buildProjectData = useCallback(() => ({
@@ -632,6 +640,10 @@ export default function App() {
       setMaterials(Array.isArray(project.materials) ? project.materials : getAllCombinedMaterials());
       setProjectAssets(Array.isArray(project.assets) ? project.assets : []);
       setReconstructionBrief(project.reconstructionBrief || null);
+      setReconstructionMapGeometry(project.reconstructionBrief?.mapGeometry || null);
+      setReconstructionMapSelection(project.reconstructionBrief?.mapSelection || null);
+      setMapMarkingEnabled(false);
+      setCapturedReferenceImage(null);
       setMediaMarkers(Array.isArray(project.mediaMarkers) ? project.mediaMarkers : []);
       const loadedGasMarks = Array.isArray(project.gasMarks) ? project.gasMarks : [];
       gasMarksRef.current = loadedGasMarks;
@@ -679,6 +691,10 @@ export default function App() {
       setProceduralParams(TUNNEL_PRESETS.rugged_timbered_photo.defaultParams);
       setProjectAssets([]);
       setReconstructionBrief(null);
+      setReconstructionMapGeometry(null);
+      setReconstructionMapSelection(null);
+      setMapMarkingEnabled(false);
+      setCapturedReferenceImage(null);
       setMediaMarkers([]);
       gasMarksRef.current = [];
       setGasMarks([]);
@@ -1219,6 +1235,10 @@ export default function App() {
     setActiveProjectId(null);
     setActiveAssetId(null);
     setReconstructionBrief(null);
+    setReconstructionMapGeometry(null);
+    setReconstructionMapSelection(null);
+    setMapMarkingEnabled(false);
+    setCapturedReferenceImage(null);
     setProjectAssets([]);
     setMediaMarkers([]);
     gasMarksRef.current = [];
@@ -1579,6 +1599,10 @@ export default function App() {
             setGasMarks([]);
           }
           if (parsed.reconstructionBrief) setReconstructionBrief(parsed.reconstructionBrief);
+          setReconstructionMapGeometry(parsed.reconstructionBrief?.mapGeometry || null);
+          setReconstructionMapSelection(parsed.reconstructionBrief?.mapSelection || null);
+          setMapMarkingEnabled(false);
+          setCapturedReferenceImage(null);
           if (parsed.tours && Array.isArray(parsed.tours)) {
             saveTours(parsed.tours);
             if (parsed.tours[0]?.id) setActiveTourId(parsed.tours[0].id);
@@ -1609,6 +1633,22 @@ export default function App() {
     // Reset input
     e.target.value = '';
   };
+
+  const handleMapGeometryChange = useCallback((geometry: ReconstructionMapGeometry | null) => {
+    setReconstructionMapGeometry(geometry);
+    setReconstructionMapSelection(null);
+    setMapMarkingEnabled(false);
+  }, []);
+
+  const handleMapPointPicked = useCallback((point: { x: number; y: number }) => {
+    if (!reconstructionMapSelection?.start || reconstructionMapSelection.end) {
+      setReconstructionMapSelection({ start: point });
+      setMapMarkingEnabled(true);
+    } else {
+      setReconstructionMapSelection({ ...reconstructionMapSelection, end: point });
+      setMapMarkingEnabled(false);
+    }
+  }, [reconstructionMapSelection]);
 
   // Selected Object lookup (recursive through all child levels)
   const findObjectById = (list: C4DSceneObject[], targetId: string | null): C4DSceneObject | null => {
@@ -1800,10 +1840,17 @@ export default function App() {
             selectedObjectName={selectedObject?.name || null}
             activeAssetName={activeAsset?.name || null}
             savedReconstructionBrief={reconstructionBrief}
+            capturedReferenceImage={capturedReferenceImage}
+            mapGeometry={reconstructionMapGeometry}
+            mapSelection={reconstructionMapSelection}
+            mapMarkingEnabled={mapMarkingEnabled}
+            onMapGeometryChange={handleMapGeometryChange}
+            onMapMarkingChange={setMapMarkingEnabled}
             onSaveReconstructionBrief={(brief) => {
-              setReconstructionBrief(brief);
+              const nextBrief = { ...brief, mapGeometry: reconstructionMapGeometry, mapSelection: reconstructionMapSelection };
+              setReconstructionBrief(nextBrief);
               if (activeProjectId) {
-                void saveProjectSnapshot(activeProjectId, projectName, projectAssets, { ...buildProjectData(), reconstructionBrief: brief });
+                void saveProjectSnapshot(activeProjectId, projectName, projectAssets, { ...buildProjectData(), reconstructionBrief: nextBrief });
               }
             }}
           />
@@ -1851,6 +1898,14 @@ export default function App() {
             gasMarks={gasMarks}
             onAddGasMark={handleAddGasMark}
             onSetPlayback={(isPlaying) => setTimeline((prev) => ({ ...prev, isPlaying }))}
+            onCaptureReferenceImage={(dataUrl, name) => {
+              setCapturedReferenceImage({ dataUrl, name });
+              setActiveUpperTab('AI Survey');
+            }}
+            mapGeometry={reconstructionMapGeometry}
+            mapSelection={reconstructionMapSelection}
+            mapMarkingEnabled={mapMarkingEnabled}
+            onMapPointPicked={handleMapPointPicked}
           />
         }
         timeline={

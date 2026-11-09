@@ -864,6 +864,81 @@ app.get('/api/ai/gomera-reconstruction/:jobId/model', async (req, res) => {
   }
 });
 
+// Convert an uploaded plan/section image or readable map text into the
+// normalized 2D geometry used by the viewer's thick-line map overlay.
+app.post('/api/ai/reconstruction-map', async (req, res) => {
+  try {
+    const settings = await getUserAiSettings(req);
+    const geminiApiKey = settings?.geminiApiKey || process.env.GEMINI_API_KEY;
+    if (!hasConfiguredKey(geminiApiKey, 'MY_GEMINI_API_KEY')) {
+      return res.status(428).json({ success: false, error: 'AI_PROVIDER_KEY_REQUIRED', provider: 'gemini', message: 'Configure a Gemini API key before interpreting a reconstruction map.' });
+    }
+    const image = typeof req.body?.image === 'string' ? req.body.image : '';
+    const mapName = String(req.body?.mapName || 'reference-map').slice(0, 160);
+    const mapText = typeof req.body?.mapText === 'string' ? req.body.mapText.slice(0, 120000) : '';
+    const fallbackPoints = [
+      { id: 'map_start', label: 'Map start', x: 0.12, y: 0.5, kind: 'start' },
+      { id: 'map_end', label: 'Map end', x: 0.88, y: 0.5, kind: 'end' },
+    ];
+    const fallbackGeometry = {
+      name: mapName,
+      source: mapText ? 'text-fallback' : 'manual',
+      points: fallbackPoints,
+      segments: [{ id: 'map_segment_1', from: 'map_start', to: 'map_end', label: 'Reference alignment', color: '#e88724', width: 4 }],
+      assumptions: ['No station coordinates were confidently extracted; place the start and end anchors manually on the overlay.'],
+    };
+    try {
+      const ai = getGeminiClient(geminiApiKey);
+      const contentParts: any[] = [];
+      if (image.includes('base64,')) {
+        const match = image.match(/^data:([^;]+);base64,(.+)$/);
+        if (match) contentParts.push({ inlineData: { mimeType: match[1], data: match[2] } });
+      }
+      contentParts.push({ text: `You are a surveying and mine-plan interpretation assistant inside MiningSight. Convert this 2D plan, section, screenshot, or map text into normalized geometry for a viewer overlay. Use x/y coordinates from 0 to 1 with origin at the top-left. Extract stations, chainages, turns, endpoints, headings, and important features when readable. Do not invent precision: include assumptions.
+
+Map name: ${mapName}
+Readable map text:
+${mapText || '(The attached image is the primary source.)'}
+
+Return only JSON in this exact shape:
+{
+  "name": "string",
+  "points": [{"id":"string","label":"string","x":0.0,"y":0.0,"kind":"station|start|end|feature"}],
+  "segments": [{"id":"string","from":"point id","to":"point id","label":"string","color":"#hex","width":number}],
+  "assumptions": ["string"]
+}
+Keep coordinates between 0 and 1, create at least a start and end point, and connect ordered route segments.` });
+      const response: any = await ai.models.generateContent({
+        model: settings?.geminiModel || defaultGeminiModel,
+        contents: { parts: contentParts },
+        config: { systemInstruction: 'Return only valid JSON for 2D map geometry.', responseMimeType: 'application/json' },
+      });
+      const parsed = JSON.parse(response.text || '{}');
+      const points = Array.isArray(parsed.points) ? parsed.points.map((point: any, index: number) => ({
+        id: String(point.id || `map_point_${index + 1}`),
+        label: String(point.label || `Station ${index + 1}`),
+        x: Math.max(0, Math.min(1, Number(point.x) || 0)),
+        y: Math.max(0, Math.min(1, Number(point.y) || 0)),
+        kind: ['station', 'start', 'end', 'feature'].includes(point.kind) ? point.kind : 'feature',
+      })) : fallbackPoints;
+      const pointIds = new Set(points.map((point: any) => point.id));
+      const segments = Array.isArray(parsed.segments) ? parsed.segments.filter((segment: any) => pointIds.has(segment.from) && pointIds.has(segment.to)).map((segment: any, index: number) => ({
+        id: String(segment.id || `map_segment_${index + 1}`),
+        from: String(segment.from),
+        to: String(segment.to),
+        label: String(segment.label || 'Reference route'),
+        color: /^#[0-9a-f]{6}$/i.test(String(segment.color || '')) ? segment.color : '#e88724',
+        width: Math.max(1, Math.min(12, Number(segment.width) || 4)),
+      })) : [];
+      return res.json({ success: true, source: settings?.geminiModel || defaultGeminiModel, mapGeometry: { name: String(parsed.name || mapName), source: 'gemini', points, segments: segments.length ? segments : fallbackGeometry.segments, assumptions: Array.isArray(parsed.assumptions) ? parsed.assumptions.map(String).slice(0, 20) : [] } });
+    } catch (error: any) {
+      return res.json({ success: true, source: 'text-fallback', notice: `Gemini map interpretation fallback used: ${error.message}`, mapGeometry: fallbackGeometry });
+    }
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: 'RECONSTRUCTION_MAP_FAILED', message: error.message || 'Could not interpret reconstruction map.' });
+  }
+});
+
 // Mining Site Photogrammetry & 3D Subsurface Mapping AI endpoint
 app.post('/api/ai/photogrammetry-survey', async (req, res) => {
   try {
@@ -1115,6 +1190,9 @@ app.post('/api/ai/reconstruct-scene-from-image', async (req, res) => {
       activeAssetName,
       referenceMapName,
       referenceMapText,
+      referenceMapImage,
+      mapGeometry,
+      mapSelection,
       nextPartDistanceMeters,
       dimensions,
     } = req.body;
@@ -1189,6 +1267,13 @@ app.post('/api/ai/reconstruct-scene-from-image', async (req, res) => {
         }
       }
 
+      if (referenceMapImage && typeof referenceMapImage === 'string' && referenceMapImage.includes('base64,')) {
+        const mapMatch = referenceMapImage.match(/^data:([^;]+);base64,(.+)$/);
+        if (mapMatch) {
+          contentParts.push({ inlineData: { mimeType: mapMatch[1], data: mapMatch[2] } });
+        }
+      }
+
       const promptText = `You are a Senior Mine Geotechnical Engineer and 3D CAD Reconstruction Specialist working inside MiningSight.
 Analyze the attached underground reference screenshot and the readable map/section below. Return a safe, reviewable procedural reconstruction plan for our selectable Three.js mine models.
 
@@ -1202,6 +1287,9 @@ Requested dimensions: width ${Number(dimensions?.widthMeters) || 4.6}m, height $
 Reference map name: ${referenceMapName || 'none'}
 Reference map / chainage / station data:
 ${safeMapText || '(No map supplied; use the image and instructions only.)'}
+
+Normalized map geometry and user-selected anchors (if already interpreted):
+${JSON.stringify({ mapGeometry: mapGeometry || null, mapSelection: mapSelection || null })}
 
 Field Notes and user instructions:
 ${fieldNotes || 'Extract timber set geometry, lagging plank tiers, earthen floor, and unlined heading transition.'}

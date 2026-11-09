@@ -32,6 +32,8 @@ import {
   StatusAlert,
   getDefaultSampleSurveyImages,
   ReconstructionBrief,
+  ReconstructionMapGeometry,
+  ReconstructionMapSelection,
 } from '../../types/aiSurvey';
 
 interface AIGeologicalMapperPanelProps {
@@ -48,6 +50,12 @@ interface AIGeologicalMapperPanelProps {
   activeAssetName?: string | null;
   savedReconstructionBrief?: ReconstructionBrief | null;
   onSaveReconstructionBrief?: (brief: ReconstructionBrief) => void;
+  capturedReferenceImage?: { dataUrl: string; name: string } | null;
+  mapGeometry?: ReconstructionMapGeometry | null;
+  mapSelection?: ReconstructionMapSelection | null;
+  mapMarkingEnabled?: boolean;
+  onMapGeometryChange?: (geometry: ReconstructionMapGeometry | null) => void;
+  onMapMarkingChange?: (enabled: boolean) => void;
 }
 
 type WorldProvider = 'marble' | 'gomera';
@@ -101,6 +109,12 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   activeAssetName = null,
   savedReconstructionBrief = null,
   onSaveReconstructionBrief,
+  capturedReferenceImage = null,
+  mapGeometry = null,
+  mapSelection = null,
+  mapMarkingEnabled = false,
+  onMapGeometryChange,
+  onMapMarkingChange,
 }) => {
   const [activeTab, setActiveTab] = useState<'input' | 'preview' | 'analysis' | 'records' | 'reconstruct'>('input');
   const [images, setImages] = useState<SurveyImageItem[]>(getDefaultSampleSurveyImages());
@@ -117,7 +131,10 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   const [reconstructBasePresetId, setReconstructBasePresetId] = useState(currentPresetId || 'rugged_timbered_photo');
   const [reconstructMapName, setReconstructMapName] = useState('');
   const [reconstructMapText, setReconstructMapText] = useState('');
+  const [reconstructMapImage, setReconstructMapImage] = useState('');
+  const [reconstructMapImageName, setReconstructMapImageName] = useState('');
   const [reconstructMapLoading, setReconstructMapLoading] = useState(false);
+  const [mapInterpreting, setMapInterpreting] = useState(false);
   const [nextPartDistanceMeters, setNextPartDistanceMeters] = useState(2.5);
   const [partWidthMeters, setPartWidthMeters] = useState(4.6);
   const [partHeightMeters, setPartHeightMeters] = useState(4.6);
@@ -193,6 +210,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
       setReconstructImageName(savedReconstructionBrief.referenceImageName || 'rugged_timbered_mine_reference.png');
       setReconstructMapName(savedReconstructionBrief.mapName || '');
       setReconstructMapText(savedReconstructionBrief.mapText || '');
+      onMapGeometryChange?.(savedReconstructionBrief.mapGeometry || null);
       setNextPartDistanceMeters(Number(savedReconstructionBrief.nextPartDistanceMeters) || 2.5);
       setPartWidthMeters(Number(savedReconstructionBrief.dimensions?.widthMeters) || 4.6);
       setPartHeightMeters(Number(savedReconstructionBrief.dimensions?.heightMeters) || 4.6);
@@ -210,6 +228,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
         setReconstructImageName(localBrief.referenceImageName || 'rugged_timbered_mine_reference.png');
         setReconstructMapName(localBrief.mapName || '');
         setReconstructMapText(localBrief.mapText || '');
+        onMapGeometryChange?.(localBrief.mapGeometry || null);
         setNextPartDistanceMeters(Number(localBrief.nextPartDistanceMeters) || 2.5);
         setPartWidthMeters(Number(localBrief.dimensions?.widthMeters) || 4.6);
         setPartHeightMeters(Number(localBrief.dimensions?.heightMeters) || 4.6);
@@ -219,7 +238,20 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
         setReconstructBasePresetId(currentPresetId);
       }
     }
-  }, [currentPresetId, savedReconstructionBrief]);
+  }, [currentPresetId, savedReconstructionBrief, onMapGeometryChange]);
+
+  useEffect(() => {
+    if (!capturedReferenceImage) return;
+    setReconstructImage(capturedReferenceImage.dataUrl);
+    setReconstructImageName(capturedReferenceImage.name);
+    setActiveTab('reconstruct');
+    onStatusChange({
+      type: 'success',
+      message: 'Keyframe screenshot attached to the Gemini reconstruction brief.',
+      details: 'The captured viewer position is now the active visual reference.',
+      timestamp: new Date().toLocaleTimeString(),
+    });
+  }, [capturedReferenceImage, onStatusChange]);
 
   // Save records to localStorage
   const saveRecordToHistory = (res: SurveyAnalysisResult, source: string) => {
@@ -440,9 +472,10 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
 
   const handleReconstructionMap = async (file?: File) => {
     if (!file) return;
-    const accepted = file.type.startsWith('text/') || /\.(json|geojson|csv|txt|md|yaml|yml)$/i.test(file.name);
+    const isImage = file.type.startsWith('image/');
+    const accepted = isImage || file.type.startsWith('text/') || /\.(json|geojson|csv|txt|md|yaml|yml)$/i.test(file.name);
     if (!accepted) {
-      setWorldError('Maps must be JSON, GeoJSON, CSV, TXT, Markdown, YAML, or YML.');
+      setWorldError('Maps must be an image, JSON, GeoJSON, CSV, TXT, Markdown, YAML, or YML file.');
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
@@ -451,14 +484,64 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
     }
     setReconstructMapLoading(true);
     try {
-      const text = await file.text();
       setReconstructMapName(file.name);
-      setReconstructMapText(text.slice(0, 120000));
+      if (isImage) {
+        setReconstructMapImage(await readFileAsDataUrl(file));
+        setReconstructMapImageName(file.name);
+      } else {
+        const text = await file.text();
+        setReconstructMapText(text.slice(0, 120000));
+      }
       setWorldError('');
     } catch (error: any) {
       setWorldError(error.message || 'Could not read the reference map.');
     } finally {
       setReconstructMapLoading(false);
+    }
+  };
+
+  const interpretReconstructionMap = async () => {
+    if (!authToken || (aiSettings && !aiSettings.geminiConfigured)) {
+      openProviderSettings();
+      if (!authToken) onOpenAuth?.();
+      onStatusChange({
+        type: 'warning',
+        message: 'Gemini API key required before interpreting a map.',
+        details: 'Open Provider API keys & model preferences and save a Gemini key.',
+        timestamp: new Date().toLocaleTimeString(),
+      });
+      return;
+    }
+    if (!reconstructMapImage && !reconstructMapText.trim()) {
+      setWorldError('Attach a map image or paste readable map text first.');
+      return;
+    }
+    setMapInterpreting(true);
+    setWorldError('');
+    try {
+      const response = await fetch('/api/reconstruction/ai/reconstruction-map', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ image: reconstructMapImage, mapName: reconstructMapName || reconstructMapImageName, mapText: reconstructMapText }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || !json.success || !json.mapGeometry) {
+        if (response.status === 428) openProviderSettings();
+        throw new Error(json.message || 'Map interpretation failed.');
+      }
+      onMapGeometryChange?.(json.mapGeometry as ReconstructionMapGeometry);
+      onMapMarkingChange?.(false);
+      onStatusChange({
+        type: 'success',
+        message: 'Gemini converted the reference map into a 2D route overlay.',
+        details: `${json.mapGeometry.points?.length || 0} points and ${json.mapGeometry.segments?.length || 0} thick-line segments are now visible in the viewer.`,
+        timestamp: new Date().toLocaleTimeString(),
+      });
+    } catch (error: any) {
+      setWorldError(error.message || 'Could not interpret the reference map.');
+      onStatusChange({ type: 'error', message: `Map interpretation failed: ${error.message}`, timestamp: new Date().toLocaleTimeString() });
+    } finally {
+      setMapInterpreting(false);
     }
   };
 
@@ -471,6 +554,8 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
     referenceImageName: reconstructImageName,
     mapName: reconstructMapName || undefined,
     mapText: reconstructMapText || undefined,
+    mapGeometry,
+    mapSelection,
     nextPartDistanceMeters,
     dimensions: {
       widthMeters: partWidthMeters,
@@ -511,8 +596,8 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
       if (!authToken) onOpenAuth?.();
       return;
     }
-    if (reconstructTargetMode !== 'rebuild-scene' && (!reconstructMapText.trim() || !Number.isFinite(nextPartDistanceMeters) || nextPartDistanceMeters <= 0)) {
-      setWorldError('For a new part or extension, attach a readable reference map and set a positive distance from the current endpoint.');
+    if (reconstructTargetMode !== 'rebuild-scene' && (!reconstructMapText.trim() && !mapGeometry && !reconstructMapImage || !Number.isFinite(nextPartDistanceMeters) || nextPartDistanceMeters <= 0)) {
+      setWorldError('For a new part or extension, attach or interpret a reference map and set a positive distance from the current endpoint.');
       return;
     }
     if (!reconstructPrompt.trim()) {
@@ -549,6 +634,9 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
           activeAssetName,
           referenceMapName: reconstructMapName,
           referenceMapText: reconstructMapText,
+          referenceMapImage: reconstructMapImage,
+          mapGeometry,
+          mapSelection,
           nextPartDistanceMeters,
           dimensions: {
             widthMeters: partWidthMeters,
@@ -1937,10 +2025,10 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                   <span className="mt-0.5 block text-[8.5px] text-[#888]">Replace reference screenshot</span>
                 </label>
                 <label className="rounded border border-dashed border-[#505050] bg-[#1c1c1c] p-2 text-center cursor-pointer hover:border-[#e88724]">
-                  <input type="file" accept=".json,.geojson,.csv,.txt,.md,.yaml,.yml,text/plain,application/json" className="hidden" disabled={reconstructMapLoading || isReconstructing} onChange={(event) => { void handleReconstructionMap(event.target.files?.[0]); event.currentTarget.value = ''; }} />
+                  <input type="file" accept="image/jpeg,image/png,image/webp,.json,.geojson,.csv,.txt,.md,.yaml,.yml,text/plain,application/json" className="hidden" disabled={reconstructMapLoading || isReconstructing || mapInterpreting} onChange={(event) => { void handleReconstructionMap(event.target.files?.[0]); event.currentTarget.value = ''; }} />
                   <Upload className="mx-auto mb-1 h-4 w-4 text-[#e88724]" />
-                  <span className="block truncate text-[9.5px] text-[#ddd]">{reconstructMapName || 'Attach reference map'}</span>
-                  <span className="mt-0.5 block text-[8.5px] text-[#888]">JSON, GeoJSON, CSV, TXT · {reconstructMapText ? 'readable' : 'required for extensions'}</span>
+                  <span className="block truncate text-[9.5px] text-[#ddd]">{reconstructMapName || 'Attach map image or data'}</span>
+                  <span className="mt-0.5 block text-[8.5px] text-[#888]">Image, JSON, GeoJSON, CSV, TXT · {reconstructMapImage || reconstructMapText ? 'ready to interpret' : 'required for extensions'}</span>
                 </label>
               </div>
 
@@ -1960,6 +2048,18 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
               </div>
 
               <textarea value={reconstructMapText} onChange={(event) => setReconstructMapText(event.target.value)} rows={3} maxLength={120000} placeholder="Paste a readable map or section here: station IDs, chainages, distances, width/height, curve radius, heading, and the next part location…" className="w-full resize-y bg-[#1c1c1c] border border-[#414141] rounded px-1.5 py-1.5 text-[10px] text-[#ddd] leading-relaxed focus:outline-none focus:border-[#e88724]" />
+
+              <div className="flex flex-wrap items-center gap-1.5 rounded border border-[#3f3427] bg-[#211d18] px-2 py-1.5 text-[9px]">
+                <span className="mr-auto text-[#cbb79d]">{mapGeometry ? `Map overlay ready · ${mapGeometry.points.length} points` : 'Map has not been interpreted yet.'}</span>
+                <button onClick={interpretReconstructionMap} disabled={mapInterpreting || isReconstructing || (!reconstructMapImage && !reconstructMapText.trim())} className="rounded border border-[#e88724] bg-[#e88724] px-2 py-1 font-bold text-black disabled:cursor-wait disabled:opacity-50 cursor-pointer">
+                  {mapInterpreting ? <span className="inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" />Reading map…</span> : 'Interpret map with Gemini'}
+                </button>
+                <button onClick={() => onMapMarkingChange?.(!mapMarkingEnabled)} disabled={!mapGeometry || mapInterpreting} className={`rounded border px-2 py-1 font-semibold cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${mapMarkingEnabled ? 'border-[#55dd88] bg-[#214a31] text-[#a8f2bb]' : 'border-[#555] bg-[#303030] text-[#ddd]'}`}>
+                  {mapMarkingEnabled ? 'Finish start/end picks' : 'Pick start/end in viewer'}
+                </button>
+                {mapSelection?.start && <span className="text-[#8ee8a5]">Start set</span>}
+                {mapSelection?.end && <span className="text-[#ff9d9d]">End set</span>}
+              </div>
 
               <div className="flex items-center justify-between gap-2 text-[9px]">
                 <span className="text-[#999]">{reconstructTargetMode === 'rebuild-scene' ? 'Map is optional for a complete rebuild.' : 'A map and positive next-part offset are required to extend or add a part.'}</span>

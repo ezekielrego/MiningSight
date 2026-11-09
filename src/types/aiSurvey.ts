@@ -82,6 +82,8 @@ export interface ReconstructionBrief {
   referenceImageName?: string;
   mapName?: string;
   mapText?: string;
+  mapGeometry?: ReconstructionMapGeometry | null;
+  mapSelection?: ReconstructionMapSelection | null;
   nextPartDistanceMeters?: number;
   dimensions?: {
     widthMeters?: number;
@@ -90,6 +92,36 @@ export interface ReconstructionBrief {
   };
   prompt: string;
   updatedAt: string;
+}
+
+export interface ReconstructionMapPoint {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  kind?: 'station' | 'start' | 'end' | 'feature';
+}
+
+export interface ReconstructionMapSegment {
+  id: string;
+  from: string;
+  to: string;
+  label?: string;
+  color?: string;
+  width?: number;
+}
+
+export interface ReconstructionMapGeometry {
+  name: string;
+  source: 'gemini' | 'manual' | 'text-fallback';
+  points: ReconstructionMapPoint[];
+  segments: ReconstructionMapSegment[];
+  assumptions?: string[];
+}
+
+export interface ReconstructionMapSelection {
+  start?: { x: number; y: number; label?: string };
+  end?: { x: number; y: number; label?: string };
 }
 
 /**
