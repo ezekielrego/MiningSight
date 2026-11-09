@@ -31,6 +31,7 @@ import {
   SurveyRecord,
   StatusAlert,
   getDefaultSampleSurveyImages,
+  ReconstructionBrief,
 } from '../../types/aiSurvey';
 
 interface AIGeologicalMapperPanelProps {
@@ -39,9 +40,14 @@ interface AIGeologicalMapperPanelProps {
   projectTitle?: string;
   currentPresetId?: string;
   onSelectPreset?: (presetId: any) => void;
-  onApplyCustomScene?: (params: any) => void;
+  onApplyCustomScene?: (params: any, context?: { targetMode: ReconstructionBrief['targetMode']; nextPartDistanceMeters: number; basePresetId: string }) => void;
   authToken?: string | null;
   onOpenAuth?: () => void;
+  selectedObjectId?: string | null;
+  selectedObjectName?: string | null;
+  activeAssetName?: string | null;
+  savedReconstructionBrief?: ReconstructionBrief | null;
+  onSaveReconstructionBrief?: (brief: ReconstructionBrief) => void;
 }
 
 type WorldProvider = 'marble' | 'gomera';
@@ -90,6 +96,11 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   onApplyCustomScene,
   authToken = null,
   onOpenAuth,
+  selectedObjectId = null,
+  selectedObjectName = null,
+  activeAssetName = null,
+  savedReconstructionBrief = null,
+  onSaveReconstructionBrief,
 }) => {
   const [activeTab, setActiveTab] = useState<'input' | 'preview' | 'analysis' | 'records' | 'reconstruct'>('input');
   const [images, setImages] = useState<SurveyImageItem[]>(getDefaultSampleSurveyImages());
@@ -100,6 +111,18 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
 
   // AI 3D Scene Reconstruction state
   const [reconstructImage, setReconstructImage] = useState<string>('/assets/reference/rugged_timbered_mine_reference.png');
+  const [reconstructImageName, setReconstructImageName] = useState('rugged_timbered_mine_reference.png');
+  const [reconstructReferenceLoading, setReconstructReferenceLoading] = useState(false);
+  const [reconstructTargetMode, setReconstructTargetMode] = useState<ReconstructionBrief['targetMode']>('extend-current');
+  const [reconstructBasePresetId, setReconstructBasePresetId] = useState(currentPresetId || 'rugged_timbered_photo');
+  const [reconstructMapName, setReconstructMapName] = useState('');
+  const [reconstructMapText, setReconstructMapText] = useState('');
+  const [reconstructMapLoading, setReconstructMapLoading] = useState(false);
+  const [nextPartDistanceMeters, setNextPartDistanceMeters] = useState(2.5);
+  const [partWidthMeters, setPartWidthMeters] = useState(4.6);
+  const [partHeightMeters, setPartHeightMeters] = useState(4.6);
+  const [partLengthMeters, setPartLengthMeters] = useState(8);
+  const [briefSavedMessage, setBriefSavedMessage] = useState('');
   const [reconstructPrompt, setReconstructPrompt] = useState<string>(
     'Synthesize square timber sets with 4-tier side lagging, inward batter angle, a clear packed earthen wheel-cart path, and unlined rock cavern adit bore. Do not add rails, carts, or loose stones.'
   );
@@ -162,6 +185,41 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
       console.warn('Could not read saved survey records:', e);
     }
   }, []);
+
+  useEffect(() => {
+    if (savedReconstructionBrief) {
+      setReconstructTargetMode(savedReconstructionBrief.targetMode);
+      setReconstructBasePresetId(savedReconstructionBrief.basePresetId || currentPresetId || 'rugged_timbered_photo');
+      setReconstructImageName(savedReconstructionBrief.referenceImageName || 'rugged_timbered_mine_reference.png');
+      setReconstructMapName(savedReconstructionBrief.mapName || '');
+      setReconstructMapText(savedReconstructionBrief.mapText || '');
+      setNextPartDistanceMeters(Number(savedReconstructionBrief.nextPartDistanceMeters) || 2.5);
+      setPartWidthMeters(Number(savedReconstructionBrief.dimensions?.widthMeters) || 4.6);
+      setPartHeightMeters(Number(savedReconstructionBrief.dimensions?.heightMeters) || 4.6);
+      setPartLengthMeters(Number(savedReconstructionBrief.dimensions?.lengthMeters) || 8);
+      if (savedReconstructionBrief.prompt) setReconstructPrompt(savedReconstructionBrief.prompt);
+    } else {
+      let localBrief: ReconstructionBrief | null = null;
+      try {
+        const raw = localStorage.getItem(`miningsight_reconstruction_brief_${projectTitle}`);
+        if (raw) localBrief = JSON.parse(raw) as ReconstructionBrief;
+      } catch {}
+      if (localBrief) {
+        setReconstructTargetMode(localBrief.targetMode);
+        setReconstructBasePresetId(localBrief.basePresetId || currentPresetId || 'rugged_timbered_photo');
+        setReconstructImageName(localBrief.referenceImageName || 'rugged_timbered_mine_reference.png');
+        setReconstructMapName(localBrief.mapName || '');
+        setReconstructMapText(localBrief.mapText || '');
+        setNextPartDistanceMeters(Number(localBrief.nextPartDistanceMeters) || 2.5);
+        setPartWidthMeters(Number(localBrief.dimensions?.widthMeters) || 4.6);
+        setPartHeightMeters(Number(localBrief.dimensions?.heightMeters) || 4.6);
+        setPartLengthMeters(Number(localBrief.dimensions?.lengthMeters) || 8);
+        if (localBrief.prompt) setReconstructPrompt(localBrief.prompt);
+      } else if (currentPresetId) {
+        setReconstructBasePresetId(currentPresetId);
+      }
+    }
+  }, [currentPresetId, savedReconstructionBrief]);
 
   // Save records to localStorage
   const saveRecordToHistory = (res: SurveyAnalysisResult, source: string) => {
@@ -304,7 +362,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
     try {
       const response = await fetch('/api/reconstruction/ai/photogrammetry-survey', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
         body: JSON.stringify({
           images,
           notes,
@@ -351,7 +409,95 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
     }
   };
 
-  // Reconstruct 3D scene from reference photograph via Gemini AI Vision
+  const readFileAsDataUrl = (file: Blob): Promise<string> => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Could not read the reference image.'));
+    reader.readAsDataURL(file);
+  });
+
+  const handleReconstructionReference = async (file?: File) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setWorldError('Use a screenshot or reference image in JPG, PNG, or WebP format.');
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      setWorldError('Reference screenshots must be 25 MB or smaller.');
+      return;
+    }
+    setReconstructReferenceLoading(true);
+    try {
+      setReconstructImage(await readFileAsDataUrl(file));
+      setReconstructImageName(file.name);
+      setWorldError('');
+    } catch (error: any) {
+      setWorldError(error.message || 'Could not read the reference screenshot.');
+    } finally {
+      setReconstructReferenceLoading(false);
+    }
+  };
+
+  const handleReconstructionMap = async (file?: File) => {
+    if (!file) return;
+    const accepted = file.type.startsWith('text/') || /\.(json|geojson|csv|txt|md|yaml|yml)$/i.test(file.name);
+    if (!accepted) {
+      setWorldError('Maps must be JSON, GeoJSON, CSV, TXT, Markdown, YAML, or YML.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setWorldError('Reference maps must be 5 MB or smaller.');
+      return;
+    }
+    setReconstructMapLoading(true);
+    try {
+      const text = await file.text();
+      setReconstructMapName(file.name);
+      setReconstructMapText(text.slice(0, 120000));
+      setWorldError('');
+    } catch (error: any) {
+      setWorldError(error.message || 'Could not read the reference map.');
+    } finally {
+      setReconstructMapLoading(false);
+    }
+  };
+
+  const buildReconstructionBrief = (): ReconstructionBrief => ({
+    targetMode: reconstructTargetMode,
+    basePresetId: reconstructBasePresetId,
+    selectedObjectId,
+    selectedObjectName,
+    activeAssetName,
+    referenceImageName: reconstructImageName,
+    mapName: reconstructMapName || undefined,
+    mapText: reconstructMapText || undefined,
+    nextPartDistanceMeters,
+    dimensions: {
+      widthMeters: partWidthMeters,
+      heightMeters: partHeightMeters,
+      lengthMeters: partLengthMeters,
+    },
+    prompt: reconstructPrompt,
+    updatedAt: new Date().toISOString(),
+  });
+
+  const saveReconstructionBrief = () => {
+    const brief = buildReconstructionBrief();
+    onSaveReconstructionBrief?.(brief);
+    try {
+      localStorage.setItem(`miningsight_reconstruction_brief_${projectTitle}`, JSON.stringify(brief));
+    } catch {}
+    setBriefSavedMessage('Brief saved to this project.');
+    window.setTimeout(() => setBriefSavedMessage(''), 2500);
+    onStatusChange({
+      type: 'success',
+      message: 'Gemini reconstruction brief saved.',
+      details: 'The reference map, distance constraint, dimensions, selected scene, and instructions will travel with the project snapshot.',
+      timestamp: new Date().toLocaleTimeString(),
+    });
+  };
+
+  // Reconstruct a new part or extend the current scene via Gemini AI Vision.
   const handleReconstructScene = async () => {
     if (!authToken || (aiSettings && !aiSettings.geminiConfigured)) {
       setActiveTab('reconstruct');
@@ -365,20 +511,50 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
       if (!authToken) onOpenAuth?.();
       return;
     }
+    if (reconstructTargetMode !== 'rebuild-scene' && (!reconstructMapText.trim() || !Number.isFinite(nextPartDistanceMeters) || nextPartDistanceMeters <= 0)) {
+      setWorldError('For a new part or extension, attach a readable reference map and set a positive distance from the current endpoint.');
+      return;
+    }
+    if (!reconstructPrompt.trim()) {
+      setWorldError('Describe the geometry, materials, curve, tunnel behaviour, and what must not be generated.');
+      return;
+    }
     setIsReconstructing(true);
-    onStatusChange({
-      type: 'loading',
-      message: 'Extracting 3D geometry & geotechnical parameters from reference image via Gemini Vision...',
-      timestamp: new Date().toLocaleTimeString(),
-    });
-
+    setWorldError('');
+    let referenceImage = '';
     try {
+      referenceImage = reconstructImage.startsWith('data:')
+        ? reconstructImage
+        : await fetch(reconstructImage).then((response) => {
+          if (!response.ok) throw new Error('Could not load the default reference image.');
+          return response.blob();
+        }).then(readFileAsDataUrl);
+      onStatusChange({
+        type: 'loading',
+        message: 'Gemini is reading the reference, map, selected scene, and next-part dimensions...',
+        details: `${reconstructTargetMode === 'extend-current' ? 'Extending' : reconstructTargetMode === 'new-part' ? 'Building a new part' : 'Rebuilding'} ${reconstructBasePresetId}.`,
+        timestamp: new Date().toLocaleTimeString(),
+      });
       const resp = await fetch('/api/reconstruction/ai/reconstruct-scene-from-image', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
         body: JSON.stringify({
-          imageName: 'rugged_timbered_mine_reference.png',
+          image: referenceImage,
+          imageName: reconstructImageName,
           fieldNotes: reconstructPrompt,
+          targetMode: reconstructTargetMode,
+          basePresetId: reconstructBasePresetId,
+          selectedObjectId,
+          selectedObjectName,
+          activeAssetName,
+          referenceMapName: reconstructMapName,
+          referenceMapText: reconstructMapText,
+          nextPartDistanceMeters,
+          dimensions: {
+            widthMeters: partWidthMeters,
+            heightMeters: partHeightMeters,
+            lengthMeters: partLengthMeters,
+          },
         }),
       });
 
@@ -394,14 +570,14 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
       setReconstructResult(json.data);
       onStatusChange({
         type: 'success',
-        message: '3D Scene Reconstructed from Photo Reference!',
-        details: `Synthesized ${json.data.procedural3DParams.timberSetCount} timber sets with ${json.data.procedural3DParams.laggingPlankTiers}-tier lagging planks.`,
+        message: 'Gemini reconstruction plan generated.',
+        details: `${json.data.reconstructionPlan || 'Generated procedural geometry parameters'} · ${json.data.procedural3DParams.timberSetCount} timber sets · ${json.data.procedural3DParams.laggingPlankTiers}-tier lagging.`,
         timestamp: new Date().toLocaleTimeString(),
       });
     } catch (err: any) {
       onStatusChange({
         type: 'error',
-        message: `Failed to reconstruct scene: ${err.message}`,
+        message: `Gemini reconstruction failed: ${err.message}`,
         timestamp: new Date().toLocaleTimeString(),
       });
     } finally {
@@ -1717,11 +1893,85 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
               </p>
             </div>
 
+            {/* Gemini reconstruction brief: preserved alongside the archived survey milestone. */}
+            <div className="bg-[#252525] border border-[#4b3825] p-2.5 rounded-[3px] space-y-2.5">
+              <div className="flex items-start justify-between gap-2 border-b border-[#3d3d3d] pb-1.5">
+                <div>
+                  <div className="font-bold text-[#f6d2a7] text-[11.5px]">Gemini Reconstruction Brief</div>
+                  <div className="text-[9.5px] text-[#999] mt-0.5">Make a new mesh part, extend the current scene, or rebuild a complete selectable procedural model.</div>
+                </div>
+                <span className="shrink-0 rounded border border-[#315438] bg-[#1a2e1f] px-1.5 py-0.5 text-[8.5px] font-mono text-[#72e28e]">GEMINI VISION</span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-1">
+                {([
+                  ['extend-current', 'Extend current'],
+                  ['new-part', 'Build next part'],
+                  ['rebuild-scene', 'Rebuild scene'],
+                ] as Array<[ReconstructionBrief['targetMode'], string]>).map(([mode, label]) => (
+                  <button key={mode} onClick={() => setReconstructTargetMode(mode)} className={`rounded border px-1.5 py-1.5 text-[9.5px] font-semibold cursor-pointer ${reconstructTargetMode === mode ? 'border-[#e88724] bg-[#513317] text-[#ffb35d]' : 'border-[#414141] bg-[#303030] text-[#aaa] hover:text-white'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-[9.5px]">
+                <label className="text-[#999]">Base scene / model
+                  <select value={reconstructBasePresetId} onChange={(event) => setReconstructBasePresetId(event.target.value)} className="mt-0.5 w-full bg-[#1c1c1c] border border-[#414141] rounded px-1.5 py-1 text-[#eee] text-[10px]">
+                    <option value="rugged_timbered_photo">Rugged Timbered Mine Tunnel</option>
+                    <option value="classic_diorama">Classic Diorama Mining Tunnel</option>
+                    <option value="ai_custom">Current AI custom scene</option>
+                  </select>
+                </label>
+                <div className="rounded border border-[#414141] bg-[#1c1c1c] px-1.5 py-1 text-[9px] text-[#999]">
+                  <span className="block">Current selection</span>
+                  <span className="mt-0.5 block truncate text-[#e88724]" title={selectedObjectName || activeAssetName || 'Nothing selected'}>{selectedObjectName || activeAssetName || 'Nothing selected'}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <label className="rounded border border-dashed border-[#505050] bg-[#1c1c1c] p-2 text-center cursor-pointer hover:border-[#e88724]">
+                  <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={reconstructReferenceLoading || isReconstructing} onChange={(event) => { void handleReconstructionReference(event.target.files?.[0]); event.currentTarget.value = ''; }} />
+                  <ImagePlus className="mx-auto mb-1 h-4 w-4 text-[#e88724]" />
+                  <span className="block truncate text-[9.5px] text-[#ddd]">{reconstructReferenceLoading ? 'Reading screenshot…' : reconstructImageName}</span>
+                  <span className="mt-0.5 block text-[8.5px] text-[#888]">Replace reference screenshot</span>
+                </label>
+                <label className="rounded border border-dashed border-[#505050] bg-[#1c1c1c] p-2 text-center cursor-pointer hover:border-[#e88724]">
+                  <input type="file" accept=".json,.geojson,.csv,.txt,.md,.yaml,.yml,text/plain,application/json" className="hidden" disabled={reconstructMapLoading || isReconstructing} onChange={(event) => { void handleReconstructionMap(event.target.files?.[0]); event.currentTarget.value = ''; }} />
+                  <Upload className="mx-auto mb-1 h-4 w-4 text-[#e88724]" />
+                  <span className="block truncate text-[9.5px] text-[#ddd]">{reconstructMapName || 'Attach reference map'}</span>
+                  <span className="mt-0.5 block text-[8.5px] text-[#888]">JSON, GeoJSON, CSV, TXT · {reconstructMapText ? 'readable' : 'required for extensions'}</span>
+                </label>
+              </div>
+
+              <div className="grid grid-cols-4 gap-1.5 text-[9px]">
+                <label className="text-[#999] col-span-1">Next part offset (m)
+                  <input type="number" min="0.01" step="0.1" value={nextPartDistanceMeters} onChange={(event) => setNextPartDistanceMeters(Number(event.target.value) || 0)} className="mt-0.5 w-full bg-[#1c1c1c] border border-[#e88724]/60 rounded px-1.5 py-1 text-[#eee] font-mono" />
+                </label>
+                <label className="text-[#999]">Width (m)
+                  <input type="number" min="0.1" step="0.1" value={partWidthMeters} onChange={(event) => setPartWidthMeters(Number(event.target.value) || 0)} className="mt-0.5 w-full bg-[#1c1c1c] border border-[#414141] rounded px-1.5 py-1 text-[#eee] font-mono" />
+                </label>
+                <label className="text-[#999]">Height (m)
+                  <input type="number" min="0.1" step="0.1" value={partHeightMeters} onChange={(event) => setPartHeightMeters(Number(event.target.value) || 0)} className="mt-0.5 w-full bg-[#1c1c1c] border border-[#414141] rounded px-1.5 py-1 text-[#eee] font-mono" />
+                </label>
+                <label className="text-[#999]">Length (m)
+                  <input type="number" min="0.1" step="0.1" value={partLengthMeters} onChange={(event) => setPartLengthMeters(Number(event.target.value) || 0)} className="mt-0.5 w-full bg-[#1c1c1c] border border-[#414141] rounded px-1.5 py-1 text-[#eee] font-mono" />
+                </label>
+              </div>
+
+              <textarea value={reconstructMapText} onChange={(event) => setReconstructMapText(event.target.value)} rows={3} maxLength={120000} placeholder="Paste a readable map or section here: station IDs, chainages, distances, width/height, curve radius, heading, and the next part location…" className="w-full resize-y bg-[#1c1c1c] border border-[#414141] rounded px-1.5 py-1.5 text-[10px] text-[#ddd] leading-relaxed focus:outline-none focus:border-[#e88724]" />
+
+              <div className="flex items-center justify-between gap-2 text-[9px]">
+                <span className="text-[#999]">{reconstructTargetMode === 'rebuild-scene' ? 'Map is optional for a complete rebuild.' : 'A map and positive next-part offset are required to extend or add a part.'}</span>
+                <button onClick={saveReconstructionBrief} className="shrink-0 rounded border border-[#555] bg-[#3a3a3a] px-2 py-1 font-semibold text-[#ddd] hover:bg-[#e88724] hover:text-black cursor-pointer">{briefSavedMessage || 'Save brief'}</button>
+              </div>
+            </div>
+
             {/* Reference Image Card */}
             <div className="bg-[#252525] border border-[#3a3a3a] p-2.5 rounded-[3px] space-y-2">
               <div className="font-semibold text-white flex items-center justify-between">
                 <span>Reference Photograph</span>
-                <span className="text-[9.5px] text-[#888] font-mono">rugged_timbered_mine_reference.png</span>
+                <span className="text-[9.5px] text-[#888] font-mono truncate max-w-[55%]" title={reconstructImageName}>{reconstructImageName}</span>
               </div>
 
               <div className="relative rounded overflow-hidden border border-[#444] bg-[#181818] flex items-center justify-center max-h-[160px]">
@@ -1784,9 +2034,11 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
             {reconstructResult && (
               <div className="bg-[#1f2620] border border-[#2e4d35] p-2.5 rounded-[3px] space-y-2 text-[10.5px]">
                 <div className="font-bold text-[#4ade80] flex items-center justify-between">
-                  <span>Detected Structural Elements</span>
+                  <span>Gemini Reconstruction Plan</span>
                   <span className="font-mono text-[9px] text-[#88bbdd]">AI Vision Extraction</span>
                 </div>
+
+                {reconstructResult.reconstructionPlan && <div className="rounded border border-[#2b4430] bg-[#181d19] px-2 py-1 text-[9.5px] leading-relaxed text-[#b8d9c0]">{reconstructResult.reconstructionPlan}</div>}
 
                 <ul className="space-y-1 text-[#ccc] list-disc list-inside">
                   {reconstructResult.detectedFeatures?.map((f: string, i: number) => (
@@ -1816,10 +2068,12 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                 {onApplyCustomScene && (
                   <button
                     onClick={() => {
-                      onApplyCustomScene(reconstructResult.procedural3DParams);
+                      onApplyCustomScene(reconstructResult.procedural3DParams, { targetMode: reconstructTargetMode, nextPartDistanceMeters, basePresetId: reconstructBasePresetId });
+                      saveReconstructionBrief();
                       onStatusChange({
                         type: 'success',
-                        message: 'Applied custom AI 3D scene parameters to active viewport!',
+                        message: 'Applied Gemini mesh parameters to the active 3D viewport.',
+                        details: 'The generated part plan was also saved with the reconstruction brief.',
                         timestamp: new Date().toLocaleTimeString(),
                       });
                     }}
@@ -1829,6 +2083,21 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                     <span>Apply Custom AI Parameters to 3D Viewport</span>
                   </button>
                 )}
+                <button
+                  onClick={() => {
+                    const blob = new Blob([JSON.stringify({ brief: buildReconstructionBrief(), result: reconstructResult }, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = `${projectTitle.replace(/[^a-z0-9_-]+/gi, '_')}_gemini_reconstruction_plan.json`;
+                    link.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="w-full py-1.5 bg-[#303030] hover:bg-[#444] text-[#ddd] border border-[#555] font-semibold rounded-[2px] flex items-center justify-center space-x-1 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export Gemini Reconstruction Plan (.json)</span>
+                </button>
               </div>
             )}
           </div>

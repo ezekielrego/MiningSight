@@ -73,6 +73,25 @@ export interface StatusAlert {
   errorCode?: string;
 }
 
+export interface ReconstructionBrief {
+  targetMode: 'new-part' | 'extend-current' | 'rebuild-scene';
+  basePresetId: string;
+  selectedObjectId?: string | null;
+  selectedObjectName?: string | null;
+  activeAssetName?: string | null;
+  referenceImageName?: string;
+  mapName?: string;
+  mapText?: string;
+  nextPartDistanceMeters?: number;
+  dimensions?: {
+    widthMeters?: number;
+    heightMeters?: number;
+    lengthMeters?: number;
+  };
+  prompt: string;
+  updatedAt: string;
+}
+
 /**
  * Generates an authentic simulated geological borehole/tunnel survey image with
  * rock strata, mineral veins, and metric measurement grid in base64 data URL format.

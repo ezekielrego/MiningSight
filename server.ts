@@ -1104,21 +1104,41 @@ app.post('/api/ai/reconstruct-scene-from-image', async (req, res) => {
       return res.status(428).json({ success: false, error: 'AI_PROVIDER_KEY_REQUIRED', provider: 'gemini', message: 'Configure a Gemini API key before running scene reconstruction.' });
     }
     const geminiModel = settings?.geminiModel || defaultGeminiModel;
-    const { image, imageName, fieldNotes } = req.body;
+    const {
+      image,
+      imageName,
+      fieldNotes,
+      targetMode = 'rebuild-scene',
+      basePresetId = 'rugged_timbered_photo',
+      selectedObjectId,
+      selectedObjectName,
+      activeAssetName,
+      referenceMapName,
+      referenceMapText,
+      nextPartDistanceMeters,
+      dimensions,
+    } = req.body;
+
+    const safeMapText = typeof referenceMapText === 'string' ? referenceMapText.slice(0, 120000) : '';
+    const safeTargetMode = ['new-part', 'extend-current', 'rebuild-scene'].includes(targetMode) ? targetMode : 'rebuild-scene';
+    const requestedWidth = Math.max(0.1, Math.min(100, Number(dimensions?.widthMeters) || 4.6));
+    const requestedHeight = Math.max(0.1, Math.min(100, Number(dimensions?.heightMeters) || 4.6));
+    const requestedLength = Math.max(0.1, Math.min(500, Number(dimensions?.lengthMeters) || 8));
+    const requestedOffset = Math.max(0, Math.min(500, Number(nextPartDistanceMeters) || 0));
 
     const defaultExtractedParams = {
       timberSetCount: 7,
       timberSpacing: 4.8,
       timberWidth: 0.38,
-      timberHeight: 4.6,
-      spanWidth: 4.6,
+      timberHeight: requestedHeight,
+      spanWidth: requestedWidth,
       postBatterAngleDeg: 5.5,
       laggingPlankTiers: 4,
       laggingPlankWidth: 0.34,
       laggingGap: 0.14,
       includeRoofLagging: true,
       includeTopStringers: true,
-      tunnelLength: 46.0,
+      tunnelLength: Math.max(46.0, requestedLength + requestedOffset),
       unlinedAditLength: 16.0,
       aditBoreRadius: 2.3,
       rockRoughness: 0.9,
@@ -1169,13 +1189,33 @@ app.post('/api/ai/reconstruct-scene-from-image', async (req, res) => {
         }
       }
 
-      const promptText = `You are a Senior Mine Geotechnical Engineer and 3D CAD Reconstruction Specialist.
-Analyze this underground mine tunnel photograph and extract precise structural 3D parameters to reconstruct it in our procedural Three.js engine.
-Image: ${imageName || 'Rugged Timbered Mine Tunnel'}
-Field Notes: ${fieldNotes || 'Extract timber set geometry, lagging plank tiers, earthen floor, and unlined heading transition.'}
+      const promptText = `You are a Senior Mine Geotechnical Engineer and 3D CAD Reconstruction Specialist working inside MiningSight.
+Analyze the attached underground reference screenshot and the readable map/section below. Return a safe, reviewable procedural reconstruction plan for our selectable Three.js mine models.
+
+Reconstruction operation: ${safeTargetMode}
+Base scene/preset: ${basePresetId}
+Currently selected scene object: ${selectedObjectName || selectedObjectId || 'none'}
+Currently opened project asset: ${activeAssetName || 'none'}
+Reference image: ${imageName || 'Rugged Timbered Mine Tunnel'}
+Next part distance from the current endpoint: ${Number(nextPartDistanceMeters) || 0} meters
+Requested dimensions: width ${Number(dimensions?.widthMeters) || 4.6}m, height ${Number(dimensions?.heightMeters) || 4.6}m, length ${Number(dimensions?.lengthMeters) || 8}m
+Reference map name: ${referenceMapName || 'none'}
+Reference map / chainage / station data:
+${safeMapText || '(No map supplied; use the image and instructions only.)'}
+
+Field Notes and user instructions:
+${fieldNotes || 'Extract timber set geometry, lagging plank tiers, earthen floor, and unlined heading transition.'}
+
+Rules:
+- For new-part or extend-current, preserve the existing base scene identity and generate only the requested continuation/part plan.
+- Honour the supplied next-part distance, station chainage, tunnel curve/heading, width, height, and length where readable.
+- Produce geometry that can be represented by the existing procedural scene registry and remain selectable by named parts.
+- If the user says rails, carts, loose stones, or other objects must not appear, set their include flags false and state that in the plan.
+- Do not invent precise survey values when the map is ambiguous; state assumptions clearly.
 
 Return a valid JSON object matching EXACTLY this structure:
 {
+  "reconstructionPlan": "Short implementation plan describing the new/extended selectable mesh part and its connection to the base scene",
   "detectedFeatures": [
     "Feature 1 string",
     "Feature 2 string"
@@ -1238,6 +1278,7 @@ Return a valid JSON object matching EXACTLY this structure:
         success: true,
         source: geminiModel,
         data: {
+          reconstructionPlan: parsedData.reconstructionPlan || `Generated a ${safeTargetMode} plan for ${basePresetId}, anchored ${Number(nextPartDistanceMeters) || 0}m from the current endpoint.`,
           detectedFeatures: parsedData.detectedFeatures || structuralAnalysis.detectedFeatures,
           geotechnicalAssessment: parsedData.geotechnicalAssessment || structuralAnalysis.geotechnicalAssessment,
           procedural3DParams: {
@@ -1253,6 +1294,7 @@ Return a valid JSON object matching EXACTLY this structure:
         source: 'photogrammetric-vision-engine',
         notice: 'Reconstructed using high-fidelity vision geometry solver matching reference image structure.',
         data: {
+          reconstructionPlan: `Deterministic fallback plan for ${safeTargetMode}: preserve ${basePresetId}, continue the selected geometry by ${Number(nextPartDistanceMeters) || 0}m, and keep the generated part selectable in the scene hierarchy.`,
           detectedFeatures: structuralAnalysis.detectedFeatures,
           geotechnicalAssessment: structuralAnalysis.geotechnicalAssessment,
           procedural3DParams: defaultExtractedParams,

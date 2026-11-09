@@ -5,7 +5,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { C4DMaterial, C4DSceneObject, TimelineState, ToolMode, Vector3D } from './types/c4d';
-import { StatusAlert } from './types/aiSurvey';
+import { ReconstructionBrief, StatusAlert } from './types/aiSurvey';
 import { MenuBar } from './components/layout/MenuBar';
 import { MainToolbar } from './components/layout/MainToolbar';
 import { LeftToolPalette } from './components/layout/LeftToolPalette';
@@ -303,6 +303,7 @@ export default function App() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectAssets, setProjectAssets] = useState<ProjectAsset[]>([]);
   const [activeAssetId, setActiveAssetId] = useState<string | null>(null);
+  const [reconstructionBrief, setReconstructionBrief] = useState<ReconstructionBrief | null>(null);
   const [mediaMarkers, setMediaMarkers] = useState<MediaMarker[]>([]);
   const [gasMarks, setGasMarks] = useState<GasMark[]>([]);
   const gasMarksRef = useRef<GasMark[]>([]);
@@ -431,6 +432,7 @@ export default function App() {
     setProjects([]);
     setProjectAssets([]);
     setActiveAssetId(null);
+    setReconstructionBrief(null);
       gasMarksRef.current = [];
       setGasMarks([]);
   };
@@ -448,7 +450,8 @@ export default function App() {
     mediaMarkers,
     gasMarks,
     assets: projectAssets,
-  }), [projectName, currentPresetId, proceduralParams, objects, materials, timeline, playbackSpeed, tours, mediaMarkers, gasMarks, projectAssets]);
+    reconstructionBrief,
+  }), [projectName, currentPresetId, proceduralParams, objects, materials, timeline, playbackSpeed, tours, mediaMarkers, gasMarks, projectAssets, reconstructionBrief]);
 
   useEffect(() => {
     if (!authToken) {
@@ -628,6 +631,7 @@ export default function App() {
       setSelectedObjectId(Array.isArray(project.objects) && project.objects[0] ? project.objects[0].id : 'Rugged_Timbered_Mine_Tunnel_Photo');
       setMaterials(Array.isArray(project.materials) ? project.materials : getAllCombinedMaterials());
       setProjectAssets(Array.isArray(project.assets) ? project.assets : []);
+      setReconstructionBrief(project.reconstructionBrief || null);
       setMediaMarkers(Array.isArray(project.mediaMarkers) ? project.mediaMarkers : []);
       const loadedGasMarks = Array.isArray(project.gasMarks) ? project.gasMarks : [];
       gasMarksRef.current = loadedGasMarks;
@@ -661,7 +665,7 @@ export default function App() {
       const response = await fetch('/api/reconstruction/ai/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
-        body: JSON.stringify({ projectName: name, projectData: { projectName: name, assets: [] } }),
+        body: JSON.stringify({ projectName: name, projectData: { projectName: name, assets: [], reconstructionBrief: null } }),
       });
       const json = await response.json().catch(() => ({}));
       if (!response.ok || !json.success) throw new Error(json.message || 'Could not create project.');
@@ -674,6 +678,7 @@ export default function App() {
       setCurrentPresetId('rugged_timbered_photo');
       setProceduralParams(TUNNEL_PRESETS.rugged_timbered_photo.defaultParams);
       setProjectAssets([]);
+      setReconstructionBrief(null);
       setMediaMarkers([]);
       gasMarksRef.current = [];
       setGasMarks([]);
@@ -696,6 +701,7 @@ export default function App() {
           tours: getDefaultCameraTours(),
           mediaMarkers: [],
           gasMarks: [],
+          reconstructionBrief: null,
         });
         setNewProjectFiles([]);
       }
@@ -1212,6 +1218,7 @@ export default function App() {
     // viewer selection is cleared.
     setActiveProjectId(null);
     setActiveAssetId(null);
+    setReconstructionBrief(null);
     setProjectAssets([]);
     setMediaMarkers([]);
     gasMarksRef.current = [];
@@ -1571,6 +1578,7 @@ export default function App() {
             gasMarksRef.current = [];
             setGasMarks([]);
           }
+          if (parsed.reconstructionBrief) setReconstructionBrief(parsed.reconstructionBrief);
           if (parsed.tours && Array.isArray(parsed.tours)) {
             saveTours(parsed.tours);
             if (parsed.tours[0]?.id) setActiveTourId(parsed.tours[0].id);
@@ -1767,9 +1775,37 @@ export default function App() {
             onApply3DMarkers={handleApply3DMarkers}
             currentPresetId={currentPresetId}
             onSelectPreset={handleSelectPreset}
-            onApplyCustomScene={(p) => handleSelectPreset('ai_custom', p)}
+            onApplyCustomScene={(p, context) => {
+              if (context?.targetMode === 'extend-current' || context?.targetMode === 'new-part') {
+                const requestedLength = Number(p.tunnelLength) || proceduralParams.tunnelLength;
+                const currentLength = Number(proceduralParams.tunnelLength) || requestedLength;
+                const offset = Math.max(0, Number(context.nextPartDistanceMeters) || 0);
+                handleUpdateProceduralParams({
+                  ...p,
+                  tunnelLength: Math.max(requestedLength, currentLength + offset),
+                });
+                setStatusAlert({
+                  type: 'success',
+                  message: context.targetMode === 'extend-current' ? 'Gemini extension applied to the current procedural scene.' : 'Gemini-generated mesh part applied as the next procedural section.',
+                  details: `Base: ${context.basePresetId} · continuation offset: ${offset.toFixed(2)}m. The scene remains editable and selectable through its generated hierarchy.`,
+                  timestamp: new Date().toLocaleTimeString(),
+                });
+              } else {
+                handleSelectPreset('ai_custom', p);
+              }
+            }}
             authToken={authToken}
             onOpenAuth={() => { setAuthError(''); setShowAuthModal(true); }}
+            selectedObjectId={selectedObjectId}
+            selectedObjectName={selectedObject?.name || null}
+            activeAssetName={activeAsset?.name || null}
+            savedReconstructionBrief={reconstructionBrief}
+            onSaveReconstructionBrief={(brief) => {
+              setReconstructionBrief(brief);
+              if (activeProjectId) {
+                void saveProjectSnapshot(activeProjectId, projectName, projectAssets, { ...buildProjectData(), reconstructionBrief: brief });
+              }
+            }}
           />
         }
         leftPalette={
