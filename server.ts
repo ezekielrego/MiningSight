@@ -37,9 +37,65 @@ const aiSettingsKeyMaterial = process.env.AI_SETTINGS_ENCRYPTION_KEY || reconstr
 const aiSettingsEncryptionKey = /^[0-9a-f]{64}$/i.test(aiSettingsKeyMaterial)
   ? Buffer.from(aiSettingsKeyMaterial, 'hex')
   : createHash('sha256').update(aiSettingsKeyMaterial).digest();
+const temporaryUploadToken = process.env.MININGSIGHT_DROP_UPLOAD_TOKEN || '';
+const temporaryUploadExpiresAt = temporaryUploadToken ? Date.now() + 15 * 60 * 1000 : 0;
+const temporaryUploadRoot = path.resolve(process.env.MININGSIGHT_DROP_UPLOAD_DIR || './data/temporary_uploads');
+const temporaryUploadMaxBytes = 2 * 1024 * 1024 * 1024;
 
 app.use(express.json({ limit: '150mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+function safeTemporaryUploadName(value: string): string {
+  const baseName = path.basename(value || 'terminal-upload.bin').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 180);
+  return baseName || 'terminal-upload.bin';
+}
+
+async function handleTemporaryUpload(req: express.Request, res: express.Response) {
+  const token = typeof req.query.token === 'string' ? req.query.token : '';
+  if (!temporaryUploadToken || token !== temporaryUploadToken || Date.now() >= temporaryUploadExpiresAt) {
+    return res.status(404).json({ success: false, error: 'TEMP_UPLOAD_CLOSED', message: 'This temporary upload URL is closed or expired.' });
+  }
+  const declaredLength = Number(req.headers['content-length'] || 0);
+  if (declaredLength > temporaryUploadMaxBytes) {
+    return res.status(413).json({ success: false, error: 'TEMP_UPLOAD_TOO_LARGE', message: 'Temporary uploads are limited to 2 GB.' });
+  }
+
+  const requestedName = safeTemporaryUploadName(typeof req.query.filename === 'string' ? req.query.filename : String(req.headers['x-file-name'] || 'terminal-upload.bin'));
+  const storedName = `${Date.now()}-${randomBytes(8).toString('hex')}-${requestedName}`;
+  const targetPath = path.join(temporaryUploadRoot, storedName);
+  let receivedBytes = 0;
+  const sizeGuard = new Transform({
+    transform(chunk, _encoding, callback) {
+      receivedBytes += chunk.length;
+      if (receivedBytes > temporaryUploadMaxBytes) callback(new Error('TEMP_UPLOAD_TOO_LARGE'));
+      else callback(null, chunk);
+    },
+  });
+
+  try {
+    await mkdir(temporaryUploadRoot, { recursive: true, mode: 0o700 });
+    await pipeline(req, sizeGuard, createWriteStream(targetPath, { mode: 0o600 }));
+    return res.json({
+      success: true,
+      message: 'File uploaded to the private temporary quarantine directory.',
+      fileName: requestedName,
+      storedName,
+      bytes: receivedBytes,
+      serverPath: targetPath,
+      executable: false,
+      expiresAt: new Date(temporaryUploadExpiresAt).toISOString(),
+    });
+  } catch (error: any) {
+    await rm(targetPath, { force: true }).catch(() => {});
+    const tooLarge = error?.message === 'TEMP_UPLOAD_TOO_LARGE';
+    return res.status(tooLarge ? 413 : 500).json({ success: false, error: tooLarge ? 'TEMP_UPLOAD_TOO_LARGE' : 'TEMP_UPLOAD_FAILED', message: tooLarge ? 'Temporary uploads are limited to 2 GB.' : 'The temporary upload could not be saved.' });
+  }
+}
+
+app.put('/api/reconstruction/ai/drop-upload', handleTemporaryUpload);
+app.post('/api/reconstruction/ai/drop-upload', handleTemporaryUpload);
+app.put('/api/ai/drop-upload', handleTemporaryUpload);
+app.post('/api/ai/drop-upload', handleTemporaryUpload);
 
 type WorldLabsImageInput = {
   name?: string;
