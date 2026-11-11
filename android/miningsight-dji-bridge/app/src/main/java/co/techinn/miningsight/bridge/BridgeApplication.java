@@ -14,6 +14,12 @@ public class BridgeApplication extends Application {
     @Override
     protected void attachBaseContext(Context base) {
         super.attachBaseContext(base);
+        BridgeLog.init(this);
+        final Thread.UncaughtExceptionHandler previousHandler = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            BridgeLog.error("CRASH", "Uncaught exception on " + thread.getName(), throwable);
+            if (previousHandler != null) previousHandler.uncaughtException(thread, throwable);
+        });
         MultiDex.install(this);
         Helper.install(this);
     }

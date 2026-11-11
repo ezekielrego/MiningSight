@@ -50,6 +50,7 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         SharedPreferences prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         buildUi(prefs);
+        BridgeLog.info("MainActivity", "Activity created");
         requestRuntimePermissions();
         registerDjiSdk();
     }
@@ -91,8 +92,24 @@ public class MainActivity extends Activity {
         TextView note = text("Activate the aircraft in DJI GO first. Keep this app connected to the controller while it publishes; the website will provide the viewer and frame capture.", 12, Color.GRAY);
         content.addView(note, marginParams(0, 12, 0, 0));
 
+        LinearLayout diagnostics = new LinearLayout(this);
+        diagnostics.setOrientation(LinearLayout.HORIZONTAL);
+        Button copyLogs = button("Copy diagnostics");
+        Button clearLogs = button("Clear diagnostics");
+        diagnostics.addView(copyLogs, weightParams(1, 8));
+        diagnostics.addView(clearLogs, weightParams(1, 8));
+        content.addView(diagnostics, marginParams(0, 16, 0, 0));
+
         startButton.setOnClickListener(v -> startStream());
         stopButton.setOnClickListener(v -> stopStream());
+        copyLogs.setOnClickListener(v -> {
+            BridgeLog.copyToClipboard(this);
+            setStatus("Diagnostics copied to clipboard.");
+        });
+        clearLogs.setOnClickListener(v -> {
+            BridgeLog.clear();
+            setStatus("Temporary diagnostics cleared.");
+        });
 
         ScrollView scroll = new ScrollView(this);
         scroll.addView(content);
@@ -101,25 +118,30 @@ public class MainActivity extends Activity {
 
     private void registerDjiSdk() {
         setStatus("Registering DJI SDK…");
+        BridgeLog.info("DJI", "Registering DJI SDK");
         DJISDKManager.getInstance().registerApp(getApplicationContext(), new DJISDKManager.SDKManagerCallback() {
             @Override
             public void onRegister(DJIError error) {
                 registered = error == DJISDKError.REGISTRATION_SUCCESS;
                 if (registered) {
+                    BridgeLog.info("DJI", "SDK registration succeeded");
                     setStatus("SDK registered. Connecting to controller…");
                     DJISDKManager.getInstance().startConnectionToProduct();
                 } else {
+                    BridgeLog.warn("DJI", "SDK registration failed: " + (error == null ? "unknown error" : error.getDescription()));
                     setStatus("SDK registration failed: " + (error == null ? "unknown error" : error.getDescription()));
                 }
             }
 
             @Override
             public void onProductDisconnect() {
+                BridgeLog.warn("DJI", "Controller disconnected");
                 setStatus("Controller disconnected.");
             }
 
             @Override
             public void onProductConnect(BaseProduct product) {
+                BridgeLog.info("DJI", "Controller connected");
                 setStatus("Controller connected: " + (product == null || product.getModel() == null ? "DJI product" : product.getModel().getDisplayName()));
             }
 
@@ -147,19 +169,23 @@ public class MainActivity extends Activity {
 
     private void startStream() {
         if (!registered) {
+            BridgeLog.warn("Stream", "Start requested before SDK registration");
             setStatus("Wait for DJI SDK registration before starting the stream.");
             return;
         }
         String url = streamUrlInput.getText().toString().trim();
         if (url.isEmpty() || !url.startsWith("rtmp://")) {
+            BridgeLog.warn("Stream", "Invalid RTMP URL entered");
             setStatus("Enter an RTMP publish URL.");
             return;
         }
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(STREAM_URL, url).apply();
         setStatus("Starting live stream…");
+        BridgeLog.info("Stream", "Starting stream to configured RTMP endpoint");
         streamExecutor.execute(() -> {
             LiveStreamManager manager = DJISDKManager.getInstance().getLiveStreamManager();
             if (manager == null) {
+                BridgeLog.warn("Stream", "DJI live stream manager unavailable");
                 setStatus("DJI live stream manager is unavailable for this product.");
                 return;
             }
@@ -173,12 +199,14 @@ public class MainActivity extends Activity {
                     stopButton.setEnabled(true);
                 });
             } else {
+                BridgeLog.warn("Stream", "Stream start failed with code " + result);
                 setStatus("Stream start failed: code " + result);
             }
         });
     }
 
     private void stopStream() {
+        BridgeLog.info("Stream", "Stopping stream");
         streamExecutor.execute(() -> {
             LiveStreamManager manager = DJISDKManager.getInstance().getLiveStreamManager();
             if (manager != null && manager.isStreaming()) manager.stopStream();
