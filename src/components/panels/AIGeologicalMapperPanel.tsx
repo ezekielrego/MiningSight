@@ -35,6 +35,7 @@ import {
   ReconstructionMapGeometry,
   ReconstructionMapSelection,
 } from '../../types/aiSurvey';
+import { ProjectAsset, ProjectProvider } from '../../types/project';
 
 interface AIGeologicalMapperPanelProps {
   onStatusChange: (status: StatusAlert) => void;
@@ -58,6 +59,7 @@ interface AIGeologicalMapperPanelProps {
   onMapGeometryChange?: (geometry: ReconstructionMapGeometry | null) => void;
   onMapMarkingChange?: (enabled: boolean) => void;
   onMapDrawingChange?: (enabled: boolean) => void;
+  onProviderAssetReady?: (provider: ProjectProvider, asset: ProjectAsset) => void;
 }
 
 type WorldProvider = 'marble' | 'gomera';
@@ -119,6 +121,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   onMapGeometryChange,
   onMapMarkingChange,
   onMapDrawingChange,
+  onProviderAssetReady,
 }) => {
   const [activeTab, setActiveTab] = useState<'input' | 'preview' | 'analysis' | 'records' | 'reconstruct'>('input');
   const [images, setImages] = useState<SurveyImageItem[]>(getDefaultSampleSurveyImages());
@@ -994,6 +997,20 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
         if (!operation?.done) throw new Error('World Labs generation is still running. Check the operation again from the AI panel.');
         const world = operation.response?.world || operation.response || operation.result?.world || operation.result || operation;
         setWorldResult({ provider: 'marble', operation, world });
+        const worldId = String(world.world_id || world.id || operationId);
+        const remoteUrl = world.world_marble_url || world.marble_url || world.world_url || `https://marble.worldlabs.ai/world/${encodeURIComponent(worldId)}`;
+        onProviderAssetReady?.('worldlabs', {
+          id: `worldlabs_${worldId}`,
+          name: String(world.display_name || worldId).slice(0, 160),
+          type: 'model/world',
+          kind: 'world',
+          size: 0,
+          uploadedAt: new Date().toISOString(),
+          url: remoteUrl,
+          remoteUrl,
+          thumbnailUrl: world.assets?.thumbnail_url || world.thumbnail_url || '',
+          provider: 'worldlabs',
+        });
         setWorldProgress(100);
         setWorldStatus('Marble world ready.');
         onStatusChange({ type: 'success', message: 'World Labs Marble world generated successfully.', timestamp: new Date().toLocaleTimeString() });
@@ -1032,7 +1049,19 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
           if (code === 30 || code === 50) throw new Error(task?.status?.errorMessage || 'GOMERA reconstruction failed.');
         }
         if (task?.status?.code !== 40) throw new Error('GOMERA reconstruction is still running. Check the job again from the AI panel.');
-        setWorldResult({ provider: 'gomera', jobId, task, modelUrl: `/api/reconstruction/ai/gomera-reconstruction/${encodeURIComponent(jobId)}/model` });
+        const modelUrl = `/api/reconstruction/ai/gomera-reconstruction/${encodeURIComponent(jobId)}/model`;
+        setWorldResult({ provider: 'gomera', jobId, task, modelUrl });
+        onProviderAssetReady?.('gomera', {
+          id: `gomera_${jobId}`,
+          name: `${gomeraCaptureName || 'GOMERA reconstruction'}.glb`,
+          type: 'model/gltf-binary',
+          kind: 'model',
+          size: 0,
+          uploadedAt: new Date().toISOString(),
+          url: modelUrl,
+          remoteUrl: modelUrl,
+          provider: 'gomera',
+        });
         setWorldProgress(100);
         onStatusChange({ type: 'success', message: 'GOMERA reconstruction completed successfully.', timestamp: new Date().toLocaleTimeString() });
       }

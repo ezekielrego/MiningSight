@@ -758,6 +758,83 @@ app.post('/api/ai/worldlabs/worlds', async (req, res) => {
   }
 });
 
+// Provider libraries are virtual, account-scoped projects. They keep remote
+// AI results beside normal uploaded projects in the Objects panel without
+// copying provider files into the user's 2 GB upload quota.
+app.get('/api/ai/provider-library', async (req, res) => {
+  const user = await requireAuthenticated(req, res);
+  if (!user) return;
+  const settings = await getUserAiSettings(req);
+  const marbleKey = settings?.marbleApiKey || process.env.WLT_API_KEY;
+  const geminiKey = settings?.geminiApiKey || process.env.GEMINI_API_KEY;
+  const providerProjects: any[] = [
+    {
+      id: 'provider_worldlabs',
+      projectName: 'World Labs Marble',
+      provider: 'worldlabs',
+      readOnly: true,
+      status: hasConfiguredKey(marbleKey, 'YOUR_WORLD_LABS_API_KEY') ? 'ready' : 'needs-key',
+      updatedAt: null,
+      assetCount: 0,
+      assets: [],
+    },
+    {
+      id: 'provider_gemini',
+      projectName: 'Gemini · MiningSight scenes',
+      provider: 'gemini',
+      readOnly: true,
+      status: hasConfiguredKey(geminiKey, 'MY_GEMINI_API_KEY') ? 'ready' : 'needs-key',
+      updatedAt: null,
+      assetCount: 0,
+      assets: [],
+    },
+    {
+      id: 'provider_gomera',
+      projectName: 'GOMERA X · reconstructed models',
+      provider: 'gomera',
+      readOnly: true,
+      status: 'ready',
+      updatedAt: null,
+      assetCount: 0,
+      assets: [],
+    },
+  ];
+
+  if (hasConfiguredKey(marbleKey, 'YOUR_WORLD_LABS_API_KEY')) {
+    try {
+      const result = await worldLabsRequest('/worlds:list', {
+        method: 'POST',
+        body: JSON.stringify({ page_size: 100, sort_by: 'updated_at', status: 'SUCCEEDED' }),
+      }, marbleKey);
+      const marbleProject = providerProjects[0];
+      marbleProject.assets = (Array.isArray(result.worlds) ? result.worlds : []).map((world: any) => {
+        const worldId = String(world.world_id || world.id || randomUUID());
+        const remoteUrl = world.world_marble_url || world.marble_url || `https://marble.worldlabs.ai/world/${encodeURIComponent(worldId)}`;
+        return {
+          id: `worldlabs_${worldId}`,
+          name: String(world.display_name || worldId).slice(0, 160),
+          type: 'model/world',
+          kind: 'world',
+          size: 0,
+          uploadedAt: world.updated_at || world.created_at || new Date().toISOString(),
+          url: remoteUrl,
+          remoteUrl,
+          thumbnailUrl: world.assets?.thumbnail_url || world.thumbnail_url || '',
+          description: world.permission?.public ? 'Public Marble world' : 'Private Marble world',
+          provider: 'worldlabs',
+        };
+      });
+      marbleProject.assetCount = marbleProject.assets.length;
+      marbleProject.updatedAt = marbleProject.assets[0]?.uploadedAt || null;
+    } catch (error: any) {
+      providerProjects[0].status = 'offline';
+      providerProjects[0].error = error.message;
+    }
+  }
+
+  return res.json({ success: true, projects: providerProjects });
+});
+
 // Create a Marble world using the documented media-asset upload workflow.
 app.post('/api/ai/worldlabs/generate', async (req, res) => {
   try {

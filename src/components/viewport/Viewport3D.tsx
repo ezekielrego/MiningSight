@@ -1644,7 +1644,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
           <div className="text-[10px] text-[#ffb0b0] text-center">{assetLoadMessage}</div>
         </ViewerOverlay>
       )}
-      {activeAsset && !['model', 'video', 'image'].includes(activeAsset.kind) && (
+      {activeAsset && !['model', 'world', 'video', 'image'].includes(activeAsset.kind) && (
         <div className="absolute inset-0 z-[5] flex items-center justify-center pointer-events-none">
           <ViewerOverlay title="File preview" minimized={Boolean(minimizedOverlays.unsupported)} onToggle={() => toggleOverlay('unsupported')}>
             <div className="text-[#ddd] text-[12px] font-bold">{activeAsset.name}</div>
@@ -1745,6 +1745,38 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
                 {gasMarks.filter((mark) => mark.space === 'media' && mark.assetId === activeAsset.id && mark.frame === currentFrame && mark.screen).map((mark) => (
                   <span key={mark.id} className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ left: `${(mark.screen?.x || 0) * 100}%`, top: `${(mark.screen?.y || 0) * 100}%`, width: `${Math.max(28, Math.min(320, mark.radius * 64))}px`, height: `${Math.max(28, Math.min(320, mark.radius * 64))}px`, opacity: Math.max(0.08, Math.min(0.7, 0.08 + mark.concentration * 0.62)), background: `radial-gradient(circle, ${mark.color} 0%, ${mark.color}99 28%, ${mark.color}22 62%, transparent 76%)`, filter: 'blur(1px)', mixBlendMode: 'screen' }} />
                 ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+      {activeAsset?.kind === 'world' && (
+        <div
+          className="absolute inset-x-0 top-7 bottom-0 z-[6] flex min-h-0 flex-col overflow-hidden border-t border-[#252525] bg-[#202020] pointer-events-auto"
+        >
+          {minimizedOverlays.world ? (
+            <div className="flex h-full items-end justify-start p-3">
+              <button onClick={() => toggleOverlay('world')} className="rounded-[3px] border border-[#555] bg-black/70 px-2 py-1 text-[9px] text-[#ddd] shadow-lg hover:bg-black/90 cursor-pointer">
+                <span className="mr-1 text-[#e88724] font-bold">+</span> Restore Marble world
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 bg-black/65 px-2 py-1 text-[9px] text-[#ccc] backdrop-blur-md">
+                <span className="min-w-0 truncate font-bold uppercase tracking-wide">World Labs Marble · {activeAsset.name}</span>
+                <div className="flex shrink-0 items-center gap-2">
+                  <a href={activeAsset.remoteUrl || activeAsset.url} target="_blank" rel="noreferrer" className="text-[#9bcaf0] hover:text-white hover:underline">Open externally</a>
+                  <button onClick={() => toggleOverlay('world')} className="px-1 text-[#aaa] hover:text-white cursor-pointer" title="Minimize Marble world">−</button>
+                </div>
+              </div>
+              <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
+                <iframe
+                  src={activeAsset.url}
+                  title={`World Labs Marble world: ${activeAsset.name}`}
+                  className="block h-full w-full border-0 bg-black"
+                  allow="fullscreen; xr-spatial-tracking"
+                />
+                <div className="pointer-events-none absolute bottom-2 left-2 rounded bg-black/70 px-2 py-1 text-[9px] text-[#bbb]">If the provider blocks embedding, use Open externally above.</div>
               </div>
             </>
           )}

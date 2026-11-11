@@ -1,4 +1,5 @@
-export type ProjectAssetKind = 'model' | 'video' | 'image' | 'document' | 'other';
+export type ProjectAssetKind = 'model' | 'world' | 'video' | 'image' | 'document' | 'other';
+export type ProjectProvider = 'worldlabs' | 'gemini' | 'gomera';
 
 export interface ProjectAsset {
   id: string;
@@ -9,6 +10,10 @@ export interface ProjectAsset {
   size: number;
   uploadedAt: string;
   url: string;
+  provider?: ProjectProvider;
+  remoteUrl?: string;
+  thumbnailUrl?: string;
+  description?: string;
 }
 
 export interface ProjectSummary {
@@ -17,6 +22,9 @@ export interface ProjectSummary {
   updatedAt: string | null;
   assetCount: number;
   assets: ProjectAsset[];
+  provider?: ProjectProvider;
+  readOnly?: boolean;
+  status?: 'ready' | 'needs-key' | 'empty' | 'offline';
 }
 
 export interface StorageQuota {

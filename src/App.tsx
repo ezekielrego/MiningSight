@@ -30,7 +30,7 @@ import { CameraKeyframe, CameraTour, KeyframeAnnotation } from './types/cameraTo
 import { getDefaultCameraTours } from './utils/cameraAnimation';
 import { TunnelPresetId, ProceduralTunnelParams } from './types/tunnelScene';
 import { TUNNEL_PRESETS, getCombinedSceneObjects, getAllCombinedMaterials } from './scene/tunnelPresetRegistry';
-import { AuthUser, GasMark, MediaMarker, ProjectAsset, ProjectSummary, StorageQuota } from './types/project';
+import { AuthUser, GasMark, MediaMarker, ProjectAsset, ProjectProvider, ProjectSummary, StorageQuota } from './types/project';
 
 declare global {
   interface Window {
@@ -305,6 +305,9 @@ export default function App() {
   const [projectName, setProjectName] = useState('Mining Site');
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [providerProjects, setProviderProjects] = useState<ProjectSummary[]>([]);
+  const [providerLibraryLoading, setProviderLibraryLoading] = useState(false);
+  const [providerLibraryMessage, setProviderLibraryMessage] = useState('');
   const [projectAssets, setProjectAssets] = useState<ProjectAsset[]>([]);
   const [activeAssetId, setActiveAssetId] = useState<string | null>(null);
   const [reconstructionBrief, setReconstructionBrief] = useState<ReconstructionBrief | null>(null);
@@ -447,6 +450,7 @@ export default function App() {
     setAuthUser(null);
     setActiveProjectId(null);
     setProjects([]);
+    setProviderProjects([]);
     setProjectAssets([]);
     setActiveAssetId(null);
     setReconstructionBrief(null);
@@ -481,6 +485,7 @@ export default function App() {
   useEffect(() => {
     if (!authToken) {
       setProjects([]);
+      setProviderProjects([]);
       setStorageQuota(null);
       return;
     }
@@ -493,6 +498,30 @@ export default function App() {
       .catch(() => {});
     return () => { cancelled = true; };
   }, [authToken]);
+
+  const refreshProviderLibrary = useCallback(async () => {
+    if (!authToken) {
+      setProviderProjects([]);
+      return;
+    }
+    setProviderLibraryLoading(true);
+    setProviderLibraryMessage('');
+    try {
+      const response = await fetch('/api/reconstruction/ai/provider-library', { headers: { Authorization: `Bearer ${authToken}` } });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || !json.success) throw new Error(json.message || 'Could not fetch provider libraries.');
+      setProviderProjects(Array.isArray(json.projects) ? json.projects : []);
+      setProviderLibraryMessage('Provider libraries refreshed.');
+    } catch (error: any) {
+      setProviderLibraryMessage(error.message || 'Provider libraries could not be refreshed.');
+    } finally {
+      setProviderLibraryLoading(false);
+    }
+  }, [authToken]);
+
+  useEffect(() => {
+    void refreshProviderLibrary();
+  }, [refreshProviderLibrary]);
 
   const refreshStorageQuota = useCallback(async () => {
     if (!authToken) {
@@ -509,6 +538,7 @@ export default function App() {
   }, [refreshStorageQuota]);
 
   const saveProjectSnapshot = useCallback(async (projectId: string, nextName = projectName, assetsOverride?: ProjectAsset[], dataOverride?: Record<string, any>) => {
+    if (projectId.startsWith('provider_')) return;
     const response = await fetch(`/api/reconstruction/ai/projects/${encodeURIComponent(projectId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
@@ -520,7 +550,7 @@ export default function App() {
   }, [authToken, buildProjectData, projectName, projectAssets]);
 
   const ensureActiveProject = useCallback(async () => {
-    if (activeProjectId) return activeProjectId;
+    if (activeProjectId && !activeProjectId.startsWith('provider_')) return activeProjectId;
     const response = await fetch('/api/reconstruction/ai/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
@@ -639,6 +669,22 @@ export default function App() {
   }, [authUser, handleUploadAssets, pendingUploadFiles]);
 
   const handleSelectServerProject = useCallback(async (projectId: string) => {
+    const providerProject = providerProjects.find((project) => project.id === projectId);
+    if (providerProject) {
+      setActiveProjectId(providerProject.id);
+      setProjectName(providerProject.projectName);
+      setProjectAssets(providerProject.assets || []);
+      setActiveAssetId(null);
+      setStatusAlert({
+        type: providerProject.status === 'offline' ? 'error' : 'success',
+        message: `Opened ${providerProject.projectName}.`,
+        details: providerProject.status === 'needs-key'
+          ? 'Save the provider API key in AI Survey → API Keys, then refresh this library.'
+          : `${providerProject.assets?.length || 0} provider asset${providerProject.assets?.length === 1 ? '' : 's'} available. Click an asset to open it in the viewer.`,
+        timestamp: new Date().toLocaleTimeString(),
+      });
+      return;
+    }
     // Clear the previous project's asset view immediately while the selected project loads.
     setActiveProjectId(projectId);
     setProjectAssets([]);
@@ -684,7 +730,18 @@ export default function App() {
     } catch (error: any) {
       setStatusAlert({ type: 'error', message: `Project load failed: ${error.message}`, timestamp: new Date().toLocaleTimeString() });
     }
-  }, [authToken, saveTours]);
+  }, [authToken, providerProjects, saveTours]);
+
+  const handleProviderAssetReady = useCallback((provider: ProjectProvider, asset: ProjectAsset) => {
+    setProviderProjects((current) => current.map((project) => project.provider === provider
+      ? { ...project, status: 'ready', assets: [asset, ...(project.assets || []).filter((item) => item.id !== asset.id)], assetCount: [asset, ...(project.assets || []).filter((item) => item.id !== asset.id)].length, updatedAt: asset.uploadedAt }
+      : project));
+    setActiveProjectId(`provider_${provider === 'worldlabs' ? 'worldlabs' : provider}`);
+    setProjectName(provider === 'worldlabs' ? 'World Labs Marble' : provider === 'gomera' ? 'GOMERA X · reconstructed models' : 'Gemini · MiningSight scenes');
+    setProjectAssets((current) => [asset, ...current.filter((item) => item.id !== asset.id)]);
+    setActiveAssetId(asset.id);
+    setActiveUpperTab('Objects');
+  }, []);
 
   const handleCreateProject = useCallback(async () => {
     const name = newProjectName.trim();
@@ -1950,6 +2007,7 @@ export default function App() {
             onMapGeometryChange={handleMapGeometryChange}
             onMapMarkingChange={setMapMarkingEnabled}
             onMapDrawingChange={(enabled) => { setMapDrawingMode(enabled); setMapMarkingEnabled(enabled); }}
+            onProviderAssetReady={handleProviderAssetReady}
             onSaveReconstructionBrief={(brief) => {
               const nextBrief = { ...brief, mapGeometry: reconstructionMapGeometry, mapSelection: reconstructionMapSelection };
               setReconstructionBrief(nextBrief);
@@ -2086,7 +2144,11 @@ export default function App() {
             onRevertProject={handleRevertProject}
             projectName={projectName}
             activeProjectId={activeProjectId}
-            projects={projects}
+            projects={[...providerProjects, ...projects]}
+            activeProjectReadOnly={Boolean(activeProjectId?.startsWith('provider_'))}
+            providerLibraryLoading={providerLibraryLoading}
+            providerLibraryMessage={providerLibraryMessage}
+            onRefreshProviderLibrary={() => void refreshProviderLibrary()}
             projectAssets={projectAssets}
             activeAssetId={activeAssetId}
             onSelectServerProject={handleSelectServerProject}
