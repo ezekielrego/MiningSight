@@ -171,6 +171,10 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   const [worldError, setWorldError] = useState('');
   const [worldConfigured, setWorldConfigured] = useState<boolean | null>(null);
   const [worldCredits, setWorldCredits] = useState<number | null>(null);
+  const [marbleWorlds, setMarbleWorlds] = useState<any[]>([]);
+  const [marbleWorldsLoading, setMarbleWorldsLoading] = useState(false);
+  const [marbleWorldsPublicOnly, setMarbleWorldsPublicOnly] = useState(true);
+  const [marbleWorldsMessage, setMarbleWorldsMessage] = useState('');
   const [gomeraCaptureName, setGomeraCaptureName] = useState('MiningSight GOMERA capture');
   const [gomeraUploadSource, setGomeraUploadSource] = useState<GomeraUploadSource>('gomera-file-manager');
   const [aiSettings, setAiSettings] = useState<AISettingsState | null>(null);
@@ -764,6 +768,30 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
       setSettingsMessage(error.message || 'Could not save AI settings.');
     } finally {
       setSettingsSaving(false);
+    }
+  };
+
+  const loadMarbleWorlds = async () => {
+    if (!authToken) {
+      onOpenAuth?.();
+      return;
+    }
+    setMarbleWorldsLoading(true);
+    setMarbleWorldsMessage('');
+    try {
+      const response = await fetch('/api/ai/worldlabs/worlds', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ publicOnly: marbleWorldsPublicOnly, pageSize: 100 }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || !json.success) throw new Error(json.message || 'Could not list Marble worlds.');
+      setMarbleWorlds(Array.isArray(json.worlds) ? json.worlds : []);
+      setMarbleWorldsMessage(`${Array.isArray(json.worlds) ? json.worlds.length : 0} ${marbleWorldsPublicOnly ? 'public' : ''} world${json.worlds?.length === 1 ? '' : 's'} found.`);
+    } catch (error: any) {
+      setMarbleWorldsMessage(error.message || 'Could not list Marble worlds.');
+    } finally {
+      setMarbleWorldsLoading(false);
     }
   };
 
@@ -1859,6 +1887,37 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                       )}
                     </div>
                   )}
+                </div>
+
+                <div className="bg-[#1d1d1d] border border-[#454545] rounded-[3px] p-2 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <div className="text-[10px] font-bold text-[#f0c18b]">Existing Marble worlds</div>
+                      <div className="text-[8.5px] text-[#82909a]">Use the saved key to check your account and catch shareable public URLs.</div>
+                    </div>
+                    <button onClick={() => void loadMarbleWorlds()} disabled={marbleWorldsLoading || !authToken} aria-busy={marbleWorldsLoading} className="shrink-0 px-2 py-1 bg-[#303b33] hover:bg-[#415647] disabled:opacity-50 text-[#c8ead0] text-[9px] font-bold rounded-[2px] cursor-pointer">
+                      {marbleWorldsLoading ? 'Checking…' : 'Load worlds'}
+                    </button>
+                  </div>
+                  <label className="flex items-center gap-1 text-[8.5px] text-[#9da9b0] cursor-pointer">
+                    <input type="checkbox" checked={marbleWorldsPublicOnly} onChange={(event) => setMarbleWorldsPublicOnly(event.target.checked)} className="accent-[#e88724]" />
+                    public worlds only
+                  </label>
+                  {marbleWorldsMessage && <div className="text-[8.5px] text-[#9fc0cc]">{marbleWorldsMessage}</div>}
+                  {marbleWorlds.length > 0 && <div className="max-h-36 overflow-y-auto space-y-1.5 pr-0.5">
+                    {marbleWorlds.map((world) => {
+                      const worldId = world.world_id || world.id || 'world';
+                      const marbleUrl = world.world_marble_url || `https://marble.worldlabs.ai/world/${worldId}`;
+                      return <div key={worldId} className="flex items-center gap-1.5 border border-[#343434] bg-[#171717] rounded p-1.5">
+                        {world.assets?.thumbnail_url && <img src={world.assets.thumbnail_url} alt="" className="w-9 h-7 object-cover rounded border border-[#444]" />}
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[9px] text-[#ddd]">{world.display_name || worldId}</div>
+                          <div className="text-[8px] text-[#82909a]">{world.permission?.public ? 'PUBLIC' : 'PRIVATE'} · {world.model || 'Marble'}</div>
+                        </div>
+                        <a href={marbleUrl} target="_blank" rel="noreferrer" className="shrink-0 text-[8.5px] text-[#9bcaf0] hover:text-white hover:underline">Open URL</a>
+                      </div>;
+                    })}
+                  </div>}
                 </div>
 
                 <div className="grid grid-cols-2 gap-1.5 bg-[#1c1c1c] p-1 rounded border border-[#353535]">

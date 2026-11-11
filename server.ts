@@ -731,6 +731,33 @@ app.get('/api/ai/worldlabs/status', async (req, res) => {
   }
 });
 
+// List worlds belonging to the signed-in user's saved Marble key. The key is
+// used only on the server; the browser receives world metadata and share URLs.
+app.post('/api/ai/worldlabs/worlds', async (req, res) => {
+  const user = await requireAuthenticated(req, res);
+  if (!user) return;
+  try {
+    const settings = await getUserAiSettings(req);
+    const apiKey = settings?.marbleApiKey || process.env.WLT_API_KEY;
+    if (!hasConfiguredKey(apiKey, 'YOUR_WORLD_LABS_API_KEY')) {
+      return res.status(428).json({ success: false, error: 'AI_PROVIDER_KEY_REQUIRED', provider: 'marble', message: 'Save a World Labs Marble API key before listing worlds.' });
+    }
+    const pageSize = Math.min(100, Math.max(1, Number(req.body?.pageSize || 20)));
+    const payload = {
+      page_size: pageSize,
+      sort_by: req.body?.sortBy === 'updated_at' ? 'updated_at' : 'created_at',
+      status: 'SUCCEEDED',
+      ...(typeof req.body?.publicOnly === 'boolean' ? { is_public: req.body.publicOnly } : {}),
+      ...(typeof req.body?.pageToken === 'string' && req.body.pageToken ? { page_token: req.body.pageToken.slice(0, 2048) } : {}),
+    };
+    const result = await worldLabsRequest('/worlds:list', { method: 'POST', body: JSON.stringify(payload) }, apiKey);
+    return res.json({ success: true, provider: 'world-labs-marble', worlds: Array.isArray(result.worlds) ? result.worlds : [], nextPageToken: result.next_page_token || null });
+  } catch (error: any) {
+    const missingKey = String(error.message || '').startsWith('MISSING_WORLD_LABS_KEY');
+    return res.status(missingKey ? 428 : 400).json({ success: false, error: missingKey ? 'WORLD_LABS_NOT_CONFIGURED' : 'WORLD_LABS_LIST_FAILED', message: error.message });
+  }
+});
+
 // Create a Marble world using the documented media-asset upload workflow.
 app.post('/api/ai/worldlabs/generate', async (req, res) => {
   try {
