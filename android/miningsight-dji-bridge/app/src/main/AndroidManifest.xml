@@ -15,6 +15,8 @@
         android:name=".BridgeApplication"
         android:allowBackup="false"
         android:label="MiningSight DJI Bridge"
+        android:icon="@drawable/app_logo"
+        android:roundIcon="@drawable/app_logo"
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
         android:extractNativeLibs="true">
