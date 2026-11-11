@@ -1,0 +1,2 @@
+# Copy to gradle.properties and replace the placeholder with the App Key from DJI Developer.
+DJI_APP_KEY=replace-with-dji-app-key
