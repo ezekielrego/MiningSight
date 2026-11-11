@@ -226,6 +226,21 @@ export const UndergroundMapEditor: React.FC<UndergroundMapEditorProps> = ({ geom
     }
   };
 
+  useEffect(() => {
+    const handleDeleteKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+      const target = event.target as HTMLElement | null;
+      if (target && (['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable)) return;
+      if (!selectedFeatureId && !selectedPointId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      deleteSelected();
+    };
+
+    window.addEventListener('keydown', handleDeleteKey);
+    return () => window.removeEventListener('keydown', handleDeleteKey);
+  }, [selectedFeatureId, selectedPointId, geometry, features]);
+
   const updateSelectedFeature = (patch: Partial<ReconstructionMapFeature>) => {
     if (!selectedFeature) return;
     updateGeometry({ ...geometry, features: features.map((feature) => feature.id === selectedFeature.id ? { ...feature, ...patch } : feature) });
@@ -288,7 +303,7 @@ export const UndergroundMapEditor: React.FC<UndergroundMapEditorProps> = ({ geom
         <button onClick={() => { setTool('calibrate'); setCalibrationPoints([]); }} className={textActionClass(tool === 'calibrate')} title="Calibrate map scale using two points"><Ruler className="inline h-3 w-3" /> Calibrate</button>
         <button onClick={() => onMapMarkingChange?.(!mapMarkingEnabled)} className={textActionClass(mapMarkingEnabled)}>{mapMarkingEnabled ? 'Finish anchor picks' : 'Pick next section'}</button>
         <span className="h-4 w-px bg-[#555]" />
-        <button onClick={deleteSelected} disabled={!selectedFeatureId && !selectedPointId} className={textActionClass(Boolean(selectedFeatureId || selectedPointId))} title="Delete selected geometry"><Trash2 className="h-3 w-3" /></button>
+        <button onClick={deleteSelected} disabled={!selectedFeatureId && !selectedPointId} className={textActionClass(Boolean(selectedFeatureId || selectedPointId))} title="Delete selected geometry (Delete / Backspace)"><Trash2 className="h-3 w-3" /></button>
         <button onClick={() => setSnapToGrid((value) => !value)} className={textActionClass(snapToGrid)}>Snap {snapToGrid ? 'ON' : 'OFF'}</button>
         <div className="ml-auto flex gap-1">
           <button onClick={() => setViewBox((current) => ({ ...current, w: Math.max(0.25, current.w * 0.8), h: Math.max(0.25, current.h * 0.8) }))} className={textActionClass()} title="Zoom in"><ZoomIn className="h-3 w-3" /></button>

@@ -183,6 +183,10 @@ const findSceneObjectPath = (objects: C4DSceneObject[], targetId: string, path: 
   return null;
 };
 
+const removeSceneObjectById = (objects: C4DSceneObject[], targetId: string): C4DSceneObject[] => objects
+  .filter((object) => object.id !== targetId)
+  .map((object) => object.children ? { ...object, children: removeSceneObjectById(object.children, targetId) } : object);
+
 const setObjectSubtreeVisibility = (object: C4DSceneObject, visible: boolean): C4DSceneObject => ({
   ...object,
   visibleInEditor: visible,
@@ -1527,13 +1531,28 @@ export default function App() {
   // Delete object
   const handleDeleteObject = (id: string) => {
     pushUndoState();
-    setObjects((prev) => prev.filter((o) => o.id !== id));
+    setObjects((prev) => removeSceneObjectById(prev, id));
     if (selectedObjectId === id) setSelectedObjectId(null);
     setStatusAlert({
       type: 'idle',
       message: `Deleted object ${id}.`,
     });
   };
+
+  useEffect(() => {
+    const handleDeleteKey = (event: KeyboardEvent) => {
+      if (showMap || (event.key !== 'Delete' && event.key !== 'Backspace')) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable)) return;
+      if (!selectedObjectId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      handleDeleteObject(selectedObjectId);
+    };
+
+    window.addEventListener('keydown', handleDeleteKey);
+    return () => window.removeEventListener('keydown', handleDeleteKey);
+  }, [selectedObjectId, showMap, objects]);
 
   // Create new material
   const handleCreateMaterial = () => {

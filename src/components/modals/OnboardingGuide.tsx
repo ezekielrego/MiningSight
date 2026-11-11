@@ -47,7 +47,7 @@ const STEPS: OnboardingStep[] = [
     title: 'Orbit, walk, zoom, and inspect',
     description: 'Orbit is the default mode for inspecting the whole model. Drag in the viewport to rotate, use the wheel or + / - to zoom, and double-click a surface to focus it. Walk Mode gives you a first-person route through the drift.',
     location: 'The Orbit / Walk Mode switch is in the viewport control strip',
-    tips: ['Orbit: drag to rotate, wheel to zoom, arrow keys to orbit.', 'Walk: W, A, S, D or arrow keys move; drag to look around; Shift enables sprint.'],
+    tips: ['Orbit: drag to rotate, wheel to zoom, arrow keys to orbit.', 'Walk: W, A, S, D or arrow keys move; drag to look around; Shift enables sprint.', 'Select a map feature or scene object, then press Delete or Backspace to remove it.'],
     target: 'viewport-controls',
   },
   {

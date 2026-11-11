@@ -537,12 +537,12 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     if (!rig) return;
     const visibility = flattenSceneObjects(sceneObjects);
     const rootId = currentPresetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo';
-    rig.root.visible = !activeProjectId && !clearView && (visibility.get(rootId)?.visibleInEditor ?? true);
+    rig.root.visible = !activeProjectId && !clearView && (visibility.get(rootId)?.visibleInEditor ?? false);
 
     rig.root.traverse((node) => {
       if (node === rig.root) return;
       const id = node.userData?.selectionId || node.name;
-      if (visibility.has(id)) node.visible = Boolean(visibility.get(id)?.visibleInEditor);
+      node.visible = visibility.has(id) && Boolean(visibility.get(id)?.visibleInEditor);
     });
   }, [sceneObjects, currentPresetId, activeProjectId, clearView]);
 
@@ -1239,11 +1239,11 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     scene.add(newRig.root);
     const rootId = currentPresetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo';
     const visibility = flattenSceneObjects(sceneObjects);
-    newRig.root.visible = !activeProjectId && !clearView && (visibility.get(rootId)?.visibleInEditor ?? true);
+    newRig.root.visible = !activeProjectId && !clearView && (visibility.get(rootId)?.visibleInEditor ?? false);
     newRig.root.traverse((node) => {
       if (node === newRig.root) return;
       const id = node.userData?.selectionId || node.name;
-      if (visibility.has(id)) node.visible = Boolean(visibility.get(id)?.visibleInEditor);
+      node.visible = visibility.has(id) && Boolean(visibility.get(id)?.visibleInEditor);
     });
     newRig.setDisplayMode(shadingMode);
 

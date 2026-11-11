@@ -49,7 +49,7 @@ export const HelpGuideModal: React.FC<HelpGuideModalProps> = ({ isOpen, onClose,
               <section>
                 <h3 className="text-[13px] font-bold text-[#f1b36b]">Markers, measurements, keyframes, and media</h3>
                 <p className="mt-1.5">Use the annotation and ruler tools to record observations on the current model view. Camera keyframes preserve a viewpoint for later review, and the timeline controls frame playback, scrubbing, looping, and playback speed. Notes and markers are associated with their keyframe or video time so the same context can be restored later.</p>
-                <p className="mt-1.5">Mark History provides a central list of model notes, video markers, measurements, and gas or smoke brush marks. Select a history item to return to its frame or media time, edit it where supported, or remove it from the project.</p>
+                <p className="mt-1.5">Mark History provides a central list of model notes, video markers, measurements, and gas or smoke brush marks. Select a history item to return to its frame or media time, edit it where supported, or remove it from the project. In the map editor or Objects panel, select geometry or an object and press Delete or Backspace to remove it; text fields keep their normal editing behaviour.</p>
               </section>
 
               <section>
