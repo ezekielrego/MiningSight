@@ -1826,6 +1826,12 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                         <>
                           <div className="text-[9px] text-[#9da9b0] leading-relaxed">Keys are encrypted on the server and never returned to the browser after saving. Leave a key blank to keep the saved value.</div>
                           <div className="flex items-start gap-1.5 bg-[#1b2429] border border-[#2d4854] rounded p-1.5 text-[9px] text-[#9fc0cc] leading-relaxed"><Info className="w-3 h-3 mt-0.5 flex-shrink-0" /><span>Provider requirements are separate: World Labs Marble needs only a Marble key; GOMERA X does not use Gemini or a Gemini key; MiningSight Compatible Reconstruction, map interpretation, and survey analysis require Gemini.</span></div>
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[8.5px] text-[#82909a]">
+                            <span className="text-[#9da9b0]">API docs:</span>
+                            <a href="https://docs.worldlabs.ai/api" target="_blank" rel="noreferrer" className="text-[#9bcaf0] hover:text-white hover:underline">World Labs Marble</a>
+                            <a href="https://ai.google.dev/gemini-api/docs" target="_blank" rel="noreferrer" className="text-[#9bcaf0] hover:text-white hover:underline">Gemini</a>
+                            <a href="https://docs.webodm.org/api/reference/" target="_blank" rel="noreferrer" className="text-[#9bcaf0] hover:text-white hover:underline">GOMERA / WebODM</a>
+                          </div>
                           <div className="grid grid-cols-2 gap-2">
                             <label className="text-[9.5px] text-[#999]">Gemini API key
                               <input type="password" value={settingsGeminiKey} onChange={(event) => setSettingsGeminiKey(event.target.value)} placeholder={aiSettings?.geminiConfigured ? 'Saved key · leave blank to keep' : 'Paste Gemini API key'} autoComplete="off" className="mt-0.5 w-full bg-[#171717] border border-[#414141] rounded px-1.5 py-1 text-[#eee] text-[10px] focus:outline-none focus:border-[#e88724]" />
