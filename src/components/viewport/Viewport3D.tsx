@@ -1752,7 +1752,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       )}
 
       {/* Top Viewport Navigation and Mode Bar */}
-      <div data-onboarding-target="viewport-controls" className="absolute top-0 left-0 right-0 h-7 bg-[#383838]/95 border-b border-[#252525] flex items-center justify-between px-2 text-[11px] text-[#cfcfcf] z-50 backdrop-blur-sm overflow-visible">
+      <div data-onboarding-target="viewport-controls" aria-label="Viewport controls" className="absolute top-0 left-0 right-0 h-8 bg-[#383838]/95 border-b border-[#252525] flex items-center justify-start gap-2 px-2 text-[11px] text-[#cfcfcf] z-[80] backdrop-blur-sm overflow-x-auto overflow-y-hidden overscroll-x-contain touch-pan-x [scrollbar-width:thin] [scrollbar-color:#777_transparent]">
         {/* Left Controls: Preset Selector, Menus, Orbit vs Walk, Flashlight, Ruler, Hotspots */}
         <div className="flex items-center space-x-1 sm:space-x-1.5 min-w-max">
           {/* SCENE PRESET SELECTOR (Classic Diorama vs Rugged Timbered Photo vs AI Custom) */}
@@ -2168,7 +2168,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         </div>
 
         {/* Right Controls: Record Keyframe, Screenshot, Fullscreen */}
-        <div className="flex items-center space-x-1 sm:space-x-1.5 min-w-max ml-1">
+        <div className="flex items-center space-x-1 sm:space-x-1.5 min-w-max shrink-0 ml-1">
           {/* Quick Record Keyframe Button */}
           <button
             onClick={handleRecordViewClick}
