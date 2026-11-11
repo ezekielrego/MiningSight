@@ -25,6 +25,7 @@ import dji.common.error.DJIError;
 import dji.common.error.DJISDKError;
 import dji.sdk.base.BaseComponent;
 import dji.sdk.base.BaseProduct;
+import dji.sdk.camera.VideoFeeder;
 import dji.sdk.sdkmanager.DJISDKInitEvent;
 import dji.sdk.sdkmanager.DJISDKManager;
 import dji.sdk.sdkmanager.LiveStreamManager;
@@ -43,7 +44,9 @@ public class MainActivity extends Activity {
     private EditText streamUrlInput;
     private Button startButton;
     private Button stopButton;
+    private PrimaryVideoPreview videoPreview;
     private boolean registered;
+    private volatile boolean productConnected;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -67,6 +70,11 @@ public class MainActivity extends Activity {
 
         TextView subtitle = text("Phantom camera → VPS → MiningSight website", 14, Color.LTGRAY);
         content.addView(subtitle, marginParams(0, 6, 0, 16));
+
+        videoPreview = new PrimaryVideoPreview(this);
+        videoPreview.setBackgroundColor(Color.BLACK);
+        content.addView(videoPreview, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(220)));
 
         streamUrlInput = new EditText(this);
         streamUrlInput.setSingleLine(true);
@@ -135,14 +143,18 @@ public class MainActivity extends Activity {
 
             @Override
             public void onProductDisconnect() {
+                productConnected = false;
+                if (videoPreview != null) videoPreview.detachFromPrimaryFeed();
                 BridgeLog.warn("DJI", "Controller disconnected");
                 setStatus("Controller disconnected.");
             }
 
             @Override
             public void onProductConnect(BaseProduct product) {
+                productConnected = product != null && product.isConnected();
                 BridgeLog.info("DJI", "Controller connected");
                 setStatus("Controller connected: " + (product == null || product.getModel() == null ? "DJI product" : product.getModel().getDisplayName()));
+                attachPrimaryVideoFeed();
             }
 
             @Override
@@ -152,7 +164,10 @@ public class MainActivity extends Activity {
 
             @Override
             public void onComponentChange(BaseProduct.ComponentKey key, BaseComponent oldComponent, BaseComponent newComponent) {
-                if (newComponent != null) setStatus("DJI component ready: " + key.name());
+                if (newComponent != null) {
+                    setStatus("DJI component ready: " + key.name());
+                    if (key.name().toLowerCase().contains("camera")) attachPrimaryVideoFeed();
+                }
             }
 
             @Override
@@ -173,6 +188,15 @@ public class MainActivity extends Activity {
             setStatus("Wait for DJI SDK registration before starting the stream.");
             return;
         }
+        if (!productConnected) {
+            setStatus("Wait for the aircraft/controller connection before streaming.");
+            return;
+        }
+        if (videoPreview == null || !videoPreview.hasReceivedFrame()) {
+            setStatus("Waiting for live camera frames. Keep DJI GO closed and check the controller connection.");
+            BridgeLog.warn("Stream", "Start blocked because no primary camera frame has reached the phone");
+            return;
+        }
         String url = streamUrlInput.getText().toString().trim();
         if (url.isEmpty() || !url.startsWith("rtmp://")) {
             BridgeLog.warn("Stream", "Invalid RTMP URL entered");
@@ -191,6 +215,10 @@ public class MainActivity extends Activity {
             }
             manager.setLiveUrl(url);
             manager.setVideoEncodingEnabled(true);
+            manager.setVideoSource(LiveStreamManager.LiveStreamVideoSource.Primary);
+            manager.registerListener(status -> BridgeLog.info("Stream", "DJI stream status changed: " + status));
+            manager.addLiveErrorStatusListener((errorCode, errorMessage) ->
+                    BridgeLog.warn("Stream", "DJI live error " + errorCode + ": " + errorMessage));
             int result = manager.startStream();
             if (result == 0) {
                 setStatus("LIVE · publishing H.264 to MiningSight VPS");
@@ -202,6 +230,14 @@ public class MainActivity extends Activity {
                 BridgeLog.warn("Stream", "Stream start failed with code " + result);
                 setStatus("Stream start failed: code " + result);
             }
+        });
+    }
+
+    private void attachPrimaryVideoFeed() {
+        if (videoPreview == null || !productConnected) return;
+        runOnUiThread(() -> {
+            videoPreview.attachToPrimaryFeed();
+            setStatus("Aircraft connected. Waiting for primary camera video…");
         });
     }
 
@@ -231,6 +267,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         stopStream();
+        if (videoPreview != null) videoPreview.detachFromPrimaryFeed();
         streamExecutor.shutdownNow();
         super.onDestroy();
     }
