@@ -85,6 +85,15 @@ The following screenshots are selected from the supplied system evidence package
 - SQLite-backed server data and filesystem storage for project metadata and uploads
 - Google Identity Services for optional Google sign-in
 - Configurable external reconstruction providers, including World Labs Marble and GOMERAX
+- Optional Android DJI field bridge using DJI Mobile SDK 4.18 and MediaMTX
+
+## DJI live-video bridge
+
+The repository now includes [`android/miningsight-dji-bridge`](android/miningsight-dji-bridge/), a small Android transmitter for a Phantom 3 Standard. The phone connects to the DJI controller, the official DJI SDK receives the camera feed, and the app publishes RTMP to the VPS. MiningSight remains the browser-side viewer where live footage can later be used for frame capture and reconstruction.
+
+The server has a separate MediaMTX relay service prepared for RTMP ingest, HLS playback, and WebRTC playback. The protected field publish URL and temporary direct HLS test URL are stored locally on the server with owner-only permissions; credentials are intentionally not committed to this repository. A production browser route still requires the stream DNS/reverse-proxy and HTTPS layer to be mapped to the relay.
+
+See the Android bridge README for build commands, field setup, and the remaining flight-test requirements.
 
 ## Local development
 
