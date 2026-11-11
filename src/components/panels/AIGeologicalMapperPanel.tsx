@@ -252,7 +252,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
     setActiveTab('reconstruct');
     onStatusChange({
       type: 'success',
-      message: 'Keyframe screenshot attached to the Gemini reconstruction brief.',
+      message: 'Keyframe screenshot attached to the MiningSight-compatible reconstruction brief.',
       details: 'The captured viewer position is now the active visual reference.',
       timestamp: new Date().toLocaleTimeString(),
     });
@@ -603,20 +603,20 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
     window.setTimeout(() => setBriefSavedMessage(''), 2500);
     onStatusChange({
       type: 'success',
-      message: 'Gemini reconstruction brief saved.',
+      message: 'MiningSight-compatible reconstruction brief saved.',
       details: 'The reference map, distance constraint, dimensions, selected scene, and instructions will travel with the project snapshot.',
       timestamp: new Date().toLocaleTimeString(),
     });
   };
 
-  // Reconstruct a new part or extend the current scene via Gemini AI Vision.
+  // Generate a MiningSight-compatible reconstruction plan via Gemini AI Vision.
   const handleReconstructScene = async () => {
     if (!authToken || (aiSettings && !aiSettings.geminiConfigured)) {
       setActiveTab('reconstruct');
       openProviderSettings();
       onStatusChange({
         type: 'warning',
-        message: 'Gemini API key required before scene reconstruction.',
+        message: 'Gemini API key required for MiningSight Compatible Reconstruction.',
         details: authToken ? 'Open Provider API keys & model preferences and save a Gemini key.' : 'Sign in with Google, then save a Gemini key in Provider API keys & model preferences.',
         timestamp: new Date().toLocaleTimeString(),
       });
@@ -685,14 +685,14 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
       setReconstructResult(json.data);
       onStatusChange({
         type: 'success',
-        message: 'Gemini reconstruction plan generated.',
+        message: 'MiningSight-compatible reconstruction plan generated.',
         details: `${json.data.reconstructionPlan || 'Generated procedural geometry parameters'} · ${json.data.procedural3DParams.timberSetCount} timber sets · ${json.data.procedural3DParams.laggingPlankTiers}-tier lagging.`,
         timestamp: new Date().toLocaleTimeString(),
       });
     } catch (err: any) {
       onStatusChange({
         type: 'error',
-        message: `Gemini reconstruction failed: ${err.message}`,
+        message: `MiningSight-compatible reconstruction failed: ${err.message}`,
         timestamp: new Date().toLocaleTimeString(),
       });
     } finally {
@@ -1799,8 +1799,8 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                     <div className="text-[9.5px] text-[#b7a28d]">Generate navigable worlds or survey meshes from your own references</div>
                   </div>
                 </div>
-                <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${worldConfigured === true ? 'text-[#62e28a] bg-[#14271a] border-[#2b5934]' : 'text-[#e7b36e] bg-[#302417] border-[#604522]'}`}>
-                  {worldConfigured === true ? 'MARBLE CONNECTED' : worldConfigured === false ? 'MARBLE KEY REQUIRED' : 'CHECKING MARBLE'}
+                <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${worldProvider === 'gomera' || worldConfigured === true ? 'text-[#62e28a] bg-[#14271a] border-[#2b5934]' : 'text-[#e7b36e] bg-[#302417] border-[#604522]'}`}>
+                  {worldProvider === 'gomera' ? 'GOMERA INDEPENDENT' : worldConfigured === true ? 'MARBLE CONNECTED' : worldConfigured === false ? 'MARBLE KEY REQUIRED' : 'CHECKING MARBLE'}
                 </span>
               </div>
 
@@ -1812,7 +1812,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                   >
                     <span className="text-[10.5px] font-bold text-[#f0c18b]">Provider API keys &amp; model preferences</span>
                     <span className="text-[8.5px] font-mono text-[#999]">
-                      {settingsLoading ? 'CHECKING…' : `Gemini ${aiSettings?.geminiConfigured ? 'READY' : 'NEEDS KEY'} · Marble ${aiSettings?.marbleConfigured ? 'READY' : 'NEEDS KEY'}`}
+                      {settingsLoading ? 'CHECKING…' : `Gemini ${aiSettings?.geminiConfigured ? 'READY' : 'NEEDS KEY'} · Marble ${aiSettings?.marbleConfigured ? 'READY' : 'NEEDS KEY'} · GOMERA READY`}
                     </span>
                   </button>
                   {settingsOpen && (
@@ -1825,6 +1825,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                       ) : (
                         <>
                           <div className="text-[9px] text-[#9da9b0] leading-relaxed">Keys are encrypted on the server and never returned to the browser after saving. Leave a key blank to keep the saved value.</div>
+                          <div className="flex items-start gap-1.5 bg-[#1b2429] border border-[#2d4854] rounded p-1.5 text-[9px] text-[#9fc0cc] leading-relaxed"><Info className="w-3 h-3 mt-0.5 flex-shrink-0" /><span>Provider requirements are separate: World Labs Marble needs only a Marble key; GOMERA X does not use Gemini or a Gemini key; MiningSight Compatible Reconstruction, map interpretation, and survey analysis require Gemini.</span></div>
                           <div className="grid grid-cols-2 gap-2">
                             <label className="text-[9.5px] text-[#999]">Gemini API key
                               <input type="password" value={settingsGeminiKey} onChange={(event) => setSettingsGeminiKey(event.target.value)} placeholder={aiSettings?.geminiConfigured ? 'Saved key · leave blank to keep' : 'Paste Gemini API key'} autoComplete="off" className="mt-0.5 w-full bg-[#171717] border border-[#414141] rounded px-1.5 py-1 text-[#eee] text-[10px] focus:outline-none focus:border-[#e88724]" />
@@ -1867,7 +1868,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                     className={`px-2 py-2 rounded-[2px] text-left cursor-pointer transition-colors ${worldProvider === 'gomera' ? 'bg-[#e88724] text-black shadow' : 'text-[#bbb] hover:bg-[#333]'}`}
                   >
                     <span className="flex items-center gap-1.5 font-bold text-[10.5px]"><Server className="w-3.5 h-3.5" /> GOMERA X</span>
-                    <span className={`block text-[9px] mt-0.5 ${worldProvider === 'gomera' ? 'text-black/70' : 'text-[#777]'}`}>Photogrammetry survey reconstruction</span>
+                    <span className={`block text-[9px] mt-0.5 ${worldProvider === 'gomera' ? 'text-black/70' : 'text-[#777]'}`}>Independent photogrammetry reconstruction · no Gemini</span>
                   </button>
                 </div>
 
@@ -1958,7 +1959,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                   </>
                 )}
 
-                {worldProvider === 'gomera' && <div className="flex items-start gap-1.5 bg-[#1b2429] border border-[#2d4854] rounded p-1.5 text-[9px] text-[#9fc0cc] leading-relaxed"><Info className="w-3 h-3 mt-0.5 flex-shrink-0" /><span>{gomeraUploadSource === 'gomera-file-manager' ? 'Uses the same chunked GOMERA 3D-generation file-manager API as the companion viewer. Each image is sent in 512 KB parts with automatic retries, then submitted to WebODM.' : 'Sends the selected images directly through the AI panel to the GOMERA 3D-generation API. Use the chunked file-manager path for larger or less reliable uploads.'}</span></div>}
+                {worldProvider === 'gomera' && <div className="flex items-start gap-1.5 bg-[#1b2429] border border-[#2d4854] rounded p-1.5 text-[9px] text-[#9fc0cc] leading-relaxed"><Info className="w-3 h-3 mt-0.5 flex-shrink-0" /><span>{gomeraUploadSource === 'gomera-file-manager' ? 'GOMERA is independent of Gemini. This uses the same chunked GOMERA 3D-generation file-manager API as the companion viewer. Each image is sent in 512 KB parts with automatic retries, then submitted to WebODM. Google sign-in is used only to protect the user upload session.' : 'GOMERA is independent of Gemini. This sends the selected images directly through the GOMERA 3D-generation API; no Gemini key is checked. Use the chunked file-manager path for larger or less reliable uploads.'}</span></div>}
 
                 {worldError && <div className="flex items-start justify-between gap-2 bg-[#321d1d] border border-[#713333] text-[#ffb0b0] rounded p-1.5 text-[9.5px]"><div className="flex items-start gap-1.5 min-w-0"><AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" /><span>{worldError}</span></div>{/key|sign in/i.test(worldError) && <button onClick={() => /sign in/i.test(worldError) && !authToken ? onOpenAuth?.() : openProviderSettings()} className="shrink-0 rounded-[2px] bg-[#e88724] px-1.5 py-1 text-[8.5px] font-bold text-black hover:bg-[#ff9933] active:scale-[0.98] cursor-pointer">{/sign in/i.test(worldError) && !authToken ? 'Sign in' : 'Open API keys'}</button>}</div>}
 
@@ -1997,7 +1998,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
               <div className="flex items-center justify-between border-b border-[#333] pb-1.5">
                 <span className="font-bold text-[#e88724] flex items-center space-x-1.5">
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>Procedural Scene Builder (Gemini / local rig)</span>
+                  <span>MiningSight Compatible Scene Builder (Gemini / local rig)</span>
                 </span>
                 <span className="text-[9.5px] font-mono text-[#4ade80] bg-[#1a2e1f] px-1.5 py-0.5 rounded border border-[#2b5934]">
                   Active Photo Rig
@@ -2008,14 +2009,14 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
               </p>
             </div>
 
-            {/* Gemini reconstruction brief: preserved alongside the archived survey milestone. */}
+            {/* MiningSight-compatible reconstruction brief: preserved alongside the archived survey milestone. */}
             <div className="bg-[#252525] border border-[#4b3825] p-2.5 rounded-[3px] space-y-2.5">
               <div className="flex items-start justify-between gap-2 border-b border-[#3d3d3d] pb-1.5">
                 <div>
-                  <div className="font-bold text-[#f6d2a7] text-[11.5px]">Gemini Reconstruction Brief</div>
+                  <div className="font-bold text-[#f6d2a7] text-[11.5px]">MiningSight Compatible Reconstruction</div>
                   <div className="text-[9.5px] text-[#999] mt-0.5">Make a new mesh part, extend the current scene, or rebuild a complete selectable procedural model.</div>
                 </div>
-                <span className="shrink-0 rounded border border-[#315438] bg-[#1a2e1f] px-1.5 py-0.5 text-[8.5px] font-mono text-[#72e28e]">GEMINI VISION</span>
+                <span className="shrink-0 rounded border border-[#315438] bg-[#1a2e1f] px-1.5 py-0.5 text-[8.5px] font-mono text-[#72e28e]">GEMINI REQUIRED</span>
               </div>
 
               <div className="grid grid-cols-3 gap-1">
@@ -2144,7 +2145,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                   className="flex-1 py-1.5 bg-[#e88724] hover:bg-[#ff9933] active:scale-[0.99] disabled:opacity-50 disabled:cursor-wait text-black font-bold rounded-[2px] flex items-center justify-center space-x-1.5 cursor-pointer shadow-md transition-colors"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>{isReconstructing ? 'Analyzing with Gemini Vision...' : 'Reconstruct 3D Scene with AI'}</span>
+                  <span>{isReconstructing ? 'Generating compatible reconstruction...' : 'Generate MiningSight-Compatible Reconstruction'}</span>
                 </button>
 
                 <button
@@ -2171,7 +2172,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
             {reconstructResult && (
               <div className="bg-[#1f2620] border border-[#2e4d35] p-2.5 rounded-[3px] space-y-2 text-[10.5px]">
                 <div className="font-bold text-[#4ade80] flex items-center justify-between">
-                  <span>Gemini Reconstruction Plan</span>
+                  <span>MiningSight-Compatible Reconstruction Plan</span>
                   <span className="font-mono text-[9px] text-[#88bbdd]">AI Vision Extraction</span>
                 </div>
 
@@ -2209,7 +2210,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                       saveReconstructionBrief();
                       onStatusChange({
                         type: 'success',
-                        message: 'Applied Gemini mesh parameters to the active 3D viewport.',
+                        message: 'Applied MiningSight-compatible mesh parameters to the active 3D viewport.',
                         details: 'The generated part plan was also saved with the reconstruction brief.',
                         timestamp: new Date().toLocaleTimeString(),
                       });
@@ -2226,14 +2227,14 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                     const url = URL.createObjectURL(blob);
                     const link = document.createElement('a');
                     link.href = url;
-                    link.download = `${projectTitle.replace(/[^a-z0-9_-]+/gi, '_')}_gemini_reconstruction_plan.json`;
+                    link.download = `${projectTitle.replace(/[^a-z0-9_-]+/gi, '_')}_miningsight_compatible_reconstruction.json`;
                     link.click();
                     URL.revokeObjectURL(url);
                   }}
                   className="w-full py-1.5 bg-[#303030] hover:bg-[#444] text-[#ddd] border border-[#555] font-semibold rounded-[2px] flex items-center justify-center space-x-1 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Export Gemini Reconstruction Plan (.json)</span>
+                  <span>Export Compatible Reconstruction Plan (.json)</span>
                 </button>
               </div>
             )}

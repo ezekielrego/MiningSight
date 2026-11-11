@@ -869,6 +869,8 @@ app.post('/api/ai/gomera-file-manager/jobs', async (req, res) => {
 });
 
 // Server-side bridge to the existing GOMERA/WebODM reconstruction connector.
+// This provider is intentionally independent from Gemini: it uses the configured
+// GOMERA connector directly and never reads or validates a Gemini key.
 app.post('/api/ai/gomera-reconstruction', async (req, res) => {
   try {
     const images = Array.isArray(req.body?.images) ? req.body.images : [];

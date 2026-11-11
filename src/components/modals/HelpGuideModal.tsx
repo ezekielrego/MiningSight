@@ -54,7 +54,7 @@ export const HelpGuideModal: React.FC<HelpGuideModalProps> = ({ isOpen, onClose,
 
               <section>
                 <h3 className="text-[13px] font-bold text-[#f1b36b]">AI geological mapping and 3D reconstruction</h3>
-                <p className="mt-1.5">Open AI Survey to load sample survey images or provide your own references, dimensions, geological description, and reconstruction instructions. The panel supports provider selection for Gemini analysis, World Labs Marble scene generation, and the GOMERAX reconstruction workflow.</p>
+                <p className="mt-1.5">Open AI Survey to load sample survey images or provide your own references, dimensions, geological description, and reconstruction instructions. The panel supports separate provider paths: Gemini for MiningSight-compatible analysis and reconstruction, World Labs Marble for navigable worlds, and GOMERA X for independent photogrammetry reconstruction without Gemini.</p>
                 <p className="mt-1.5">Provider credentials are configured from the Provider API keys and model preferences area. Sign in before saving personal provider settings. The generation panel reports missing credentials, validation problems, upload progress, and provider errors with an action to correct the issue.</p>
               </section>
 

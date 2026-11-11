@@ -69,7 +69,7 @@ const STEPS: OnboardingStep[] = [
   {
     eyebrow: '5 · AI reconstruction',
     title: 'Generate scenes from your own references',
-    description: 'The AI Survey panel supports image sets, descriptions, reconstruction instructions, and provider selection. Gemini can analyse survey material, while World Labs Marble and the GOMERAX service can be configured for 3D scene generation when the required provider credentials are available.',
+    description: 'The AI Survey panel supports image sets, descriptions, reconstruction instructions, and provider selection. Gemini is used for MiningSight-compatible analysis and reconstruction; World Labs Marble can create navigable worlds with its own key, while GOMERA X independently reconstructs photogrammetry captures without Gemini.',
     location: 'Open AI Survey from the top navigation or the orange AI Survey button',
     tips: ['Sign in before saving personal provider settings.', 'Open Provider API keys when a provider needs a key, then select the preferred model and return to generation.'],
     target: 'ai-survey',
