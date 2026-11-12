@@ -53,7 +53,9 @@ public class MainActivity extends Activity {
     private Button startButton;
     private Button stopButton;
     private PrimaryVideoPreview videoPreview;
-    private boolean registered;
+    private volatile boolean registered;
+    private volatile boolean registrationPending;
+    private final ExecutorService registrationExecutor = Executors.newSingleThreadExecutor();
     private volatile boolean productConnected;
     private boolean connectionStarted;
     private final Handler diagnosticHandler = new Handler(Looper.getMainLooper());
@@ -163,8 +165,8 @@ public class MainActivity extends Activity {
             if (serverLogText != null) serverLogText.setText("Sending diagnostics to TunnelSight…");
             BridgeLog.uploadToServer(this, message -> { if (serverLogText != null) serverLogText.setText(message); });
         });
-        reconnect.setOnClickListener(v -> connectToProduct("manual reconnect"));
-        checkWifi.setOnClickListener(v -> refreshNetworkDiagnostics("manual check"));
+        reconnect.setOnClickListener(v -> { if (!registered) requestRuntimePermissions(); else connectToProduct("manual reconnect"); });
+        checkWifi.setOnClickListener(v -> { refreshNetworkDiagnostics("manual check"); if (!hasDjiConnectionPermissions()) requestRuntimePermissions(); });
 
         ScrollView scroll = new ScrollView(this);
         scroll.addView(content);
@@ -173,11 +175,22 @@ public class MainActivity extends Activity {
     }
 
     private void registerDjiSdk() {
+        if (registered || registrationPending) return;
+        registrationPending = true;
         setStatus("Registering DJI SDK…");
         BridgeLog.info("DJI", "Registering DJI SDK");
+        diagnosticHandler.postDelayed(() -> {
+            if (registrationPending && !registered) {
+                BridgeLog.warn("DJI", "Registration has not completed after 45 seconds; check internet access");
+                setStatus("DJI registration is still waiting. Connect to internet Wi-Fi or working mobile data; diagnostics continue syncing.");
+            }
+        }, 45000);
+        registrationExecutor.execute(() -> {
+        try {
         DJISDKManager.getInstance().registerApp(getApplicationContext(), new DJISDKManager.SDKManagerCallback() {
             @Override
             public void onRegister(DJIError error) {
+                registrationPending = false;
                 registered = error == DJISDKError.REGISTRATION_SUCCESS;
                 if (registered) {
                     BridgeLog.info("DJI", "SDK registration succeeded");
@@ -222,6 +235,7 @@ public class MainActivity extends Activity {
 
             @Override
             public void onInitProcess(DJISDKInitEvent event, int progress) {
+                BridgeLog.info("DJIInit", String.valueOf(event) + " progress=" + progress);
                 setStatus("Preparing DJI SDK… " + progress + "%");
             }
 
@@ -229,6 +243,12 @@ public class MainActivity extends Activity {
             public void onDatabaseDownloadProgress(long current, long total) {
                 if (total > 0) setStatus("Preparing DJI database… " + (current * 100 / total) + "%");
             }
+        });
+        } catch (Throwable error) {
+            registrationPending = false;
+            BridgeLog.error("DJI", "SDK registration invocation failed", error);
+            setStatus("DJI registration failed to start: " + error.getMessage());
+        }
         });
     }
 
@@ -251,6 +271,7 @@ public class MainActivity extends Activity {
             java.util.ArrayList<String> needed = new java.util.ArrayList<>();
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
                     && ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                needed.add(Manifest.permission.ACCESS_COARSE_LOCATION);
                 needed.add(Manifest.permission.ACCESS_FINE_LOCATION);
             }
             if (android.os.Build.VERSION.SDK_INT >= 33
@@ -266,10 +287,14 @@ public class MainActivity extends Activity {
         }
         refreshNetworkDiagnostics(reason);
         String ssid = currentSsid();
-        if (ssid == null || "<unknown ssid>".equalsIgnoreCase(ssid)) {
-            BridgeLog.warn("Wi-Fi", "No readable connected Wi-Fi SSID; connect to the Phantom controller Wi-Fi first");
+        if (!hasConnectedWifi()) {
+            BridgeLog.warn("Wi-Fi", "No connected Wi-Fi transport or local Wi-Fi address is available");
             setStatus("Phone Wi-Fi is not available to the bridge. Join PHANTOM3 Wi-Fi, then tap Reconnect DJI.");
             return;
+        }
+        if (ssid == null || "<unknown ssid>".equalsIgnoreCase(ssid)) {
+            ssid = "connected Wi-Fi (name hidden by Android)";
+            BridgeLog.info("Wi-Fi", "SSID is hidden; allowing DJI connection using connected Wi-Fi transport/IP");
         }
         if (!ssid.toUpperCase().contains("PHANTOM3")) {
             BridgeLog.warn("Wi-Fi", "Connected Wi-Fi does not have the default Phantom 3 name (it may have been renamed): " + ssid);
@@ -320,6 +345,16 @@ public class MainActivity extends Activity {
         } catch (Exception error) {
             BridgeLog.warn("DJI", "Could not read product state at " + elapsed + ": " + error.getMessage());
         }
+    }
+
+    private boolean hasConnectedWifi() {
+        android.net.ConnectivityManager manager = (android.net.ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (manager != null) for (android.net.Network network : manager.getAllNetworks()) {
+            android.net.NetworkCapabilities caps = manager.getNetworkCapabilities(network);
+            if (caps != null && caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)) return true;
+        }
+        WifiManager wifi = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        return wifi != null && wifi.getConnectionInfo() != null && wifi.getConnectionInfo().getIpAddress() != 0;
     }
 
     private String currentSsid() {
@@ -445,7 +480,8 @@ public class MainActivity extends Activity {
         java.util.ArrayList<String> needed = new java.util.ArrayList<>();
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
                 && ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            needed.add(Manifest.permission.ACCESS_FINE_LOCATION);
+            needed.add(Manifest.permission.ACCESS_COARSE_LOCATION);
+                needed.add(Manifest.permission.ACCESS_FINE_LOCATION);
         }
         if (android.os.Build.VERSION.SDK_INT >= 33
                 && ContextCompat.checkSelfPermission(this, Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED) {
@@ -455,7 +491,11 @@ public class MainActivity extends Activity {
             needed.add(Manifest.permission.READ_PHONE_STATE);
         }
         if (needed.isEmpty()) registerDjiSdk();
-        else ActivityCompat.requestPermissions(this, needed.toArray(new String[0]), REQUEST_DJI_PERMISSIONS);
+        else {
+            BridgeLog.info("Permissions", "Requesting: " + needed);
+            setStatus("Allow location, nearby Wi-Fi and phone permissions to initialize DJI. Tap Check Wi-Fi and permissions to retry.");
+            ActivityCompat.requestPermissions(this, needed.toArray(new String[0]), REQUEST_DJI_PERMISSIONS);
+        }
     }
 
     @Override
@@ -476,6 +516,7 @@ public class MainActivity extends Activity {
         stopStream();
         if (videoPreview != null) videoPreview.detachFromPrimaryFeed();
         streamExecutor.shutdownNow();
+        registrationExecutor.shutdown();
         super.onDestroy();
     }
 

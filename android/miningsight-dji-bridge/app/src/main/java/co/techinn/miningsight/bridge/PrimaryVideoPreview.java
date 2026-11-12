@@ -25,7 +25,8 @@ final class PrimaryVideoPreview extends SurfaceView implements SurfaceHolder.Cal
     }
 
     void attachToPrimaryFeed() {
-        VideoFeeder.VideoFeed feed = VideoFeeder.getInstance().getPrimaryVideoFeed();
+        VideoFeeder feeder = VideoFeeder.getInstance();
+        VideoFeeder.VideoFeed feed = feeder == null ? null : feeder.getPrimaryVideoFeed();
         if (feed == null) {
             BridgeLog.warn("Video", "Primary DJI video feed is not available yet");
             return;
@@ -51,7 +52,8 @@ final class PrimaryVideoPreview extends SurfaceView implements SurfaceHolder.Cal
     }
 
     void detachFromPrimaryFeed() {
-        VideoFeeder.VideoFeed feed = VideoFeeder.getInstance().getPrimaryVideoFeed();
+        VideoFeeder feeder = VideoFeeder.getInstance();
+        VideoFeeder.VideoFeed feed = feeder == null ? null : feeder.getPrimaryVideoFeed();
         if (feed != null && videoDataListener != null) feed.removeVideoDataListener(videoDataListener);
         receivedFrame = false;
     }

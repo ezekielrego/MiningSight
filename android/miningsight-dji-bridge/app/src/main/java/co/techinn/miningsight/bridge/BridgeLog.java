@@ -129,7 +129,17 @@ public final class BridgeLog {
                 payload.put("logs", read());
                 byte[] json = payload.toString().getBytes(StandardCharsets.UTF_8);
                 URL endpoint = new URL("https://tunnelsight.applications.co.zw/api/bridge/logs");
-                connection = (HttpURLConnection) endpoint.openConnection();
+                android.net.ConnectivityManager manager = (android.net.ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+                android.net.Network internetNetwork = null;
+                if (manager != null) for (android.net.Network network : manager.getAllNetworks()) {
+                    android.net.NetworkCapabilities caps = manager.getNetworkCapabilities(network);
+                    if (caps != null && caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                            && caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+                        internetNetwork = network;
+                        if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)) break;
+                    }
+                }
+                connection = (HttpURLConnection) (internetNetwork == null ? endpoint.openConnection() : internetNetwork.openConnection(endpoint));
                 connection.setRequestMethod("POST");
                 connection.setConnectTimeout(5000);
                 connection.setReadTimeout(5000);
@@ -140,6 +150,7 @@ public final class BridgeLog {
                 try (OutputStream output = new GZIPOutputStream(connection.getOutputStream())) { output.write(json); }
                 int status = connection.getResponseCode();
                 if (status >= 200 && status < 300) result = "Server log sync is active · last sent " + new SimpleDateFormat("HH:mm:ss", Locale.US).format(new Date());
+                else if (status == 429) result = "Server sync rate limited · next automatic attempt in 10 seconds";
                 else if (status == 401) throw new IllegalStateException("Server rejected the log-upload token (HTTP 401).");
                 else throw new IllegalStateException("Server log upload returned HTTP " + status + ".");
             } catch (Exception error) {
