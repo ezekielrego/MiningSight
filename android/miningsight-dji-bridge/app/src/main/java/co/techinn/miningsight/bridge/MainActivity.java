@@ -5,6 +5,8 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.net.wifi.WifiManager;
+import android.net.wifi.WifiInfo;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.text.InputType;
@@ -36,17 +38,20 @@ import dji.sdk.sdkmanager.LiveStreamManager;
  */
 public class MainActivity extends Activity {
     private static final int REQUEST_LOCATION = 41;
+    private static final int REQUEST_DJI_PERMISSIONS = 42;
     private static final String PREFS = "miningsight_bridge";
     private static final String STREAM_URL = "stream_url";
 
     private final ExecutorService streamExecutor = Executors.newSingleThreadExecutor();
     private TextView statusText;
+    private TextView networkText;
     private EditText streamUrlInput;
     private Button startButton;
     private Button stopButton;
     private PrimaryVideoPreview videoPreview;
     private boolean registered;
     private volatile boolean productConnected;
+    private boolean connectionStarted;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -54,6 +59,7 @@ public class MainActivity extends Activity {
         SharedPreferences prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         buildUi(prefs);
         BridgeLog.info("MainActivity", "Activity created");
+        refreshNetworkDiagnostics("app launch");
         requestRuntimePermissions();
         registerDjiSdk();
     }
@@ -97,16 +103,23 @@ public class MainActivity extends Activity {
         statusText = text("Waiting for DJI SDK registration…", 14, Color.WHITE);
         content.addView(statusText, marginParams(0, 18, 0, 0));
 
-        TextView note = text("Activate the aircraft in DJI GO first. Keep this app connected to the controller while it publishes; the website will provide the viewer and frame capture.", 12, Color.GRAY);
+        networkText = text("Checking Wi-Fi and permissions…", 12, Color.LTGRAY);
+        content.addView(networkText, marginParams(0, 8, 0, 0));
+
+        TextView note = text("For Phantom 3 Standard: connect this phone to the controller’s PHANTOM3 Wi-Fi, allow location and nearby Wi-Fi access, then wait for the camera preview before streaming.", 12, Color.GRAY);
         content.addView(note, marginParams(0, 12, 0, 0));
 
         LinearLayout diagnostics = new LinearLayout(this);
         diagnostics.setOrientation(LinearLayout.HORIZONTAL);
         Button copyLogs = button("Copy diagnostics");
         Button clearLogs = button("Clear diagnostics");
+        Button reconnect = button("Reconnect DJI");
+        Button checkWifi = button("Check Wi-Fi and permissions");
         diagnostics.addView(copyLogs, weightParams(1, 8));
         diagnostics.addView(clearLogs, weightParams(1, 8));
         content.addView(diagnostics, marginParams(0, 16, 0, 0));
+        content.addView(reconnect, marginParams(0, 8, 0, 0));
+        content.addView(checkWifi, marginParams(0, 6, 0, 0));
 
         startButton.setOnClickListener(v -> startStream());
         stopButton.setOnClickListener(v -> stopStream());
@@ -118,6 +131,8 @@ public class MainActivity extends Activity {
             BridgeLog.clear();
             setStatus("Temporary diagnostics cleared.");
         });
+        reconnect.setOnClickListener(v -> connectToProduct("manual reconnect"));
+        checkWifi.setOnClickListener(v -> refreshNetworkDiagnostics("manual check"));
 
         ScrollView scroll = new ScrollView(this);
         scroll.addView(content);
@@ -133,8 +148,8 @@ public class MainActivity extends Activity {
                 registered = error == DJISDKError.REGISTRATION_SUCCESS;
                 if (registered) {
                     BridgeLog.info("DJI", "SDK registration succeeded");
-                    setStatus("SDK registered. Connecting to controller…");
-                    DJISDKManager.getInstance().startConnectionToProduct();
+                    setStatus("SDK registered. Checking Wi-Fi permissions…");
+                    connectToProduct("SDK registration");
                 } else {
                     BridgeLog.warn("DJI", "SDK registration failed: " + (error == null ? "unknown error" : error.getDescription()));
                     setStatus("SDK registration failed: " + (error == null ? "unknown error" : error.getDescription()));
@@ -144,6 +159,7 @@ public class MainActivity extends Activity {
             @Override
             public void onProductDisconnect() {
                 productConnected = false;
+                connectionStarted = false;
                 if (videoPreview != null) videoPreview.detachFromPrimaryFeed();
                 BridgeLog.warn("DJI", "Controller disconnected");
                 setStatus("Controller disconnected.");
@@ -159,11 +175,13 @@ public class MainActivity extends Activity {
 
             @Override
             public void onProductChanged(BaseProduct product) {
+                BridgeLog.info("DJI", "Product changed: " + (product == null ? "null" : product.getModel()));
                 if (product != null && product.isConnected()) setStatus("DJI product connected.");
             }
 
             @Override
             public void onComponentChange(BaseProduct.ComponentKey key, BaseComponent oldComponent, BaseComponent newComponent) {
+                BridgeLog.info("DJI", "Component " + key.name() + " changed; ready=" + (newComponent != null));
                 if (newComponent != null) {
                     setStatus("DJI component ready: " + key.name());
                     if (key.name().toLowerCase().contains("camera")) attachPrimaryVideoFeed();
@@ -180,6 +198,93 @@ public class MainActivity extends Activity {
                 if (total > 0) setStatus("Preparing DJI database… " + (current * 100 / total) + "%");
             }
         });
+    }
+
+    private boolean hasDjiConnectionPermissions() {
+        boolean locationGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                || ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+        boolean nearbyGranted = android.os.Build.VERSION.SDK_INT < 33
+                || ContextCompat.checkSelfPermission(this, Manifest.permission.NEARBY_WIFI_DEVICES) == PackageManager.PERMISSION_GRANTED;
+        BridgeLog.info("Permissions", "Location=" + locationGranted + ", nearbyWifi=" + nearbyGranted);
+        return locationGranted && nearbyGranted;
+    }
+
+    private void connectToProduct(String reason) {
+        if (!registered) {
+            setStatus("Waiting for DJI SDK registration…");
+            return;
+        }
+        if (!hasDjiConnectionPermissions()) {
+            java.util.ArrayList<String> needed = new java.util.ArrayList<>();
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+                    && ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                needed.add(Manifest.permission.ACCESS_FINE_LOCATION);
+            }
+            if (android.os.Build.VERSION.SDK_INT >= 33
+                    && ContextCompat.checkSelfPermission(this, Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED) {
+                needed.add(Manifest.permission.NEARBY_WIFI_DEVICES);
+            }
+            if (!needed.isEmpty()) ActivityCompat.requestPermissions(this, needed.toArray(new String[0]), REQUEST_DJI_PERMISSIONS);
+            setStatus("Allow location and nearby Wi-Fi access, then reconnect.");
+            return;
+        }
+        refreshNetworkDiagnostics(reason);
+        String ssid = currentSsid();
+        if (ssid == null || "<unknown ssid>".equalsIgnoreCase(ssid)) {
+            BridgeLog.warn("Wi-Fi", "No readable connected Wi-Fi SSID; connect to the Phantom controller Wi-Fi first");
+            setStatus("Phone Wi-Fi is not available to the bridge. Join PHANTOM3 Wi-Fi, then tap Reconnect DJI.");
+            return;
+        }
+        if (!ssid.toUpperCase().contains("PHANTOM3")) {
+            BridgeLog.warn("Wi-Fi", "Connected Wi-Fi does not have the default Phantom 3 name (it may have been renamed): " + ssid);
+        }
+        BridgeLog.info("DJI", "Starting product connection (" + reason + "); Wi-Fi=" + ssid);
+        connectionStarted = true;
+        setStatus("Connecting to DJI controller over " + ssid + "…");
+        DJISDKManager.getInstance().startConnectionToProduct();
+    }
+
+    private String currentSsid() {
+        try {
+            WifiManager wifi = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+            if (wifi != null && wifi.getConnectionInfo() != null) {
+                String ssid = wifi.getConnectionInfo().getSSID();
+                return ssid == null ? null : ssid.replace("\"", "").trim();
+            }
+        } catch (Exception error) {
+            BridgeLog.warn("Wi-Fi", "Could not read connected Wi-Fi name: " + error.getMessage());
+        }
+        return null;
+    }
+
+    private void refreshNetworkDiagnostics(String reason) {
+        boolean locationGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                || ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+        boolean nearbyGranted = android.os.Build.VERSION.SDK_INT < 33
+                || ContextCompat.checkSelfPermission(this, Manifest.permission.NEARBY_WIFI_DEVICES) == PackageManager.PERMISSION_GRANTED;
+        String ssid = currentSsid();
+        String ip = "unknown";
+        boolean wifiEnabled = false;
+        try {
+            WifiManager wifi = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+            if (wifi != null) {
+                wifiEnabled = wifi.isWifiEnabled();
+                WifiInfo info = wifi.getConnectionInfo();
+                if (info != null && info.getIpAddress() != 0) {
+                    int address = info.getIpAddress();
+                    ip = (address & 0xff) + "." + ((address >> 8) & 0xff) + "." + ((address >> 16) & 0xff) + "." + ((address >> 24) & 0xff);
+                }
+            }
+        } catch (Exception error) {
+            BridgeLog.warn("Wi-Fi", "Network check failed: " + error.getMessage());
+        }
+        String displayedSsid = ssid == null || ssid.isEmpty() ? "not available" : ssid;
+        String display = "Wi-Fi " + (wifiEnabled ? "ON" : "OFF") + " · " + displayedSsid + " · IP " + ip
+                + "\nLocation permission " + (locationGranted ? "granted" : "missing")
+                + " · Nearby Wi-Fi " + (nearbyGranted ? "granted" : "missing");
+        BridgeLog.info("Wi-Fi", "Check (" + reason + "): enabled=" + wifiEnabled + ", ssid=" + displayedSsid + ", ip=" + ip
+                + ", location=" + locationGranted + ", nearbyWifi=" + nearbyGranted);
+        runOnUiThread(() -> { if (networkText != null) networkText.setText(display); });
     }
 
     private void startStream() {
@@ -259,8 +364,18 @@ public class MainActivity extends Activity {
     }
 
     private void requestRuntimePermissions() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+                && ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, REQUEST_LOCATION);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_DJI_PERMISSIONS || requestCode == REQUEST_LOCATION) {
+            if (hasDjiConnectionPermissions()) connectToProduct("permissions granted");
+            else setStatus("DJI needs location and nearby Wi-Fi permissions to find the controller.");
         }
     }
 
@@ -270,6 +385,12 @@ public class MainActivity extends Activity {
         if (videoPreview != null) videoPreview.detachFromPrimaryFeed();
         streamExecutor.shutdownNow();
         super.onDestroy();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        refreshNetworkDiagnostics("resume");
     }
 
     private TextView text(String value, int size, int color) {
