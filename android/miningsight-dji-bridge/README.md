@@ -31,7 +31,7 @@ The APK is written to `app/build/outputs/apk/debug/app-debug.apk`. Set `DJI_APP_
 3. Give the app the protected RTMP publish URL issued by the MiningSight stream service.
 4. Start the stream and open MiningSight in a browser to view the live feed and capture frames.
 
-The Phantom 3 Standard uses the controller's Wi-Fi connection rather than the USB accessory flow used by newer DJI products. The VPS must expose a secured ingest endpoint and a browser-friendly HLS or WebRTC playback endpoint before field use.
+The Phantom 3 Standard uses the controller's Wi-Fi connection rather than the USB accessory flow used by newer DJI products. The default RTMP ingest address points to the TunnelSight VPS on port 1935; use the protected publish URL when authentication is enabled. Browser playback is available at `https://tunnelsight.applications.co.zw/dji/live/index.m3u8` and in the app's live viewport.
 
 ## Security and production work remaining
 

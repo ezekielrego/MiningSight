@@ -43,6 +43,7 @@ public class MainActivity extends Activity {
     private static final int REQUEST_DJI_PERMISSIONS = 42;
     private static final String PREFS = "miningsight_bridge";
     private static final String STREAM_URL = "stream_url";
+    private static final String DEFAULT_STREAM_URL = "rtmp://5.189.146.229:1935/dji/live";
 
     private final ExecutorService streamExecutor = Executors.newSingleThreadExecutor();
     private TextView statusText;
@@ -95,7 +96,10 @@ public class MainActivity extends Activity {
 
         streamUrlInput = new EditText(this);
         streamUrlInput.setSingleLine(true);
-        streamUrlInput.setText(prefs.getString(STREAM_URL, "rtmp://stream.tunnelsight.applications.co.zw/dji/live"));
+        String savedStreamUrl = prefs.getString(STREAM_URL, DEFAULT_STREAM_URL);
+        String migratedStreamUrl = savedStreamUrl.replace("stream.tunnelsight.applications.co.zw", "5.189.146.229");
+        if (!migratedStreamUrl.equals(savedStreamUrl)) prefs.edit().putString(STREAM_URL, migratedStreamUrl).apply();
+        streamUrlInput.setText(migratedStreamUrl);
         streamUrlInput.setHint("RTMP publish URL");
         streamUrlInput.setTextColor(Color.WHITE);
         streamUrlInput.setHintTextColor(Color.GRAY);

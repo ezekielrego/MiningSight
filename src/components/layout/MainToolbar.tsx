@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Radio } from 'lucide-react';
 import { ToolMode } from '../../types/c4d';
 
 interface MainToolbarProps {
@@ -15,6 +16,8 @@ interface MainToolbarProps {
   onTriggerRender: () => void;
   onOpenRenderSettings?: () => void;
   onOpenPictureViewer?: () => void;
+  onOpenLiveStream?: () => void;
+  isLiveStreamOpen?: boolean;
 }
 
 export const MainToolbar: React.FC<MainToolbarProps> = ({
@@ -31,6 +34,8 @@ export const MainToolbar: React.FC<MainToolbarProps> = ({
   onTriggerRender,
   onOpenRenderSettings,
   onOpenPictureViewer,
+  onOpenLiveStream,
+  isLiveStreamOpen = false,
 }) => {
   // Dropdown states
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
@@ -286,6 +291,14 @@ export const MainToolbar: React.FC<MainToolbarProps> = ({
             <circle cx="12" cy="12" r="3"></circle>
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
           </svg>
+        </button>
+        <button
+          onClick={onOpenLiveStream}
+          title="Open DJI live camera in the viewer"
+          aria-label="Open DJI live camera"
+          className={`relative w-7 h-7 flex items-center justify-center border rounded-[2px] cursor-pointer ${isLiveStreamOpen ? 'bg-[#e88724] text-black border-[#b35e0e]' : 'bg-[#3a3a3a] hover:bg-[#484848] border-t-[#525252] border-b-[#1f1f1f] text-[#e88724]'}`}
+        >
+          <Radio className="h-4 w-4" />
         </button>
       </div>
 

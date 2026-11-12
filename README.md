@@ -89,9 +89,9 @@ The following screenshots are selected from the supplied system evidence package
 
 ## DJI live-video bridge
 
-The repository now includes [`android/miningsight-dji-bridge`](android/miningsight-dji-bridge/), a small Android transmitter for a Phantom 3 Standard. The phone connects to the DJI controller, the official DJI SDK receives the camera feed, and the app publishes RTMP to the VPS. MiningSight remains the browser-side viewer where live footage can later be used for frame capture and reconstruction.
+The repository includes [`android/miningsight-dji-bridge`](android/miningsight-dji-bridge/), an Android transmitter for a Phantom 3 Standard. The phone connects to the DJI controller, the official DJI SDK receives the camera feed, and the app publishes RTMP to the VPS. In MiningSight, use the radio icon in the top viewer toolbar to open the live feed. Captured frames are sent to AI Survey as reconstruction references.
 
-The server has a separate MediaMTX relay service prepared for RTMP ingest, HLS playback, and WebRTC playback. The protected field publish URL and temporary direct HLS test URL are stored locally on the server with owner-only permissions; credentials are intentionally not committed to this repository. A production browser route still requires the stream DNS/reverse-proxy and HTTPS layer to be mapped to the relay.
+MediaMTX accepts the bridge stream on RTMP port 1935 and serves HLS through the same-origin HTTPS route `https://tunnelsight.applications.co.zw/dji/live/index.m3u8`. The HLS listener is loopback-only and proxied through the TunnelSight virtual host. The browser player stays inside the 3D viewport, shows connection and waiting states, retries while the bridge is offline, and supports frame capture. The protected publish URL remains server-local; credentials are not committed to this repository.
 
 See the Android bridge README for build commands, field setup, and the remaining flight-test requirements.
 

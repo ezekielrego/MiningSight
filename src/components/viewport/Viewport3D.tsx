@@ -31,6 +31,7 @@ import { MiningTunnelRig, ShadingDisplayMode } from '../../scene/miningTunnelGen
 import { TunnelPresetId, ProceduralTunnelParams } from '../../types/tunnelScene';
 import { TUNNEL_PRESETS, createTunnelRigByPreset } from '../../scene/tunnelPresetRegistry';
 import { ReferencePhotoModal } from '../modals/ReferencePhotoModal';
+import { LiveStreamViewer } from './LiveStreamViewer';
 import { SceneParametersModal } from '../modals/SceneParametersModal';
 import { UndergroundMapEditor } from '../panels/UndergroundMapEditor';
 import { C4DMaterial, C4DSceneObject, ToolMode, Vector3D } from '../../types/c4d';
@@ -153,6 +154,8 @@ interface Viewport3DProps {
   onMapGeometryChange?: (geometry: ReconstructionMapGeometry) => void;
   onMapEditorStatus?: (message: string) => void;
   onMapMarkingChange?: (enabled: boolean) => void;
+  liveStreamOpen?: boolean;
+  onCloseLiveStream?: () => void;
 }
 
 export const Viewport3D: React.FC<Viewport3DProps> = ({
@@ -199,6 +202,8 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   onMapGeometryChange,
   onMapEditorStatus,
   onMapMarkingChange,
+  liveStreamOpen = false,
+  onCloseLiveStream,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -2510,6 +2515,12 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
           if (onUpdateProceduralParams) onUpdateProceduralParams(newP);
         }}
       />
+      {liveStreamOpen && (
+        <LiveStreamViewer
+          onClose={() => onCloseLiveStream?.()}
+          onCapture={(dataUrl, name) => onCaptureReferenceImage?.(dataUrl, name)}
+        />
+      )}
     </div>
   );
 };

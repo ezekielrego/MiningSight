@@ -262,6 +262,7 @@ export default function App() {
 
   // Modal dialogs
   const [showPictureViewer, setShowPictureViewer] = useState<boolean>(false);
+  const [isLiveStreamOpen, setIsLiveStreamOpen] = useState(false);
   const [showRenderSettings, setShowRenderSettings] = useState<boolean>(false);
   const [showHelpGuide, setShowHelpGuide] = useState(false);
   const [showAboutModal, setShowAboutModal] = useState(false);
@@ -1929,6 +1930,8 @@ export default function App() {
         onTriggerRender={() => setShowPictureViewer(true)}
         onOpenRenderSettings={() => setShowRenderSettings(true)}
         onOpenPictureViewer={() => setShowPictureViewer(true)}
+        onOpenLiveStream={() => setIsLiveStreamOpen((open) => !open)}
+        isLiveStreamOpen={isLiveStreamOpen}
       />
 
       {/* 3. Docking Layout: Central Viewport, Object Manager / Camera Tours / AI Survey, Attribute Manager, Timeline, Materials, Coordinates */}
@@ -2064,6 +2067,8 @@ export default function App() {
               setCapturedReferenceImage({ dataUrl, name });
               setActiveUpperTab('AI Survey');
             }}
+            liveStreamOpen={isLiveStreamOpen}
+            onCloseLiveStream={() => setIsLiveStreamOpen(false)}
             mapGeometry={reconstructionMapGeometry}
             mapSelection={reconstructionMapSelection}
             mapMarkingEnabled={mapMarkingEnabled}
