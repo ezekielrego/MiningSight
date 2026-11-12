@@ -62,7 +62,7 @@ public class MainActivity extends Activity {
     private PrimaryVideoPreview videoPreview;
     private Button djiNavButton;
     private Button phoneNavButton;
-    private ScrollView djiPanel;
+    private FrameLayout djiPanel;
     private FrameLayout phonePanel;
     private EditText phoneStreamUrlInput;
     private Button phoneStartButton;
@@ -186,8 +186,6 @@ public class MainActivity extends Activity {
 
         videoPreview = new PrimaryVideoPreview(this);
         videoPreview.setBackgroundColor(Color.BLACK);
-        content.addView(videoPreview, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(220)));
 
         streamUrlInput = new EditText(this);
         streamUrlInput.setSingleLine(true);
@@ -206,15 +204,16 @@ public class MainActivity extends Activity {
         startButton = button("Start stream");
         stopButton = button("Stop stream");
         stopButton.setEnabled(false);
-        actions.addView(startButton, weightParams(1, 8));
-        actions.addView(stopButton, weightParams(1, 8));
-        content.addView(actions, matchWrap());
 
         statusText = text("Waiting for DJI SDK registration…", 14, Color.WHITE);
-        content.addView(statusText, marginParams(0, 18, 0, 0));
+        statusText.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        statusText.setPadding(dp(14), 0, dp(14), 0);
+        statusText.setBackgroundColor(Color.argb(155, 0, 0, 0));
 
         networkText = text("Checking Wi-Fi and permissions…", 12, Color.LTGRAY);
-        content.addView(networkText, marginParams(0, 8, 0, 0));
+        networkText.setGravity(android.view.Gravity.CENTER);
+        networkText.setPadding(dp(10), 0, dp(10), 0);
+        networkText.setBackgroundColor(Color.argb(135, 0, 0, 0));
 
         TextView note = text("Phantom 3 Standard setup: power on the controller and aircraft and wait for the controller link light to go solid green. Connect this phone to PHANTOM3 Wi-Fi. For the bridge test, force-stop DJI GO first, then tap Connect / retry DJI. Open TunnelSight on another device to watch the stream.", 12, Color.GRAY);
         content.addView(note, marginParams(0, 12, 0, 0));
@@ -252,9 +251,55 @@ public class MainActivity extends Activity {
         reconnect.setOnClickListener(v -> { if (!registered) requestRuntimePermissions(); else connectToProduct("manual reconnect"); });
         checkWifi.setOnClickListener(v -> { refreshNetworkDiagnostics("manual check"); if (!hasDjiConnectionPermissions()) requestRuntimePermissions(); });
 
-        djiPanel = new ScrollView(this);
-        djiPanel.setFillViewport(true);
-        djiPanel.addView(content);
+        djiPanel = new FrameLayout(this);
+        djiPanel.setBackgroundColor(Color.BLACK);
+        djiPanel.addView(videoPreview, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        TextView djiTopBar = text("DJI BRIDGE  ·  TUNNELSIGHT", 11, Color.WHITE);
+        djiTopBar.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        djiTopBar.setPadding(dp(16), 0, dp(12), 0);
+        djiTopBar.setBackgroundColor(Color.argb(175, 0, 0, 0));
+        FrameLayout.LayoutParams djiTopParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(48));
+        djiTopParams.gravity = android.view.Gravity.TOP;
+        djiPanel.addView(djiTopBar, djiTopParams);
+
+        FrameLayout.LayoutParams djiStatusParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(42));
+        djiStatusParams.gravity = android.view.Gravity.TOP;
+        djiStatusParams.setMargins(0, dp(48), 0, 0);
+        djiPanel.addView(statusText, djiStatusParams);
+
+        FrameLayout.LayoutParams djiNetworkParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(48));
+        djiNetworkParams.gravity = android.view.Gravity.TOP;
+        djiNetworkParams.setMargins(dp(8), dp(94), dp(8), 0);
+        djiPanel.addView(networkText, djiNetworkParams);
+
+        actions.setGravity(android.view.Gravity.CENTER);
+        actions.setPadding(dp(10), dp(8), dp(10), dp(10));
+        actions.setBackgroundColor(Color.argb(175, 0, 0, 0));
+        Button connectFloating = floatingButton("⟳", "Connect or retry DJI controller");
+        Button detailsButton = floatingButton("☷", "Open bridge diagnostics");
+        actions.addView(connectFloating, weightParams(1, 5));
+        actions.addView(startButton, weightParams(1, 5));
+        actions.addView(stopButton, weightParams(1, 5));
+        actions.addView(detailsButton, weightParams(1, 5));
+        FrameLayout.LayoutParams djiActionParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(76));
+        djiActionParams.gravity = android.view.Gravity.BOTTOM;
+        djiPanel.addView(actions, djiActionParams);
+
+        ScrollView detailsPanel = new ScrollView(this);
+        detailsPanel.setFillViewport(true);
+        detailsPanel.setBackgroundColor(Color.argb(238, 23, 23, 23));
+        detailsPanel.setVisibility(View.GONE);
+        detailsPanel.addView(content);
+        FrameLayout.LayoutParams detailsParams = new FrameLayout.LayoutParams(dp(350), FrameLayout.LayoutParams.MATCH_PARENT);
+        detailsParams.gravity = android.view.Gravity.END;
+        djiPanel.addView(detailsPanel, detailsParams);
+        connectFloating.setOnClickListener(v -> reconnect.performClick());
+        detailsButton.setOnClickListener(v -> {
+            boolean visible = detailsPanel.getVisibility() == View.VISIBLE;
+            detailsPanel.setVisibility(visible ? View.GONE : View.VISIBLE);
+            detailsButton.setText(visible ? "☷" : "×");
+        });
         panelHost.addView(djiPanel, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
         phonePanel = buildPhonePanel(prefs);
