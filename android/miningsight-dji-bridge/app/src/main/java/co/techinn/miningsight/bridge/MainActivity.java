@@ -62,7 +62,7 @@ public class MainActivity extends Activity {
     private PrimaryVideoPreview videoPreview;
     private Button djiNavButton;
     private Button phoneNavButton;
-    private FrameLayout djiPanel;
+    private ScrollView djiPanel;
     private FrameLayout phonePanel;
     private EditText phoneStreamUrlInput;
     private Button phoneStartButton;
@@ -142,7 +142,7 @@ public class MainActivity extends Activity {
         drawerToggle.setBackgroundColor(Color.argb(180, 25, 25, 25));
         FrameLayout.LayoutParams toggleParams = new FrameLayout.LayoutParams(dp(52), dp(52));
         toggleParams.gravity = android.view.Gravity.TOP | android.view.Gravity.START;
-        toggleParams.setMargins(dp(10), dp(10), 0, 0);
+        toggleParams.setMargins(dp(12), dp(18), 0, 0);
         root.addView(drawerToggle, toggleParams);
 
         TextView navTitle = text("STREAM\nSOURCES", 11, Color.rgb(246, 210, 167));
@@ -186,6 +186,7 @@ public class MainActivity extends Activity {
 
         videoPreview = new PrimaryVideoPreview(this);
         videoPreview.setBackgroundColor(Color.BLACK);
+        content.addView(videoPreview, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(220)));
 
         streamUrlInput = new EditText(this);
         streamUrlInput.setSingleLine(true);
@@ -197,12 +198,14 @@ public class MainActivity extends Activity {
         streamUrlInput.setTextColor(Color.WHITE);
         streamUrlInput.setHintTextColor(Color.GRAY);
         streamUrlInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        content.addView(streamUrlInput, marginParams(0, 0, 0, 10));
+        LinearLayout detailsContent = new LinearLayout(this);
+        detailsContent.setOrientation(LinearLayout.VERTICAL);
+        detailsContent.setPadding(dp(12), dp(12), dp(12), dp(12));
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
-        startButton = button("Start stream");
-        stopButton = button("Stop stream");
+        startButton = floatingButton("▶", "Start DJI stream");
+        stopButton = floatingButton("■", "Stop DJI stream");
         stopButton.setEnabled(false);
 
         statusText = text("Waiting for DJI SDK registration…", 14, Color.WHITE);
@@ -216,7 +219,7 @@ public class MainActivity extends Activity {
         networkText.setBackgroundColor(Color.argb(135, 0, 0, 0));
 
         TextView note = text("Phantom 3 Standard setup: power on the controller and aircraft and wait for the controller link light to go solid green. Connect this phone to PHANTOM3 Wi-Fi. For the bridge test, force-stop DJI GO first, then tap Connect / retry DJI. Open TunnelSight on another device to watch the stream.", 12, Color.GRAY);
-        content.addView(note, marginParams(0, 12, 0, 0));
+        detailsContent.addView(note, marginParams(0, 12, 0, 0));
 
         LinearLayout diagnostics = new LinearLayout(this);
         diagnostics.setOrientation(LinearLayout.HORIZONTAL);
@@ -228,11 +231,11 @@ public class MainActivity extends Activity {
         diagnostics.addView(copyLogs, weightParams(1, 8));
         diagnostics.addView(clearLogs, weightParams(1, 8));
         diagnostics.addView(sendLogs, weightParams(1, 8));
-        content.addView(diagnostics, marginParams(0, 16, 0, 0));
+        detailsContent.addView(diagnostics, marginParams(0, 16, 0, 0));
         serverLogText = text("Server log sync is starting…", 11, Color.LTGRAY);
-        content.addView(serverLogText, marginParams(0, 6, 0, 0));
-        content.addView(reconnect, marginParams(0, 8, 0, 0));
-        content.addView(checkWifi, marginParams(0, 6, 0, 0));
+        detailsContent.addView(serverLogText, marginParams(0, 6, 0, 0));
+        detailsContent.addView(reconnect, marginParams(0, 8, 0, 0));
+        detailsContent.addView(checkWifi, marginParams(0, 6, 0, 0));
 
         startButton.setOnClickListener(v -> startStream());
         stopButton.setOnClickListener(v -> stopStream());
@@ -251,27 +254,19 @@ public class MainActivity extends Activity {
         reconnect.setOnClickListener(v -> { if (!registered) requestRuntimePermissions(); else connectToProduct("manual reconnect"); });
         checkWifi.setOnClickListener(v -> { refreshNetworkDiagnostics("manual check"); if (!hasDjiConnectionPermissions()) requestRuntimePermissions(); });
 
-        djiPanel = new FrameLayout(this);
-        djiPanel.setBackgroundColor(Color.BLACK);
-        djiPanel.addView(videoPreview, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        djiPanel = new ScrollView(this);
+        djiPanel.setFillViewport(true);
+        djiPanel.setBackgroundColor(Color.rgb(23, 23, 23));
 
         TextView djiTopBar = text("DJI BRIDGE  ·  TUNNELSIGHT", 11, Color.WHITE);
         djiTopBar.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        djiTopBar.setPadding(dp(16), 0, dp(12), 0);
+        djiTopBar.setPadding(dp(64), 0, dp(12), 0);
         djiTopBar.setBackgroundColor(Color.argb(175, 0, 0, 0));
-        FrameLayout.LayoutParams djiTopParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(48));
-        djiTopParams.gravity = android.view.Gravity.TOP;
-        djiPanel.addView(djiTopBar, djiTopParams);
+        content.addView(djiTopBar, 0, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(48)));
 
-        FrameLayout.LayoutParams djiStatusParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(42));
-        djiStatusParams.gravity = android.view.Gravity.TOP;
-        djiStatusParams.setMargins(0, dp(48), 0, 0);
-        djiPanel.addView(statusText, djiStatusParams);
+        content.addView(statusText, marginParams(0, 10, 0, 0));
 
-        FrameLayout.LayoutParams djiNetworkParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(48));
-        djiNetworkParams.gravity = android.view.Gravity.TOP;
-        djiNetworkParams.setMargins(dp(8), dp(94), dp(8), 0);
-        djiPanel.addView(networkText, djiNetworkParams);
+        content.addView(networkText, marginParams(0, 8, 0, 0));
 
         actions.setGravity(android.view.Gravity.CENTER);
         actions.setPadding(dp(10), dp(8), dp(10), dp(10));
@@ -282,24 +277,21 @@ public class MainActivity extends Activity {
         actions.addView(startButton, weightParams(1, 5));
         actions.addView(stopButton, weightParams(1, 5));
         actions.addView(detailsButton, weightParams(1, 5));
-        FrameLayout.LayoutParams djiActionParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(76));
-        djiActionParams.gravity = android.view.Gravity.BOTTOM;
-        djiPanel.addView(actions, djiActionParams);
+        content.addView(actions, marginParams(0, 10, 0, 0));
 
         ScrollView detailsPanel = new ScrollView(this);
         detailsPanel.setFillViewport(true);
         detailsPanel.setBackgroundColor(Color.argb(238, 23, 23, 23));
         detailsPanel.setVisibility(View.GONE);
-        detailsPanel.addView(content);
-        FrameLayout.LayoutParams detailsParams = new FrameLayout.LayoutParams(dp(350), FrameLayout.LayoutParams.MATCH_PARENT);
-        detailsParams.gravity = android.view.Gravity.END;
-        djiPanel.addView(detailsPanel, detailsParams);
+        detailsPanel.addView(detailsContent);
+        content.addView(detailsPanel, marginParams(0, 8, 0, 0));
         connectFloating.setOnClickListener(v -> reconnect.performClick());
         detailsButton.setOnClickListener(v -> {
             boolean visible = detailsPanel.getVisibility() == View.VISIBLE;
             detailsPanel.setVisibility(visible ? View.GONE : View.VISIBLE);
             detailsButton.setText(visible ? "☷" : "×");
         });
+        djiPanel.addView(content);
         panelHost.addView(djiPanel, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
         phonePanel = buildPhonePanel(prefs);
@@ -327,7 +319,9 @@ public class MainActivity extends Activity {
             @Override public void surfaceCreated(SurfaceHolder holder) {
                 if (phoneMode) phonePreview.postDelayed(MainActivity.this::ensurePhonePreview, 150);
             }
-            @Override public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) { }
+            @Override public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+                if (phoneMode && width > 0 && height > 0) phonePreview.post(MainActivity.this::ensurePhonePreview);
+            }
             @Override public void surfaceDestroyed(SurfaceHolder holder) {
                 BridgeLog.info("Phone", "Phone preview surface destroyed");
             }
@@ -336,7 +330,7 @@ public class MainActivity extends Activity {
 
         TextView topBar = text("PHONE CAMERA  ·  TUNNELSIGHT", 11, Color.WHITE);
         topBar.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        topBar.setPadding(dp(16), 0, dp(12), 0);
+        topBar.setPadding(dp(64), 0, dp(12), 0);
         topBar.setBackgroundColor(Color.argb(175, 0, 0, 0));
         FrameLayout.LayoutParams topParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(48));
         topParams.gravity = android.view.Gravity.TOP;
@@ -398,6 +392,11 @@ public class MainActivity extends Activity {
 
     private void selectMode(boolean usePhone) {
         phoneMode = usePhone;
+        if (drawerToggle != null) {
+            FrameLayout.LayoutParams toggleParams = (FrameLayout.LayoutParams) drawerToggle.getLayoutParams();
+            toggleParams.topMargin = usePhone ? 0 : dp(18);
+            drawerToggle.setLayoutParams(toggleParams);
+        }
         closeDrawer();
         if (djiPanel != null) djiPanel.setVisibility(usePhone ? View.GONE : View.VISIBLE);
         if (phonePanel != null) phonePanel.setVisibility(usePhone ? View.VISIBLE : View.GONE);

@@ -20,7 +20,6 @@ final class PhoneCameraStreamer implements ConnectChecker {
 
     private final RtmpCamera2 camera;
     private final Listener listener;
-    private boolean prepared;
 
     PhoneCameraStreamer(Context context, OpenGlView preview, Listener listener) {
         this.listener = listener;
@@ -28,13 +27,11 @@ final class PhoneCameraStreamer implements ConnectChecker {
     }
 
     boolean prepare() {
-        if (prepared) return true;
         try {
-            boolean video = camera.prepareVideo(1280, 720, 30, 1_500_000, 0);
+            boolean video = camera.prepareVideo(1280, 720, 30, 1_500_000, 2, 0);
             boolean audio = camera.prepareAudio(64 * 1024, 32_000, true);
-            prepared = video && audio;
-            if (!prepared && listener != null) listener.onPhoneStreamError("The phone camera or microphone could not be prepared.");
-            return prepared;
+            if ((!video || !audio) && listener != null) listener.onPhoneStreamError("The phone camera or microphone could not be prepared.");
+            return video && audio;
         } catch (Throwable error) {
             BridgeLog.error("Phone", "Camera preparation failed", error);
             if (listener != null) listener.onPhoneStreamError("Camera preparation failed: " + error.getMessage());
@@ -43,8 +40,8 @@ final class PhoneCameraStreamer implements ConnectChecker {
     }
 
     void startPreview() {
-        if (!prepared && !prepare()) return;
         try {
+            if (!prepare()) return;
             if (!camera.isOnPreview()) camera.startPreview();
             BridgeLog.info("Phone", "Camera preview start requested; preview=" + camera.isOnPreview());
             if (listener != null) listener.onPhoneStreamStatus("Phone camera preview ready.");
@@ -55,8 +52,10 @@ final class PhoneCameraStreamer implements ConnectChecker {
     }
 
     void startStream(String url) {
-        if (!prepared && !prepare()) return;
         try {
+            // Preview setup may reset the encoder. Prepare again immediately before publishing.
+            if (!prepare()) return;
+            if (!camera.isOnPreview()) camera.startPreview();
             BridgeLog.info("Phone", "Starting handset camera stream to configured RTMP endpoint");
             camera.startStream(url);
             if (listener != null) listener.onPhoneStreamStatus("Connecting phone camera to TunnelSight…");
