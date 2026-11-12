@@ -48,6 +48,7 @@ public class MainActivity extends Activity {
     private final ExecutorService streamExecutor = Executors.newSingleThreadExecutor();
     private TextView statusText;
     private TextView networkText;
+    private TextView serverLogText;
     private EditText streamUrlInput;
     private Button startButton;
     private Button stopButton;
@@ -56,6 +57,14 @@ public class MainActivity extends Activity {
     private volatile boolean productConnected;
     private boolean connectionStarted;
     private final Handler diagnosticHandler = new Handler(Looper.getMainLooper());
+    private final Runnable serverLogSyncTask = new Runnable() {
+        @Override public void run() {
+            BridgeLog.uploadToServer(MainActivity.this, message -> {
+                if (serverLogText != null) serverLogText.setText(message);
+            });
+            diagnosticHandler.postDelayed(this, 10000);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -128,11 +137,15 @@ public class MainActivity extends Activity {
         diagnostics.setOrientation(LinearLayout.HORIZONTAL);
         Button copyLogs = button("Copy diagnostics");
         Button clearLogs = button("Clear diagnostics");
+        Button sendLogs = button("Sync logs now");
         Button reconnect = button("Connect / retry DJI");
         Button checkWifi = button("Check Wi-Fi and permissions");
         diagnostics.addView(copyLogs, weightParams(1, 8));
         diagnostics.addView(clearLogs, weightParams(1, 8));
+        diagnostics.addView(sendLogs, weightParams(1, 8));
         content.addView(diagnostics, marginParams(0, 16, 0, 0));
+        serverLogText = text("Server log sync is starting…", 11, Color.LTGRAY);
+        content.addView(serverLogText, marginParams(0, 6, 0, 0));
         content.addView(reconnect, marginParams(0, 8, 0, 0));
         content.addView(checkWifi, marginParams(0, 6, 0, 0));
 
@@ -146,12 +159,17 @@ public class MainActivity extends Activity {
             BridgeLog.clear();
             setStatus("Temporary diagnostics cleared.");
         });
+        sendLogs.setOnClickListener(v -> {
+            if (serverLogText != null) serverLogText.setText("Sending diagnostics to TunnelSight…");
+            BridgeLog.uploadToServer(this, message -> { if (serverLogText != null) serverLogText.setText(message); });
+        });
         reconnect.setOnClickListener(v -> connectToProduct("manual reconnect"));
         checkWifi.setOnClickListener(v -> refreshNetworkDiagnostics("manual check"));
 
         ScrollView scroll = new ScrollView(this);
         scroll.addView(content);
         setContentView(scroll);
+        diagnosticHandler.postDelayed(serverLogSyncTask, 1200);
     }
 
     private void registerDjiSdk() {

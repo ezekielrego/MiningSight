@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Radio } from 'lucide-react';
+import { FileText, Radio } from 'lucide-react';
 import { ToolMode } from '../../types/c4d';
 
 interface MainToolbarProps {
@@ -17,6 +17,7 @@ interface MainToolbarProps {
   onOpenRenderSettings?: () => void;
   onOpenPictureViewer?: () => void;
   onOpenLiveStream?: () => void;
+  onOpenBridgeLogs?: () => void;
   isLiveStreamOpen?: boolean;
 }
 
@@ -35,6 +36,7 @@ export const MainToolbar: React.FC<MainToolbarProps> = ({
   onOpenRenderSettings,
   onOpenPictureViewer,
   onOpenLiveStream,
+  onOpenBridgeLogs,
   isLiveStreamOpen = false,
 }) => {
   // Dropdown states
@@ -299,6 +301,14 @@ export const MainToolbar: React.FC<MainToolbarProps> = ({
           className={`relative w-7 h-7 flex items-center justify-center border rounded-[2px] cursor-pointer ${isLiveStreamOpen ? 'bg-[#e88724] text-black border-[#b35e0e]' : 'bg-[#3a3a3a] hover:bg-[#484848] border-t-[#525252] border-b-[#1f1f1f] text-[#e88724]'}`}
         >
           <Radio className="h-4 w-4" />
+        </button>
+        <button
+          onClick={onOpenBridgeLogs}
+          title="View bridge diagnostics received by the server"
+          aria-label="View bridge diagnostics"
+          className="w-7 h-7 flex items-center justify-center bg-[#3a3a3a] hover:bg-[#484848] border border-t-[#525252] border-b-[#1f1f1f] rounded-[2px] text-[#ccc] cursor-pointer"
+        >
+          <FileText className="h-4 w-4" />
         </button>
       </div>
 

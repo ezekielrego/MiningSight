@@ -15,7 +15,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
 dotenv.config();
 
 const app = express();
-const port = 3000;
+const port = Number(process.env.PORT || 3000);
 const worldLabsBaseUrl = 'https://api.worldlabs.ai/marble/v1';
 const reconstructionConnectorUrl = 'http://127.0.0.1:8787';
 const reconstructionApiKey = process.env.RECONSTRUCTION_API_KEY || '';
@@ -41,6 +41,13 @@ const temporaryUploadToken = process.env.MININGSIGHT_DROP_UPLOAD_TOKEN || '';
 const temporaryUploadExpiresAt = temporaryUploadToken ? Date.now() + 15 * 60 * 1000 : 0;
 const temporaryUploadRoot = path.resolve(process.env.MININGSIGHT_DROP_UPLOAD_DIR || './data/temporary_uploads');
 const temporaryUploadMaxBytes = 2 * 1024 * 1024 * 1024;
+const bridgeLogsRoot = path.resolve(process.env.MININGSIGHT_BRIDGE_LOG_DIR || './data/bridge-diagnostics');
+const bridgeLogUploadToken = process.env.MININGSIGHT_BRIDGE_LOG_TOKEN || '';
+const bridgeLogAdminEmails = new Set((process.env.MININGSIGHT_BRIDGE_LOG_ADMIN_EMAILS || 'ezekiel@techinn.co.zw,ezekielrego01@gmail.com').split(',').map((email) => email.trim().toLowerCase()).filter(Boolean));
+const bridgeLogRetentionMs = 48 * 60 * 60 * 1000;
+const bridgeLogMaxBytes = 256 * 1024;
+const bridgeLogUploadTimes: number[] = [];
+const bridgeLogDeviceUploadTimes = new Map<string, number>();
 
 app.use(express.json({ limit: '150mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -352,6 +359,87 @@ async function requireAuthenticated(req: express.Request, res: express.Response)
   }
   return user;
 }
+
+async function requireBridgeLogAdmin(req: express.Request, res: express.Response): Promise<any | null> {
+  const user = await requireAuthenticated(req, res);
+  if (!user) return null;
+  if (!bridgeLogAdminEmails.has(String(user.email || '').toLowerCase())) {
+    res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Bridge diagnostics are restricted to the project owner.' });
+    return null;
+  }
+  return user;
+}
+
+async function pruneBridgeLogs(): Promise<void> {
+  const entries = await readdir(bridgeLogsRoot, { withFileTypes: true }).catch(() => [] as any[]);
+  const cutoff = Date.now() - bridgeLogRetentionMs;
+  await Promise.all(entries.filter((entry: any) => entry.isFile() && entry.name.endsWith('.json')).map(async (entry: any) => {
+    const filePath = path.join(bridgeLogsRoot, entry.name);
+    const info = await stat(filePath).catch(() => null);
+    if (info && info.mtimeMs < cutoff) await rm(filePath, { force: true }).catch(() => {});
+  }));
+}
+
+void pruneBridgeLogs();
+const bridgeLogCleanupTimer = setInterval(() => void pruneBridgeLogs(), 6 * 60 * 60 * 1000);
+bridgeLogCleanupTimer.unref();
+
+function validBridgeDeviceId(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(value);
+}
+
+app.post('/api/bridge/logs', async (req, res) => {
+  if (!bridgeLogUploadToken || req.header('x-bridge-log-token') !== bridgeLogUploadToken) {
+    return res.status(401).json({ success: false, error: 'BRIDGE_LOG_AUTH_FAILED' });
+  }
+  const deviceId = req.body?.deviceId;
+  const logs = typeof req.body?.logs === 'string' ? req.body.logs : '';
+  if (!validBridgeDeviceId(deviceId) || !logs || Buffer.byteLength(logs, 'utf8') > bridgeLogMaxBytes) {
+    return res.status(400).json({ success: false, error: 'BRIDGE_LOG_PAYLOAD_INVALID' });
+  }
+  const nowMs = Date.now();
+  while (bridgeLogUploadTimes.length && nowMs - bridgeLogUploadTimes[0] > 60000) bridgeLogUploadTimes.shift();
+  const lastDeviceUpload = bridgeLogDeviceUploadTimes.get(deviceId) || 0;
+  if (nowMs - lastDeviceUpload < 5000 || bridgeLogUploadTimes.length >= 120) {
+    return res.status(429).json({ success: false, error: 'BRIDGE_LOG_RATE_LIMITED' });
+  }
+  bridgeLogUploadTimes.push(nowMs);
+  bridgeLogDeviceUploadTimes.set(deviceId, nowMs);
+  const scrubbedLogs = logs
+    .replace(/(rtmp:\/\/)[^\s/@:]+:[^\s/@]+@/gi, '$1[redacted]@')
+    .replace(/(Bearer\s+)[A-Za-z0-9._~-]+/gi, '$1[redacted]');
+  const record = {
+    deviceId,
+    appVersion: String(req.body?.appVersion || 'unknown').slice(0, 32),
+    updatedAt: new Date().toISOString(),
+    logs: scrubbedLogs,
+  };
+  try {
+    await mkdir(bridgeLogsRoot, { recursive: true, mode: 0o700 });
+    await pruneBridgeLogs();
+    await writeFile(path.join(bridgeLogsRoot, `${deviceId}.json`), JSON.stringify(record), { mode: 0o600 });
+    return res.json({ success: true, updatedAt: record.updatedAt });
+  } catch {
+    return res.status(500).json({ success: false, error: 'BRIDGE_LOG_SAVE_FAILED' });
+  }
+});
+
+app.get('/api/bridge/logs', async (req, res) => {
+  if (!await requireBridgeLogAdmin(req, res)) return;
+  await pruneBridgeLogs();
+  const entries = await readdir(bridgeLogsRoot, { withFileTypes: true }).catch(() => [] as any[]);
+  const records = await Promise.all(entries.filter((entry: any) => entry.isFile() && entry.name.endsWith('.json')).map(async (entry: any) => {
+    try { return JSON.parse(await readFile(path.join(bridgeLogsRoot, entry.name), 'utf8')); } catch { return null; }
+  }));
+  const devices = records.filter(Boolean).sort((a: any, b: any) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, 10);
+  return res.json({ success: true, retentionHours: 48, devices });
+});
+
+app.delete('/api/bridge/logs', async (req, res) => {
+  if (!await requireBridgeLogAdmin(req, res)) return;
+  await rm(bridgeLogsRoot, { recursive: true, force: true });
+  return res.json({ success: true });
+});
 
 // Helper to get initialized GoogleGenAI instance
 function getGeminiClient(apiKeyOverride?: string): GoogleGenAI {

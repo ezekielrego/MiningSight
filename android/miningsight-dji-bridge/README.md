@@ -9,6 +9,7 @@ This is the lightweight Android field transmitter for a DJI Phantom 3 Standard. 
 - The app has a small foreground screen for entering an RTMP publish URL and starting or stopping the stream.
 - A real DJI App Key is required at build time and must not be committed.
 - Bridge version 0.6.0 adds a user-triggered DJI connection attempt, suppresses duplicate scans, and reports when the SDK declines to start the connection.
+- Bridge version 0.7.0 automatically syncs its temporary diagnostics to the private TunnelSight log inbox every 10 seconds while open. The inbox expires logs after 48 hours and is visible in TunnelSight with the project-owner account.
 - The app has not been flight-tested from this server; that requires the Phantom, controller, Android phone, and a network-accessible ingest endpoint.
 
 ## Build
@@ -20,7 +21,7 @@ export ANDROID_SDK_ROOT=/home/ezekiel/android-sdk
 export ANDROID_HOME=/home/ezekiel/android-sdk
 export PATH="$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"
 
-./gradlew assembleDebug -PDJI_APP_KEY="$DJI_APP_KEY"
+./gradlew assembleDebug -PDJI_APP_KEY="$DJI_APP_KEY" -PBRIDGE_LOG_TOKEN="$BRIDGE_LOG_TOKEN"
 ```
 
 The APK is written to `app/build/outputs/apk/debug/app-debug.apk`. Set `DJI_APP_KEY` only in the shell or a local secret manager; do not put it in Git.

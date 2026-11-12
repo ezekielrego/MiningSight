@@ -25,6 +25,9 @@
         <meta-data
             android:name="com.dji.sdk.API_KEY"
             android:value="${DJI_APP_KEY}" />
+        <meta-data
+            android:name="co.techinn.miningsight.bridge.LOG_TOKEN"
+            android:value="${BRIDGE_LOG_TOKEN}" />
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|keyboardHidden|screenSize"

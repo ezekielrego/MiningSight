@@ -265,6 +265,10 @@ export default function App() {
   const [isLiveStreamOpen, setIsLiveStreamOpen] = useState(false);
   const [showLiveProjectChooser, setShowLiveProjectChooser] = useState(false);
   const [liveProjectNameDraft, setLiveProjectNameDraft] = useState('DJI Live Survey');
+  const [showBridgeLogs, setShowBridgeLogs] = useState(false);
+  const [bridgeLogRecords, setBridgeLogRecords] = useState<Array<{ deviceId: string; appVersion: string; updatedAt: string; logs: string }>>([]);
+  const [bridgeLogsLoading, setBridgeLogsLoading] = useState(false);
+  const [bridgeLogsError, setBridgeLogsError] = useState('');
   const [showRenderSettings, setShowRenderSettings] = useState<boolean>(false);
   const [showHelpGuide, setShowHelpGuide] = useState(false);
   const [showAboutModal, setShowAboutModal] = useState(false);
@@ -332,6 +336,27 @@ export default function App() {
   const [newProjectFiles, setNewProjectFiles] = useState<File[]>([]);
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(() => localStorage.getItem('miningsight_auth_token'));
+  const refreshBridgeLogs = useCallback(async () => {
+    if (!authToken) return;
+    setBridgeLogsLoading(true);
+    try {
+      const response = await fetch('/api/bridge/logs', { headers: { Authorization: `Bearer ${authToken}` } });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || !json.success) throw new Error(json.message || json.error || `HTTP ${response.status}`);
+      setBridgeLogRecords(Array.isArray(json.devices) ? json.devices : []);
+      setBridgeLogsError('');
+    } catch (error: any) {
+      setBridgeLogsError(error.message || 'Could not load bridge diagnostics.');
+    } finally {
+      setBridgeLogsLoading(false);
+    }
+  }, [authToken]);
+  useEffect(() => {
+    if (!showBridgeLogs) return;
+    void refreshBridgeLogs();
+    const timer = window.setInterval(() => void refreshBridgeLogs(), 5000);
+    return () => window.clearInterval(timer);
+  }, [refreshBridgeLogs, showBridgeLogs]);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authError, setAuthError] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
@@ -1980,6 +2005,12 @@ export default function App() {
             setShowAuthModal(true);
           } else setShowLiveProjectChooser(true);
         }}
+        onOpenBridgeLogs={() => {
+          if (!authUser || !authToken) {
+            setAuthError('Sign in with the project owner account to view bridge diagnostics.');
+            setShowAuthModal(true);
+          } else setShowBridgeLogs(true);
+        }}
         isLiveStreamOpen={isLiveStreamOpen}
       />
 
@@ -2291,6 +2322,19 @@ export default function App() {
               <div className="text-[8.5px] text-[#888] leading-relaxed">Google accounts only. Your projects and uploaded files are private to the Google account you use here.</div>
             </div>}
           </div>
+        </div>
+      )}
+
+      {showBridgeLogs && (
+        <div className="fixed inset-0 z-[125] flex items-center justify-center bg-black/75 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowBridgeLogs(false); }}>
+          <section className="flex max-h-[88vh] w-full max-w-5xl flex-col border border-[#555] bg-[#202020] text-[#eee] shadow-2xl">
+            <header className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3"><div><h2 className="text-sm font-semibold">DJI bridge diagnostics</h2><p className="mt-1 text-[10px] text-[#aaa]">Private server inbox · app syncs every 10 seconds · logs expire after 48 hours.</p></div><div className="flex items-center gap-2"><button onClick={() => void refreshBridgeLogs()} className="border border-[#555] px-2 py-1 text-[10px] hover:border-[#e88724]">Refresh</button><button onClick={async () => { if (!window.confirm('Delete all server bridge logs?')) return; const response = await fetch('/api/bridge/logs', { method: 'DELETE', headers: { Authorization: `Bearer ${authToken}` } }); if (response.ok) { setBridgeLogRecords([]); setBridgeLogsError(''); } else setBridgeLogsError('Could not clear server logs.'); }} className="border border-[#694040] px-2 py-1 text-[10px] text-[#ffb0b0] hover:bg-[#492828]">Clear logs</button><button onClick={() => setShowBridgeLogs(false)} className="px-2 py-1 text-[#aaa] hover:text-white">Close</button></div></header>
+            <div className="min-h-0 flex-1 overflow-auto p-3">
+              {bridgeLogsError && <div className="mb-3 border border-red-900 bg-red-950/50 p-2 text-[11px] text-red-200">{bridgeLogsError}</div>}
+              {!bridgeLogRecords.length && !bridgeLogsError && <p className="p-10 text-center text-xs text-[#999]">{bridgeLogsLoading ? 'Checking for device logs…' : 'No device logs received yet. Open the bridge app and leave it running; it syncs its diagnostics automatically.'}</p>}
+              <div className="space-y-3">{bridgeLogRecords.map((record) => <article key={record.deviceId} className="overflow-hidden border border-[#414141] bg-[#171717]"><header className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-[#272727] px-3 py-2 text-[10px]"><span className="font-semibold text-[#e5aa65]">Bridge {record.deviceId.slice(0, 8)} · v{record.appVersion}</span><time className="text-[#aaa]">Last sync {new Date(record.updatedAt).toLocaleString()}</time></header><pre className="max-h-[52vh] overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-[10px] leading-relaxed text-[#cfcfcf]">{record.logs}</pre></article>)}</div>
+            </div>
+          </section>
         </div>
       )}
 
