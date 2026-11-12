@@ -15,6 +15,7 @@ import android.text.InputType;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -34,6 +35,8 @@ import dji.sdk.sdkmanager.DJISDKInitEvent;
 import dji.sdk.sdkmanager.DJISDKManager;
 import dji.sdk.sdkmanager.LiveStreamManager;
 
+import com.pedro.library.view.OpenGlView;
+
 /**
  * Small field transmitter: DJI controller connection in, RTMP stream out.
  * The website remains the viewer and frame-capture workspace.
@@ -41,6 +44,7 @@ import dji.sdk.sdkmanager.LiveStreamManager;
 public class MainActivity extends Activity {
     private static final int REQUEST_LOCATION = 41;
     private static final int REQUEST_DJI_PERMISSIONS = 42;
+    private static final int REQUEST_PHONE_CAMERA = 43;
     private static final String PREFS = "miningsight_bridge";
     private static final String STREAM_URL = "stream_url";
     private static final String DEFAULT_STREAM_URL = "rtmp://5.189.146.229:1935/dji/live";
@@ -53,6 +57,17 @@ public class MainActivity extends Activity {
     private Button startButton;
     private Button stopButton;
     private PrimaryVideoPreview videoPreview;
+    private Button djiNavButton;
+    private Button phoneNavButton;
+    private ScrollView djiPanel;
+    private ScrollView phonePanel;
+    private EditText phoneStreamUrlInput;
+    private Button phoneStartButton;
+    private Button phoneStopButton;
+    private TextView phoneStatusText;
+    private OpenGlView phonePreview;
+    private PhoneCameraStreamer phoneStreamer;
+    private boolean phoneMode;
     private volatile boolean registered;
     private volatile boolean registrationPending;
     private final ExecutorService registrationExecutor = Executors.newSingleThreadExecutor();
@@ -89,12 +104,36 @@ public class MainActivity extends Activity {
 
     private void buildUi(SharedPreferences prefs) {
         int padding = dp(18);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.HORIZONTAL);
+        root.setBackgroundColor(Color.rgb(23, 23, 23));
+
+        LinearLayout sideNav = new LinearLayout(this);
+        sideNav.setOrientation(LinearLayout.VERTICAL);
+        sideNav.setPadding(dp(8), dp(16), dp(8), dp(16));
+        sideNav.setBackgroundColor(Color.rgb(31, 31, 31));
+        root.addView(sideNav, new LinearLayout.LayoutParams(dp(118), LinearLayout.LayoutParams.MATCH_PARENT));
+
+        TextView navTitle = text("STREAM\nSOURCES", 11, Color.rgb(246, 210, 167));
+        navTitle.setGravity(android.view.Gravity.CENTER);
+        sideNav.addView(navTitle, marginParams(0, 0, 0, 18));
+        djiNavButton = navButton("DJI\nBridge");
+        phoneNavButton = navButton("Phone\nCamera");
+        sideNav.addView(djiNavButton, marginParams(0, 0, 0, 8));
+        sideNav.addView(phoneNavButton, marginParams(0, 0, 0, 8));
+        TextView navNote = text("One source at a time\n\nBoth modes publish to the selected RTMP endpoint and appear in the TunnelSight live viewer.", 10, Color.GRAY);
+        navNote.setGravity(android.view.Gravity.CENTER);
+        sideNav.addView(navNote, marginParams(4, 18, 4, 0));
+
+        FrameLayout panelHost = new FrameLayout(this);
+        root.addView(panelHost, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1));
+
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(padding, padding, padding, padding);
         content.setBackgroundColor(Color.rgb(23, 23, 23));
 
-        TextView title = text("MiningSight DJI Bridge", 22, Color.rgb(246, 210, 167));
+        TextView title = text("DJI controller bridge", 22, Color.rgb(246, 210, 167));
         content.addView(title, matchWrap());
 
         TextView subtitle = text("Phantom camera → VPS → MiningSight website", 14, Color.LTGRAY);
@@ -168,10 +207,173 @@ public class MainActivity extends Activity {
         reconnect.setOnClickListener(v -> { if (!registered) requestRuntimePermissions(); else connectToProduct("manual reconnect"); });
         checkWifi.setOnClickListener(v -> { refreshNetworkDiagnostics("manual check"); if (!hasDjiConnectionPermissions()) requestRuntimePermissions(); });
 
-        ScrollView scroll = new ScrollView(this);
-        scroll.addView(content);
-        setContentView(scroll);
+        djiPanel = new ScrollView(this);
+        djiPanel.setFillViewport(true);
+        djiPanel.addView(content);
+        panelHost.addView(djiPanel, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        phonePanel = buildPhonePanel(prefs);
+        panelHost.addView(phonePanel, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        phonePanel.setVisibility(View.GONE);
+
+        djiNavButton.setOnClickListener(v -> selectMode(false));
+        phoneNavButton.setOnClickListener(v -> selectMode(true));
+        selectMode(false);
         diagnosticHandler.postDelayed(serverLogSyncTask, 1200);
+    }
+
+    private ScrollView buildPhonePanel(SharedPreferences prefs) {
+        int padding = dp(18);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(padding, padding, padding, padding);
+        content.setBackgroundColor(Color.rgb(23, 23, 23));
+
+        TextView title = text("Phone camera stream", 22, Color.rgb(246, 210, 167));
+        content.addView(title, matchWrap());
+        TextView subtitle = text("Use this handset as the camera and publish directly to TunnelSight.", 14, Color.LTGRAY);
+        content.addView(subtitle, marginParams(0, 6, 0, 16));
+
+        phonePreview = new OpenGlView(this);
+        phonePreview.setBackgroundColor(Color.BLACK);
+        content.addView(phonePreview, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(250)));
+
+        String savedStreamUrl = prefs.getString(STREAM_URL, DEFAULT_STREAM_URL);
+        phoneStreamUrlInput = new EditText(this);
+        phoneStreamUrlInput.setSingleLine(true);
+        phoneStreamUrlInput.setText(savedStreamUrl);
+        phoneStreamUrlInput.setHint("RTMP publish URL");
+        phoneStreamUrlInput.setTextColor(Color.WHITE);
+        phoneStreamUrlInput.setHintTextColor(Color.GRAY);
+        phoneStreamUrlInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        content.addView(phoneStreamUrlInput, marginParams(0, 12, 0, 10));
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        phoneStartButton = button("Start phone stream");
+        phoneStopButton = button("Stop");
+        phoneStopButton.setEnabled(false);
+        actions.addView(phoneStartButton, weightParams(1, 8));
+        actions.addView(phoneStopButton, weightParams(1, 8));
+        content.addView(actions, matchWrap());
+
+        Button switchCamera = button("Switch front / back camera");
+        content.addView(switchCamera, marginParams(0, 8, 0, 0));
+        phoneStatusText = text("Camera permission is required before preview starts.", 14, Color.WHITE);
+        content.addView(phoneStatusText, marginParams(0, 16, 0, 0));
+        TextView note = text("This mode uses the phone camera and microphone. Keep mobile data or another internet connection available. Stop DJI mode before starting this source; both sources use the same live viewer path.", 12, Color.GRAY);
+        content.addView(note, marginParams(0, 10, 0, 0));
+
+        phoneStreamer = new PhoneCameraStreamer(this, phonePreview, new PhoneCameraStreamer.Listener() {
+            @Override public void onPhoneStreamStatus(String status) {
+                runOnUiThread(() -> {
+                    if (phoneStatusText != null) phoneStatusText.setText(status);
+                    boolean streaming = phoneStreamer != null && phoneStreamer.isStreaming();
+                    if (phoneStartButton != null) phoneStartButton.setEnabled(!streaming);
+                    if (phoneStopButton != null) phoneStopButton.setEnabled(streaming);
+                });
+            }
+
+            @Override public void onPhoneStreamError(String message) {
+                BridgeLog.warn("Phone", message);
+                runOnUiThread(() -> { if (phoneStatusText != null) phoneStatusText.setText(message); });
+            }
+        });
+
+        phoneStartButton.setOnClickListener(v -> startPhoneStream());
+        phoneStopButton.setOnClickListener(v -> stopPhoneStream());
+        switchCamera.setOnClickListener(v -> {
+            if (phoneStreamer != null) phoneStreamer.switchCamera();
+        });
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.addView(content);
+        return scroll;
+    }
+
+    private void selectMode(boolean usePhone) {
+        phoneMode = usePhone;
+        if (djiPanel != null) djiPanel.setVisibility(usePhone ? View.GONE : View.VISIBLE);
+        if (phonePanel != null) phonePanel.setVisibility(usePhone ? View.VISIBLE : View.GONE);
+        if (djiNavButton != null) setNavSelected(djiNavButton, !usePhone);
+        if (phoneNavButton != null) setNavSelected(phoneNavButton, usePhone);
+        if (usePhone) {
+            if (isDjiStreaming()) stopStream();
+            if (hasPhoneCameraPermission()) ensurePhonePreview();
+            else requestPhoneCameraPermission();
+            setStatus("Phone camera mode selected.");
+        } else {
+            if (phoneStreamer != null && phoneStreamer.isStreaming()) stopPhoneStream();
+            refreshNetworkDiagnostics("DJI mode selected");
+            setStatus(registered ? "DJI mode ready. Connect to the Phantom controller when available." : "Waiting for DJI SDK registration…");
+        }
+    }
+
+    private void startPhoneStream() {
+        if (!hasPhoneCameraPermission()) {
+            requestPhoneCameraPermission();
+            return;
+        }
+        if (phoneStreamer == null || phoneStreamUrlInput == null) return;
+        String url = phoneStreamUrlInput.getText().toString().trim();
+        if (url.isEmpty() || !url.startsWith("rtmp://")) {
+            if (phoneStatusText != null) phoneStatusText.setText("Enter an RTMP publish URL.");
+            return;
+        }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(STREAM_URL, url).apply();
+        ensurePhonePreview();
+        phoneStreamer.startStream(url);
+        BridgeLog.info("Phone", "Phone camera stream requested");
+    }
+
+    private void stopPhoneStream() {
+        if (phoneStreamer != null) phoneStreamer.stopStream();
+        if (phoneStartButton != null) phoneStartButton.setEnabled(true);
+        if (phoneStopButton != null) phoneStopButton.setEnabled(false);
+    }
+
+    private void ensurePhonePreview() {
+        if (phoneStreamer == null || !hasPhoneCameraPermission()) return;
+        if (phoneStreamer.prepare()) phoneStreamer.startPreview();
+    }
+
+    private boolean hasPhoneCameraPermission() {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void requestPhoneCameraPermission() {
+        java.util.ArrayList<String> needed = new java.util.ArrayList<>();
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) needed.add(Manifest.permission.CAMERA);
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) needed.add(Manifest.permission.RECORD_AUDIO);
+        if (needed.isEmpty()) ensurePhonePreview();
+        else {
+            if (phoneStatusText != null) phoneStatusText.setText("Allow camera and microphone access to use phone streaming.");
+            ActivityCompat.requestPermissions(this, needed.toArray(new String[0]), REQUEST_PHONE_CAMERA);
+        }
+    }
+
+    private boolean isDjiStreaming() {
+        try {
+            LiveStreamManager manager = DJISDKManager.getInstance().getLiveStreamManager();
+            return manager != null && manager.isStreaming();
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private Button navButton(String label) {
+        Button button = button(label);
+        button.setAllCaps(false);
+        button.setTextSize(12);
+        button.setMinHeight(dp(54));
+        return button;
+    }
+
+    private void setNavSelected(Button button, boolean selected) {
+        button.setTextColor(selected ? Color.rgb(23, 23, 23) : Color.LTGRAY);
+        button.setBackgroundColor(selected ? Color.rgb(246, 210, 167) : Color.rgb(50, 50, 50));
     }
 
     private void registerDjiSdk() {
@@ -502,6 +704,16 @@ public class MainActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_PHONE_CAMERA) {
+            if (hasPhoneCameraPermission()) {
+                BridgeLog.info("Permissions", "Phone camera and microphone permissions granted");
+                if (phoneStatusText != null) phoneStatusText.setText("Permissions ready. Starting camera preview…");
+                ensurePhonePreview();
+            } else if (phoneStatusText != null) {
+                phoneStatusText.setText("Phone streaming needs camera and microphone permissions.");
+            }
+            return;
+        }
         if (requestCode == REQUEST_DJI_PERMISSIONS || requestCode == REQUEST_LOCATION) {
             if (hasDjiConnectionPermissions()) {
                 if (!registered) registerDjiSdk();
@@ -514,6 +726,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         diagnosticHandler.removeCallbacksAndMessages(null);
+        if (phoneStreamer != null) phoneStreamer.release();
         stopStream();
         if (videoPreview != null) videoPreview.detachFromPrimaryFeed();
         streamExecutor.shutdownNow();
