@@ -11,6 +11,7 @@ This is the lightweight Android field transmitter for a DJI Phantom 3 Standard. 
 - Bridge version 0.6.0 adds a user-triggered DJI connection attempt, suppresses duplicate scans, and reports when the SDK declines to start the connection.
 - Bridge version 0.7.0 automatically syncs its temporary diagnostics to the private TunnelSight log inbox every 10 seconds while open. The inbox expires logs after 48 hours and is visible in TunnelSight with the project-owner account.
 - Version 0.8.0 permits controller connection when Android hides the SSID but Wi-Fi is connected, fixes null camera-feed cleanup, requests location permissions together, and prefers a validated internet network for log uploads. SDK registration runs in the background with progress and timeout diagnostics.
+- Version 0.9.0 follows DJI’s current sample sequence: after registration succeeds, it immediately starts the Wi-Fi product connection, explicitly disables Bluetooth-only mode, and keeps the manual button as a retry.
 - The app has not been flight-tested from this server; that requires the Phantom, controller, Android phone, and a network-accessible ingest endpoint.
 
 ## Build

@@ -179,6 +179,7 @@ public class MainActivity extends Activity {
         registrationPending = true;
         setStatus("Registering DJI SDK…");
         BridgeLog.info("DJI", "Registering DJI SDK");
+        DJISDKManager.getInstance().setCallbackRunInUIThread(true);
         diagnosticHandler.postDelayed(() -> {
             if (registrationPending && !registered) {
                 BridgeLog.warn("DJI", "Registration has not completed after 45 seconds; check internet access");
@@ -194,7 +195,8 @@ public class MainActivity extends Activity {
                 registered = error == DJISDKError.REGISTRATION_SUCCESS;
                 if (registered) {
                     BridgeLog.info("DJI", "SDK registration succeeded");
-                    setStatus("SDK registered. Power on and link the Phantom, connect to PHANTOM3 Wi-Fi, then tap Connect / retry DJI.");
+                    setStatus("SDK registered. Starting the Phantom Wi-Fi connection…");
+                    startProductConnection("SDK registration callback");
                 } else {
                     BridgeLog.warn("DJI", "SDK registration failed: " + (error == null ? "unknown error" : error.getDescription()));
                     setStatus("SDK registration failed: " + (error == null ? "unknown error" : error.getDescription()));
@@ -286,19 +288,6 @@ public class MainActivity extends Activity {
             return;
         }
         refreshNetworkDiagnostics(reason);
-        String ssid = currentSsid();
-        if (!hasConnectedWifi()) {
-            BridgeLog.warn("Wi-Fi", "No connected Wi-Fi transport or local Wi-Fi address is available");
-            setStatus("Phone Wi-Fi is not available to the bridge. Join PHANTOM3 Wi-Fi, then tap Reconnect DJI.");
-            return;
-        }
-        if (ssid == null || "<unknown ssid>".equalsIgnoreCase(ssid)) {
-            ssid = "connected Wi-Fi (name hidden by Android)";
-            BridgeLog.info("Wi-Fi", "SSID is hidden; allowing DJI connection using connected Wi-Fi transport/IP");
-        }
-        if (!ssid.toUpperCase().contains("PHANTOM3")) {
-            BridgeLog.warn("Wi-Fi", "Connected Wi-Fi does not have the default Phantom 3 name (it may have been renamed): " + ssid);
-        }
         if (productConnected) {
             setStatus("DJI product is already connected. Wait for the camera preview.");
             return;
@@ -308,10 +297,22 @@ public class MainActivity extends Activity {
             setStatus("DJI connection scan is still active. Wait up to 15 seconds before retrying.");
             return;
         }
-        BridgeLog.info("DJI", "Starting product connection (" + reason + "); Wi-Fi=" + ssid
-                + ", package=" + getPackageName() + ", sdk=" + DJISDKManager.getInstance().getSDKVersion());
-        setStatus("Connecting to DJI controller over " + ssid + "…");
-        boolean started = DJISDKManager.getInstance().startConnectionToProduct();
+        startProductConnection(reason);
+    }
+
+    private void startProductConnection(String reason) {
+        DJISDKManager sdkManager = DJISDKManager.getInstance();
+        String ssid = currentSsid();
+        BridgeLog.info("DJI", "Starting product connection (" + reason + "); Wi-Fi="
+                + (ssid == null ? "unknown" : ssid) + ", package=" + getPackageName()
+                + ", sdk=" + sdkManager.getSDKVersion());
+        try {
+            sdkManager.setSupportOnlyForBluetoothDevice(false);
+        } catch (Throwable error) {
+            BridgeLog.warn("DJI", "Could not set Wi-Fi product mode explicitly: " + error.getMessage());
+        }
+        setStatus("Connecting to DJI controller over Wi-Fi…");
+        boolean started = sdkManager.startConnectionToProduct();
         connectionStarted = started;
         BridgeLog.info("DJI", "startConnectionToProduct returned " + started);
         logProductState("immediate");
