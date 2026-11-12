@@ -62,9 +62,17 @@ public class MainActivity extends Activity {
         SharedPreferences prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         buildUi(prefs);
         BridgeLog.info("MainActivity", "Activity created");
+        try {
+            BridgeLog.info("Build", "Bridge version=" + getPackageManager().getPackageInfo(getPackageName(), 0).versionName
+                    + ", targetSdk=" + getApplicationInfo().targetSdkVersion
+                    + ", Android=" + android.os.Build.VERSION.RELEASE
+                    + ", device=" + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL
+                    + ", DJI SDK=" + DJISDKManager.getInstance().getSDKVersion());
+        } catch (Exception error) {
+            BridgeLog.warn("Build", "Could not read app/SDK version: " + error.getMessage());
+        }
         refreshNetworkDiagnostics("app launch");
         requestRuntimePermissions();
-        registerDjiSdk();
     }
 
     private void buildUi(SharedPreferences prefs) {
@@ -208,8 +216,9 @@ public class MainActivity extends Activity {
                 || ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
         boolean nearbyGranted = android.os.Build.VERSION.SDK_INT < 33
                 || ContextCompat.checkSelfPermission(this, Manifest.permission.NEARBY_WIFI_DEVICES) == PackageManager.PERMISSION_GRANTED;
-        BridgeLog.info("Permissions", "Location=" + locationGranted + ", nearbyWifi=" + nearbyGranted);
-        return locationGranted && nearbyGranted;
+        boolean phoneStateGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED;
+        BridgeLog.info("Permissions", "Location=" + locationGranted + ", nearbyWifi=" + nearbyGranted + ", phoneState=" + phoneStateGranted);
+        return locationGranted && nearbyGranted && phoneStateGranted;
     }
 
     private void connectToProduct(String reason) {
@@ -226,6 +235,9 @@ public class MainActivity extends Activity {
             if (android.os.Build.VERSION.SDK_INT >= 33
                     && ContextCompat.checkSelfPermission(this, Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED) {
                 needed.add(Manifest.permission.NEARBY_WIFI_DEVICES);
+            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+                needed.add(Manifest.permission.READ_PHONE_STATE);
             }
             if (!needed.isEmpty()) ActivityCompat.requestPermissions(this, needed.toArray(new String[0]), REQUEST_DJI_PERMISSIONS);
             setStatus("Allow location and nearby Wi-Fi access, then reconnect.");
@@ -389,17 +401,30 @@ public class MainActivity extends Activity {
     }
 
     private void requestRuntimePermissions() {
+        java.util.ArrayList<String> needed = new java.util.ArrayList<>();
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
                 && ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, REQUEST_LOCATION);
+            needed.add(Manifest.permission.ACCESS_FINE_LOCATION);
         }
+        if (android.os.Build.VERSION.SDK_INT >= 33
+                && ContextCompat.checkSelfPermission(this, Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED) {
+            needed.add(Manifest.permission.NEARBY_WIFI_DEVICES);
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+            needed.add(Manifest.permission.READ_PHONE_STATE);
+        }
+        if (needed.isEmpty()) registerDjiSdk();
+        else ActivityCompat.requestPermissions(this, needed.toArray(new String[0]), REQUEST_DJI_PERMISSIONS);
     }
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQUEST_DJI_PERMISSIONS || requestCode == REQUEST_LOCATION) {
-            if (hasDjiConnectionPermissions()) connectToProduct("permissions granted");
+            if (hasDjiConnectionPermissions()) {
+                if (!registered) registerDjiSdk();
+                else connectToProduct("permissions granted");
+            }
             else setStatus("DJI needs location and nearby Wi-Fi permissions to find the controller.");
         }
     }
