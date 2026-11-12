@@ -14,6 +14,7 @@ import android.os.Looper;
 import android.text.InputType;
 import android.view.View;
 import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -36,7 +37,6 @@ import dji.sdk.sdkmanager.DJISDKInitEvent;
 import dji.sdk.sdkmanager.DJISDKManager;
 import dji.sdk.sdkmanager.LiveStreamManager;
 
-import com.pedro.library.view.OpenGlView;
 
 /**
  * Small field transmitter: DJI controller connection in, RTMP stream out.
@@ -68,7 +68,7 @@ public class MainActivity extends Activity {
     private Button phoneStartButton;
     private Button phoneStopButton;
     private TextView phoneStatusText;
-    private OpenGlView phonePreview;
+    private SurfaceView phonePreview;
     private PhoneCameraStreamer phoneStreamer;
     private EditText accountEmailInput;
     private Button linkAccountButton;
@@ -312,7 +312,7 @@ public class MainActivity extends Activity {
         FrameLayout screen = new FrameLayout(this);
         screen.setBackgroundColor(Color.BLACK);
 
-        phonePreview = new OpenGlView(this);
+        phonePreview = new SurfaceView(this);
         phonePreview.setBackgroundColor(Color.BLACK);
         phonePreview.setKeepScreenOn(true);
         phonePreview.getHolder().addCallback(new SurfaceHolder.Callback() {
@@ -446,7 +446,7 @@ public class MainActivity extends Activity {
     private void ensurePhonePreview() {
         if (phoneStreamer == null || !hasPhoneCameraPermission()) return;
         if (phonePreview != null && !phonePreview.isShown()) return;
-        if (phoneStreamer.prepare()) phoneStreamer.startPreview();
+        phoneStreamer.startPreview();
     }
 
     private void linkStreamAccount() {

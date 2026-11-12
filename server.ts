@@ -3,7 +3,7 @@ import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import path from 'node:path';
-import { createReadStream, createWriteStream } from 'node:fs';
+import { createReadStream, createWriteStream, readFileSync } from 'node:fs';
 import { appendFile, mkdir, readdir, readFile, rm, stat, writeFile, rename } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
@@ -47,6 +47,12 @@ const bridgeLogAdminEmails = new Set((process.env.MININGSIGHT_BRIDGE_LOG_ADMIN_E
 const bridgeLogRetentionMs = 48 * 60 * 60 * 1000;
 const bridgeLogMaxBytes = 256 * 1024;
 const bridgeLinksFile = path.join(bridgeLogsRoot, 'links.json');
+const bridgeRtmpPassword = process.env.MININGSIGHT_RTMP_PUBLISH_PASSWORD || (() => {
+  try {
+    const config = readFileSync('/home/ezekiel/miningsight-mediamtx/miningsight.yml', 'utf8');
+    return config.match(/- user: bridge\s+pass: ([^\s]+)/)?.[1] || '';
+  } catch { return ''; }
+})();
 const bridgeLogUploadTimes: number[] = [];
 const bridgeLogDeviceUploadTimes = new Map<string, number>();
 
@@ -417,12 +423,13 @@ app.post('/api/bridge/link', async (req, res) => {
   }
   const streamId = createHash('sha256').update(`miningsight-bridge:${email}:${deviceId}:${bridgeLogUploadToken}`).digest('hex').slice(0, 24);
   const streamPath = `dji/${streamId}`;
+  if (!bridgeRtmpPassword) return res.status(503).json({ success: false, message: 'The stream relay credentials are not configured.' });
   const record = {
     email,
     deviceId,
     streamId,
     streamPath,
-    publishUrl: `rtmp://5.189.146.229:1935/${streamPath}`,
+    publishUrl: `rtmp://bridge:${encodeURIComponent(bridgeRtmpPassword)}@5.189.146.229:1935/${streamPath}`,
     playbackUrl: `https://tunnelsight.applications.co.zw/${streamPath}/index.m3u8`,
     updatedAt: new Date().toISOString(),
   };

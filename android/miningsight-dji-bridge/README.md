@@ -8,6 +8,7 @@ This is the lightweight Android field transmitter for a DJI Phantom 3 Standard. 
 - Uses DJI Mobile SDK 4.18 and `LiveStreamManager`.
 - Version 1.0.2 has a collapsible source drawer, a full-screen phone-camera preview with floating start/stop/switch controls, automatic preview retry after permission and surface creation, and temporary diagnostic log sync.
 - Version 1.0.2 links the bridge to a TunnelSight account email. The server creates the device-specific RTMP publish path; the web account with the same email resolves its HLS playback path automatically.
+- Version 1.0.4 uses RootEncoder's stream API with an Android SurfaceView for phone preview, avoiding the GL preview failure seen on some handsets. Link the account again after upgrading so the app receives the authenticated RTMP URL.
 - A real DJI App Key is required at build time and must not be committed.
 - Bridge version 0.6.0 adds a user-triggered DJI connection attempt, suppresses duplicate scans, and reports when the SDK declines to start the connection.
 - Bridge version 0.7.0 automatically syncs its temporary diagnostics to the private TunnelSight log inbox every 10 seconds while open. The inbox expires logs after 48 hours and is visible in TunnelSight with the project-owner account.
