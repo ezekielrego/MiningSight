@@ -30,7 +30,7 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
     if (!video) return;
 
     setStreamState('connecting');
-    setMessage('Connecting to the DJI live relay…');
+    setMessage('Connecting to the live relay…');
     setIsPaused(false);
     video.muted = true;
     const onPlaying = () => {
@@ -179,7 +179,7 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
       <header className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-white/10 bg-[#202020] px-3">
         <div className="flex min-w-0 items-center gap-2">
           <Radio className="h-4 w-4 shrink-0 text-[#e88724]" />
-          <span className="truncate text-[10px] font-bold uppercase tracking-wide">DJI live camera</span>
+          <span className="truncate text-[10px] font-bold uppercase tracking-wide">TunnelSight live camera</span>
           <span className={`flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[8px] font-bold ${streamState === 'live' ? 'bg-red-600/90 text-white' : 'bg-[#3b3b3b] text-[#bbb]'}`}>
             {streamState === 'live' ? <><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />LIVE</> : streamState.toUpperCase()}
           </span>

@@ -46,6 +46,7 @@ final class PhoneCameraStreamer implements ConnectChecker {
         if (!prepared && !prepare()) return;
         try {
             if (!camera.isOnPreview()) camera.startPreview();
+            BridgeLog.info("Phone", "Camera preview start requested; preview=" + camera.isOnPreview());
             if (listener != null) listener.onPhoneStreamStatus("Phone camera preview ready.");
         } catch (Throwable error) {
             BridgeLog.error("Phone", "Camera preview failed", error);

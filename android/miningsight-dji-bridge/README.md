@@ -6,7 +6,8 @@ This is the lightweight Android field transmitter for a DJI Phantom 3 Standard. 
 
 - Android project builds with the command-line SDK and Gradle; Android Studio is not required.
 - Uses DJI Mobile SDK 4.18 and `LiveStreamManager`.
-- The app has a small foreground screen for entering an RTMP publish URL and starting or stopping the stream.
+- Version 1.0.2 has a collapsible source drawer, a full-screen phone-camera preview with floating start/stop/switch controls, automatic preview retry after permission and surface creation, and temporary diagnostic log sync.
+- Version 1.0.2 links the bridge to a TunnelSight account email. The server creates the device-specific RTMP publish path; the web account with the same email resolves its HLS playback path automatically.
 - A real DJI App Key is required at build time and must not be committed.
 - Bridge version 0.6.0 adds a user-triggered DJI connection attempt, suppresses duplicate scans, and reports when the SDK declines to start the connection.
 - Bridge version 0.7.0 automatically syncs its temporary diagnostics to the private TunnelSight log inbox every 10 seconds while open. The inbox expires logs after 48 hours and is visible in TunnelSight with the project-owner account.
@@ -35,9 +36,9 @@ The APK is written to `app/build/outputs/apk/debug/app-debug.apk`. Set `DJI_APP_
 3. Connect the Android phone to the controller's `PHANTOM3_…` Wi-Fi.
 4. Force-stop DJI GO and other DJI camera apps before testing the bridge. Keep only the bridge app connected during a test; use a second device to view TunnelSight.
 5. Open the bridge app, tap **Connect / retry DJI**, and wait for its local camera preview before starting the RTMP stream.
-6. Enter the protected RTMP publish URL issued by the MiningSight stream service, start streaming, then view TunnelSight in a browser.
+6. Open the bridge drawer with `☰`, enter the same email used for TunnelSight, and tap **Link stream account**. Switch to **DJI Bridge** or **Phone Camera**, wait for the local preview, and tap the floating start control. The matching signed-in TunnelSight account resolves the stream in the live viewer.
 
-The Phantom 3 Standard uses the controller's Wi-Fi connection rather than the USB accessory flow used by newer DJI products. The default RTMP ingest address points to the TunnelSight VPS on port 1935; use the protected publish URL when authentication is enabled. Browser playback is available at `https://tunnelsight.applications.co.zw/dji/live/index.m3u8` and in the app's live viewport.
+The Phantom 3 Standard uses the controller's Wi-Fi connection rather than the USB accessory flow used by newer DJI products. Keep mobile data available while connected to the controller Wi-Fi so the bridge can reach the VPS. Browser playback is available through the signed-in live viewer and the HLS relay at `https://tunnelsight.applications.co.zw/dji/live/index.m3u8`.
 
 ## Security and production work remaining
 

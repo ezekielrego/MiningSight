@@ -46,6 +46,7 @@ const bridgeLogUploadToken = process.env.MININGSIGHT_BRIDGE_LOG_TOKEN || '';
 const bridgeLogAdminEmails = new Set((process.env.MININGSIGHT_BRIDGE_LOG_ADMIN_EMAILS || 'ezekiel@techinn.co.zw,ezekielrego01@gmail.com').split(',').map((email) => email.trim().toLowerCase()).filter(Boolean));
 const bridgeLogRetentionMs = 48 * 60 * 60 * 1000;
 const bridgeLogMaxBytes = 256 * 1024;
+const bridgeLinksFile = path.join(bridgeLogsRoot, 'links.json');
 const bridgeLogUploadTimes: number[] = [];
 const bridgeLogDeviceUploadTimes = new Map<string, number>();
 
@@ -373,7 +374,7 @@ async function requireBridgeLogAdmin(req: express.Request, res: express.Response
 async function pruneBridgeLogs(): Promise<void> {
   const entries = await readdir(bridgeLogsRoot, { withFileTypes: true }).catch(() => [] as any[]);
   const cutoff = Date.now() - bridgeLogRetentionMs;
-  await Promise.all(entries.filter((entry: any) => entry.isFile() && entry.name.endsWith('.json')).map(async (entry: any) => {
+  await Promise.all(entries.filter((entry: any) => entry.isFile() && entry.name.endsWith('.json') && entry.name !== 'links.json').map(async (entry: any) => {
     const filePath = path.join(bridgeLogsRoot, entry.name);
     const info = await stat(filePath).catch(() => null);
     if (info && info.mtimeMs < cutoff) await rm(filePath, { force: true }).catch(() => {});
@@ -387,6 +388,64 @@ bridgeLogCleanupTimer.unref();
 function validBridgeDeviceId(value: unknown): value is string {
   return typeof value === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(value);
 }
+
+function normalizeBridgeEmail(value: unknown): string {
+  return typeof value === 'string' && value.length <= 254 ? value.trim().toLowerCase() : '';
+}
+
+function validBridgeEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+async function readBridgeLinks(): Promise<Record<string, any>> {
+  try {
+    const parsed = JSON.parse(await readFile(bridgeLinksFile, 'utf8'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+app.post('/api/bridge/link', async (req, res) => {
+  if (!bridgeLogUploadToken || req.header('x-bridge-log-token') !== bridgeLogUploadToken) {
+    return res.status(401).json({ success: false, error: 'BRIDGE_LINK_AUTH_FAILED', message: 'The bridge link token was rejected.' });
+  }
+  const email = normalizeBridgeEmail(req.body?.email);
+  const deviceId = req.body?.deviceId;
+  if (!validBridgeEmail(email) || !validBridgeDeviceId(deviceId)) {
+    return res.status(400).json({ success: false, error: 'BRIDGE_LINK_PAYLOAD_INVALID', message: 'A valid email and bridge device identifier are required.' });
+  }
+  const streamId = createHash('sha256').update(`miningsight-bridge:${email}:${deviceId}:${bridgeLogUploadToken}`).digest('hex').slice(0, 24);
+  const streamPath = `dji/${streamId}`;
+  const record = {
+    email,
+    deviceId,
+    streamId,
+    streamPath,
+    publishUrl: `rtmp://5.189.146.229:1935/${streamPath}`,
+    playbackUrl: `https://tunnelsight.applications.co.zw/${streamPath}/index.m3u8`,
+    updatedAt: new Date().toISOString(),
+  };
+  try {
+    await mkdir(bridgeLogsRoot, { recursive: true, mode: 0o700 });
+    const links = await readBridgeLinks();
+    links[email] = record;
+    await writeFile(bridgeLinksFile, JSON.stringify(links), { mode: 0o600 });
+    return res.json({ success: true, message: 'TunnelSight account linked.', ...record });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: 'BRIDGE_LINK_SAVE_FAILED', message: error?.message || 'Could not save the stream link.' });
+  }
+});
+
+app.get('/api/bridge/live', async (req, res) => {
+  const user = await requireAuthenticated(req, res);
+  if (!user) return;
+  const email = normalizeBridgeEmail(user.email);
+  const links = await readBridgeLinks();
+  const record = links[email];
+  if (!record) return res.status(404).json({ success: false, error: 'BRIDGE_STREAM_NOT_LINKED', message: 'No phone or DJI bridge is linked to this account yet.' });
+  return res.json({ success: true, email, streamId: record.streamId, playbackUrl: record.playbackUrl, updatedAt: record.updatedAt });
+});
 
 app.post('/api/bridge/logs', async (req, res) => {
   if (!bridgeLogUploadToken || req.header('x-bridge-log-token') !== bridgeLogUploadToken) {
@@ -428,7 +487,7 @@ app.get('/api/bridge/logs', async (req, res) => {
   if (!await requireBridgeLogAdmin(req, res)) return;
   await pruneBridgeLogs();
   const entries = await readdir(bridgeLogsRoot, { withFileTypes: true }).catch(() => [] as any[]);
-  const records = await Promise.all(entries.filter((entry: any) => entry.isFile() && entry.name.endsWith('.json')).map(async (entry: any) => {
+  const records = await Promise.all(entries.filter((entry: any) => entry.isFile() && entry.name.endsWith('.json') && entry.name !== 'links.json').map(async (entry: any) => {
     try { return JSON.parse(await readFile(path.join(bridgeLogsRoot, entry.name), 'utf8')); } catch { return null; }
   }));
   const devices = records.filter(Boolean).sort((a: any, b: any) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, 10);

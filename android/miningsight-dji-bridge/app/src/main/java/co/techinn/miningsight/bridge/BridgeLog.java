@@ -32,6 +32,7 @@ import org.json.JSONObject;
  */
 public final class BridgeLog {
     public interface UploadCallback { void onResult(String message); }
+    public interface LinkCallback { void onResult(boolean success, String message, String publishUrl); }
     private static final String TAG = "MiningSightBridge";
     private static final String FILE_NAME = "bridge-diagnostics.log";
     private static final int MAX_BYTES = 256 * 1024;
@@ -169,6 +170,72 @@ public final class BridgeLog {
                 new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> callback.onResult(message));
             }
         }, "MiningSight-log-upload").start();
+    }
+
+    public static void linkAccount(Context context, String email, LinkCallback callback) {
+        new Thread(() -> {
+            HttpURLConnection connection = null;
+            boolean success = false;
+            String message = null;
+            String publishUrl = null;
+            try {
+                ApplicationInfo appInfo = context.getPackageManager().getApplicationInfo(context.getPackageName(), PackageManager.GET_META_DATA);
+                String token = appInfo.metaData == null ? "" : appInfo.metaData.getString("co.techinn.miningsight.bridge.LOG_TOKEN", "");
+                if (token.isEmpty() || token.contains("NOT_SET")) throw new IllegalStateException("The app build has no server link token.");
+                SharedPreferences prefs = context.getSharedPreferences("miningsight_bridge", Context.MODE_PRIVATE);
+                String deviceId = prefs.getString("bridge_log_device_id", null);
+                if (deviceId == null) {
+                    deviceId = UUID.randomUUID().toString().replace("-", "");
+                    prefs.edit().putString("bridge_log_device_id", deviceId).apply();
+                }
+                JSONObject payload = new JSONObject();
+                payload.put("email", email);
+                payload.put("deviceId", deviceId);
+                payload.put("appVersion", context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName);
+                URL endpoint = new URL("https://tunnelsight.applications.co.zw/api/bridge/link");
+                android.net.ConnectivityManager manager = (android.net.ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+                android.net.Network internetNetwork = null;
+                if (manager != null) for (android.net.Network network : manager.getAllNetworks()) {
+                    android.net.NetworkCapabilities caps = manager.getNetworkCapabilities(network);
+                    if (caps != null && caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                            && caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+                        internetNetwork = network;
+                        if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)) break;
+                    }
+                }
+                connection = (HttpURLConnection) (internetNetwork == null ? endpoint.openConnection() : internetNetwork.openConnection(endpoint));
+                connection.setRequestMethod("POST");
+                connection.setConnectTimeout(7000);
+                connection.setReadTimeout(7000);
+                connection.setDoOutput(true);
+                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+                connection.setRequestProperty("X-Bridge-Log-Token", token);
+                try (OutputStream output = connection.getOutputStream()) { output.write(payload.toString().getBytes(StandardCharsets.UTF_8)); }
+                int status = connection.getResponseCode();
+                java.io.InputStream input = status >= 200 && status < 400 ? connection.getInputStream() : connection.getErrorStream();
+                StringBuilder body = new StringBuilder();
+                if (input != null) {
+                    java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(input, StandardCharsets.UTF_8));
+                    String line;
+                    while ((line = reader.readLine()) != null) body.append(line);
+                    reader.close();
+                }
+                JSONObject response = body.length() == 0 ? new JSONObject() : new JSONObject(body.toString());
+                success = status >= 200 && status < 300 && response.optBoolean("success", false);
+                message = response.optString("message", success ? "Account linked." : "Server could not link the account.");
+                publishUrl = response.optString("publishUrl", "");
+                if (!success && status == 401) message = "Server rejected the app link token.";
+            } catch (Exception error) {
+                message = "Account link failed: " + error.getMessage();
+                warn("AccountLink", message);
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+            final boolean resultSuccess = success;
+            final String resultMessage = message;
+            final String resultPublishUrl = publishUrl;
+            if (callback != null) new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> callback.onResult(resultSuccess, resultMessage, resultPublishUrl));
+        }, "MiningSight-account-link").start();
     }
 
     public static void clear() {

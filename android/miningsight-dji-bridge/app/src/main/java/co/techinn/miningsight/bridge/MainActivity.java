@@ -13,6 +13,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
 import android.view.View;
+import android.view.SurfaceHolder;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -47,6 +48,8 @@ public class MainActivity extends Activity {
     private static final int REQUEST_PHONE_CAMERA = 43;
     private static final String PREFS = "miningsight_bridge";
     private static final String STREAM_URL = "stream_url";
+    private static final String LINKED_EMAIL = "linked_email";
+    private static final String LINKED_STREAM_URL = "linked_stream_url";
     private static final String DEFAULT_STREAM_URL = "rtmp://5.189.146.229:1935/dji/live";
 
     private final ExecutorService streamExecutor = Executors.newSingleThreadExecutor();
@@ -60,13 +63,20 @@ public class MainActivity extends Activity {
     private Button djiNavButton;
     private Button phoneNavButton;
     private ScrollView djiPanel;
-    private ScrollView phonePanel;
+    private FrameLayout phonePanel;
     private EditText phoneStreamUrlInput;
     private Button phoneStartButton;
     private Button phoneStopButton;
     private TextView phoneStatusText;
     private OpenGlView phonePreview;
     private PhoneCameraStreamer phoneStreamer;
+    private EditText accountEmailInput;
+    private Button linkAccountButton;
+    private TextView accountLinkStatus;
+    private View drawerView;
+    private Button drawerToggle;
+    private View drawerScrim;
+    private String linkedStreamUrl = "";
     private boolean phoneMode;
     private volatile boolean registered;
     private volatile boolean registrationPending;
@@ -87,6 +97,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         SharedPreferences prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        linkedStreamUrl = prefs.getString(LINKED_STREAM_URL, "");
         buildUi(prefs);
         BridgeLog.info("MainActivity", "Activity created");
         try {
@@ -104,19 +115,56 @@ public class MainActivity extends Activity {
 
     private void buildUi(SharedPreferences prefs) {
         int padding = dp(18);
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.HORIZONTAL);
+        FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.rgb(23, 23, 23));
 
+        FrameLayout panelHost = new FrameLayout(this);
+        root.addView(panelHost, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        drawerScrim = new View(this);
+        drawerScrim.setBackgroundColor(Color.argb(150, 0, 0, 0));
+        drawerScrim.setVisibility(View.GONE);
+        root.addView(drawerScrim, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
         LinearLayout sideNav = new LinearLayout(this);
+        drawerView = sideNav;
         sideNav.setOrientation(LinearLayout.VERTICAL);
         sideNav.setPadding(dp(8), dp(16), dp(8), dp(16));
         sideNav.setBackgroundColor(Color.rgb(31, 31, 31));
-        root.addView(sideNav, new LinearLayout.LayoutParams(dp(118), LinearLayout.LayoutParams.MATCH_PARENT));
+        FrameLayout.LayoutParams drawerParams = new FrameLayout.LayoutParams(dp(286), FrameLayout.LayoutParams.MATCH_PARENT);
+        drawerParams.gravity = android.view.Gravity.START;
+        sideNav.setVisibility(View.GONE);
+        root.addView(sideNav, drawerParams);
+
+        drawerToggle = navButton("☰");
+        drawerToggle.setTextSize(22);
+        drawerToggle.setTextColor(Color.WHITE);
+        drawerToggle.setBackgroundColor(Color.argb(180, 25, 25, 25));
+        FrameLayout.LayoutParams toggleParams = new FrameLayout.LayoutParams(dp(52), dp(52));
+        toggleParams.gravity = android.view.Gravity.TOP | android.view.Gravity.START;
+        toggleParams.setMargins(dp(10), dp(10), 0, 0);
+        root.addView(drawerToggle, toggleParams);
 
         TextView navTitle = text("STREAM\nSOURCES", 11, Color.rgb(246, 210, 167));
         navTitle.setGravity(android.view.Gravity.CENTER);
-        sideNav.addView(navTitle, marginParams(0, 0, 0, 18));
+        sideNav.addView(navTitle, marginParams(42, 0, 0, 18));
+
+        TextView accountLabel = text("LINK TUNNELSIGHT ACCOUNT", 10, Color.LTGRAY);
+        sideNav.addView(accountLabel, marginParams(6, 0, 6, 5));
+        accountEmailInput = new EditText(this);
+        accountEmailInput.setSingleLine(true);
+        accountEmailInput.setText(prefs.getString(LINKED_EMAIL, ""));
+        accountEmailInput.setHint("your email");
+        accountEmailInput.setTextColor(Color.WHITE);
+        accountEmailInput.setHintTextColor(Color.GRAY);
+        accountEmailInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+        sideNav.addView(accountEmailInput, marginParams(4, 0, 4, 6));
+        linkAccountButton = button("Link stream account");
+        linkAccountButton.setAllCaps(false);
+        sideNav.addView(linkAccountButton, marginParams(4, 0, 4, 4));
+        accountLinkStatus = text(linkedStreamUrl.isEmpty() ? "Not linked yet" : "Linked account ready", 10, linkedStreamUrl.isEmpty() ? Color.LTGRAY : Color.rgb(155, 220, 170));
+        sideNav.addView(accountLinkStatus, marginParams(6, 0, 6, 16));
+
         djiNavButton = navButton("DJI\nBridge");
         phoneNavButton = navButton("Phone\nCamera");
         sideNav.addView(djiNavButton, marginParams(0, 0, 0, 8));
@@ -124,9 +172,6 @@ public class MainActivity extends Activity {
         TextView navNote = text("One source at a time\n\nBoth modes publish to the selected RTMP endpoint and appear in the TunnelSight live viewer.", 10, Color.GRAY);
         navNote.setGravity(android.view.Gravity.CENTER);
         sideNav.addView(navNote, marginParams(4, 18, 4, 0));
-
-        FrameLayout panelHost = new FrameLayout(this);
-        root.addView(panelHost, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1));
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -149,7 +194,7 @@ public class MainActivity extends Activity {
         String savedStreamUrl = prefs.getString(STREAM_URL, DEFAULT_STREAM_URL);
         String migratedStreamUrl = savedStreamUrl.replace("stream.tunnelsight.applications.co.zw", "5.189.146.229");
         if (!migratedStreamUrl.equals(savedStreamUrl)) prefs.edit().putString(STREAM_URL, migratedStreamUrl).apply();
-        streamUrlInput.setText(migratedStreamUrl);
+        streamUrlInput.setText(linkedStreamUrl.isEmpty() ? migratedStreamUrl : linkedStreamUrl);
         streamUrlInput.setHint("RTMP publish URL");
         streamUrlInput.setTextColor(Color.WHITE);
         streamUrlInput.setHintTextColor(Color.GRAY);
@@ -218,52 +263,69 @@ public class MainActivity extends Activity {
 
         djiNavButton.setOnClickListener(v -> selectMode(false));
         phoneNavButton.setOnClickListener(v -> selectMode(true));
+        linkAccountButton.setOnClickListener(v -> linkStreamAccount());
+        drawerToggle.setOnClickListener(v -> toggleDrawer());
+        drawerScrim.setOnClickListener(v -> closeDrawer());
         setContentView(root);
         selectMode(false);
         diagnosticHandler.postDelayed(serverLogSyncTask, 1200);
     }
 
-    private ScrollView buildPhonePanel(SharedPreferences prefs) {
-        int padding = dp(18);
-        LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(padding, padding, padding, padding);
-        content.setBackgroundColor(Color.rgb(23, 23, 23));
-
-        TextView title = text("Phone camera stream", 22, Color.rgb(246, 210, 167));
-        content.addView(title, matchWrap());
-        TextView subtitle = text("Use this handset as the camera and publish directly to TunnelSight.", 14, Color.LTGRAY);
-        content.addView(subtitle, marginParams(0, 6, 0, 16));
+    private FrameLayout buildPhonePanel(SharedPreferences prefs) {
+        FrameLayout screen = new FrameLayout(this);
+        screen.setBackgroundColor(Color.BLACK);
 
         phonePreview = new OpenGlView(this);
         phonePreview.setBackgroundColor(Color.BLACK);
-        content.addView(phonePreview, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(250)));
+        phonePreview.setKeepScreenOn(true);
+        phonePreview.getHolder().addCallback(new SurfaceHolder.Callback() {
+            @Override public void surfaceCreated(SurfaceHolder holder) {
+                if (phoneMode) phonePreview.postDelayed(MainActivity.this::ensurePhonePreview, 150);
+            }
+            @Override public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) { }
+            @Override public void surfaceDestroyed(SurfaceHolder holder) {
+                BridgeLog.info("Phone", "Phone preview surface destroyed");
+            }
+        });
+        screen.addView(phonePreview, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        String savedStreamUrl = prefs.getString(STREAM_URL, DEFAULT_STREAM_URL);
+        TextView topBar = text("PHONE CAMERA  ·  TUNNELSIGHT", 11, Color.WHITE);
+        topBar.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        topBar.setPadding(dp(16), 0, dp(12), 0);
+        topBar.setBackgroundColor(Color.argb(175, 0, 0, 0));
+        FrameLayout.LayoutParams topParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(48));
+        topParams.gravity = android.view.Gravity.TOP;
+        screen.addView(topBar, topParams);
+
+        phoneStatusText = text("Camera permission is required before preview starts.", 11, Color.WHITE);
+        phoneStatusText.setGravity(android.view.Gravity.CENTER);
+        phoneStatusText.setPadding(dp(12), 0, dp(12), 0);
+        phoneStatusText.setBackgroundColor(Color.argb(145, 0, 0, 0));
+        FrameLayout.LayoutParams statusParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(38));
+        statusParams.gravity = android.view.Gravity.TOP;
+        statusParams.setMargins(0, dp(48), 0, 0);
+        screen.addView(phoneStatusText, statusParams);
+
+        LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.HORIZONTAL);
+        controls.setGravity(android.view.Gravity.CENTER);
+        controls.setPadding(dp(10), dp(8), dp(10), dp(10));
+        controls.setBackgroundColor(Color.argb(175, 0, 0, 0));
+        phoneStartButton = floatingButton("▶", "Start phone stream");
+        phoneStopButton = floatingButton("■", "Stop stream");
+        Button switchCamera = floatingButton("↺", "Switch front / back camera");
+        phoneStopButton.setEnabled(false);
+        controls.addView(phoneStartButton, weightParams(1, 5));
+        controls.addView(phoneStopButton, weightParams(1, 5));
+        controls.addView(switchCamera, weightParams(1, 5));
+        FrameLayout.LayoutParams controlParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(76));
+        controlParams.gravity = android.view.Gravity.BOTTOM;
+        screen.addView(controls, controlParams);
+
         phoneStreamUrlInput = new EditText(this);
         phoneStreamUrlInput.setSingleLine(true);
-        phoneStreamUrlInput.setText(savedStreamUrl);
-        phoneStreamUrlInput.setHint("RTMP publish URL");
-        phoneStreamUrlInput.setTextColor(Color.WHITE);
-        phoneStreamUrlInput.setHintTextColor(Color.GRAY);
-        phoneStreamUrlInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        content.addView(phoneStreamUrlInput, marginParams(0, 12, 0, 10));
-
-        LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        phoneStartButton = button("Start phone stream");
-        phoneStopButton = button("Stop");
-        phoneStopButton.setEnabled(false);
-        actions.addView(phoneStartButton, weightParams(1, 8));
-        actions.addView(phoneStopButton, weightParams(1, 8));
-        content.addView(actions, matchWrap());
-
-        Button switchCamera = button("Switch front / back camera");
-        content.addView(switchCamera, marginParams(0, 8, 0, 0));
-        phoneStatusText = text("Camera permission is required before preview starts.", 14, Color.WHITE);
-        content.addView(phoneStatusText, marginParams(0, 16, 0, 0));
-        TextView note = text("This mode uses the phone camera and microphone. Keep mobile data or another internet connection available. Stop DJI mode before starting this source; both sources use the same live viewer path.", 12, Color.GRAY);
-        content.addView(note, marginParams(0, 10, 0, 0));
+        phoneStreamUrlInput.setText(linkedStreamUrl.isEmpty() ? prefs.getString(STREAM_URL, DEFAULT_STREAM_URL) : linkedStreamUrl);
+        phoneStreamUrlInput.setVisibility(View.GONE);
 
         phoneStreamer = new PhoneCameraStreamer(this, phonePreview, new PhoneCameraStreamer.Listener() {
             @Override public void onPhoneStreamStatus(String status) {
@@ -286,15 +348,12 @@ public class MainActivity extends Activity {
         switchCamera.setOnClickListener(v -> {
             if (phoneStreamer != null) phoneStreamer.switchCamera();
         });
-
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
-        scroll.addView(content);
-        return scroll;
+        return screen;
     }
 
     private void selectMode(boolean usePhone) {
         phoneMode = usePhone;
+        closeDrawer();
         if (djiPanel != null) djiPanel.setVisibility(usePhone ? View.GONE : View.VISIBLE);
         if (phonePanel != null) phonePanel.setVisibility(usePhone ? View.VISIBLE : View.GONE);
         if (djiNavButton != null) setNavSelected(djiNavButton, !usePhone);
@@ -304,6 +363,7 @@ public class MainActivity extends Activity {
             if (hasPhoneCameraPermission()) ensurePhonePreview();
             else requestPhoneCameraPermission();
             setStatus("Phone camera mode selected.");
+            if (phonePreview != null) phonePreview.postDelayed(this::ensurePhonePreview, 250);
         } else {
             if (phoneStreamer != null && phoneStreamer.isStreaming()) stopPhoneStream();
             refreshNetworkDiagnostics("DJI mode selected");
@@ -312,12 +372,17 @@ public class MainActivity extends Activity {
     }
 
     private void startPhoneStream() {
+        if (linkedStreamUrl.isEmpty()) {
+            if (phoneStatusText != null) phoneStatusText.setText("Link a TunnelSight account from the ☰ menu before streaming.");
+            openDrawer();
+            return;
+        }
         if (!hasPhoneCameraPermission()) {
             requestPhoneCameraPermission();
             return;
         }
         if (phoneStreamer == null || phoneStreamUrlInput == null) return;
-        String url = phoneStreamUrlInput.getText().toString().trim();
+        String url = linkedStreamUrl;
         if (url.isEmpty() || !url.startsWith("rtmp://")) {
             if (phoneStatusText != null) phoneStatusText.setText("Enter an RTMP publish URL.");
             return;
@@ -336,7 +401,66 @@ public class MainActivity extends Activity {
 
     private void ensurePhonePreview() {
         if (phoneStreamer == null || !hasPhoneCameraPermission()) return;
+        if (phonePreview != null && !phonePreview.isShown()) return;
         if (phoneStreamer.prepare()) phoneStreamer.startPreview();
+    }
+
+    private void linkStreamAccount() {
+        String email = accountEmailInput == null ? "" : accountEmailInput.getText().toString().trim().toLowerCase(java.util.Locale.US);
+        if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+            if (accountLinkStatus != null) accountLinkStatus.setText("Enter a valid email address.");
+            return;
+        }
+        if (linkAccountButton != null) {
+            linkAccountButton.setEnabled(false);
+            linkAccountButton.setText("Linking…");
+        }
+        if (accountLinkStatus != null) accountLinkStatus.setText("Creating your private stream link…");
+        BridgeLog.linkAccount(this, email, (success, message, publishUrl) -> runOnUiThread(() -> {
+            if (linkAccountButton != null) {
+                linkAccountButton.setEnabled(true);
+                linkAccountButton.setText("Link stream account");
+            }
+            if (success && publishUrl != null && !publishUrl.isEmpty()) {
+                linkedStreamUrl = publishUrl;
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                        .putString(LINKED_EMAIL, email)
+                        .putString(LINKED_STREAM_URL, publishUrl)
+                        .putString(STREAM_URL, publishUrl)
+                        .apply();
+                if (streamUrlInput != null) streamUrlInput.setText(publishUrl);
+                if (phoneStreamUrlInput != null) phoneStreamUrlInput.setText(publishUrl);
+                if (accountLinkStatus != null) accountLinkStatus.setText("Linked · streams will appear under " + email);
+                if (phoneStatusText != null) phoneStatusText.setText("Account linked. Camera is ready when you press ▶.");
+            } else if (accountLinkStatus != null) {
+                accountLinkStatus.setText(message == null ? "Could not link account." : message);
+            }
+        }));
+    }
+
+    private void toggleDrawer() {
+        if (sideDrawerOpen()) closeDrawer(); else openDrawer();
+    }
+
+    private boolean sideDrawerOpen() {
+        return drawerScrim != null && drawerScrim.getVisibility() == View.VISIBLE;
+    }
+
+    private void openDrawer() {
+        if (drawerScrim != null) drawerScrim.setVisibility(View.VISIBLE);
+        if (drawerToggle != null) drawerToggle.setText("×");
+        if (drawerScrim != null) drawerScrim.bringToFront();
+        if (drawerView != null) drawerView.setVisibility(View.VISIBLE);
+        if (drawerView != null) drawerView.bringToFront();
+        if (drawerToggle != null) drawerToggle.bringToFront();
+        if (accountEmailInput != null) accountEmailInput.requestFocus();
+    }
+
+    private void closeDrawer() {
+        if (drawerScrim != null) drawerScrim.setVisibility(View.GONE);
+        if (drawerView != null) drawerView.setVisibility(View.GONE);
+        if (drawerToggle != null) drawerToggle.setText("☰");
+        if (drawerToggle != null) drawerToggle.bringToFront();
     }
 
     private boolean hasPhoneCameraPermission() {
@@ -369,6 +493,16 @@ public class MainActivity extends Activity {
         button.setAllCaps(false);
         button.setTextSize(12);
         button.setMinHeight(dp(54));
+        return button;
+    }
+
+    private Button floatingButton(String label, String description) {
+        Button button = navButton(label);
+        button.setContentDescription(description);
+        button.setTextSize(20);
+        button.setTextColor(Color.WHITE);
+        button.setBackgroundColor(Color.argb(185, 35, 35, 35));
+        button.setMinHeight(dp(52));
         return button;
     }
 
@@ -605,6 +739,11 @@ public class MainActivity extends Activity {
     }
 
     private void startStream() {
+        if (linkedStreamUrl.isEmpty()) {
+            setStatus("Link a TunnelSight account from the ☰ menu before streaming.");
+            openDrawer();
+            return;
+        }
         if (!registered) {
             BridgeLog.warn("Stream", "Start requested before SDK registration");
             setStatus("Wait for DJI SDK registration before starting the stream.");

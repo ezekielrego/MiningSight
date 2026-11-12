@@ -157,6 +157,7 @@ interface Viewport3DProps {
   onMapMarkingChange?: (enabled: boolean) => void;
   liveStreamOpen?: boolean;
   onCloseLiveStream?: () => void;
+  liveStreamSourceUrl?: string | null;
 }
 
 export const Viewport3D: React.FC<Viewport3DProps> = ({
@@ -206,6 +207,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   onMapMarkingChange,
   liveStreamOpen = false,
   onCloseLiveStream,
+  liveStreamSourceUrl = null,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -2522,6 +2524,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
           onClose={() => onCloseLiveStream?.()}
           onCapture={(dataUrl, name) => onCaptureReferenceImage?.(dataUrl, name)}
           onSaveFile={onSaveLiveFile}
+          sourceUrl={liveStreamSourceUrl || undefined}
         />
       )}
     </div>

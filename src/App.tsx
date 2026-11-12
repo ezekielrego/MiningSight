@@ -336,6 +336,20 @@ export default function App() {
   const [newProjectFiles, setNewProjectFiles] = useState<File[]>([]);
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(() => localStorage.getItem('miningsight_auth_token'));
+  const [liveStreamSourceUrl, setLiveStreamSourceUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!authToken) {
+      setLiveStreamSourceUrl(null);
+      return;
+    }
+    fetch('/api/bridge/live', { headers: { Authorization: `Bearer ${authToken}` } })
+      .then(async (response) => {
+        const json = await response.json().catch(() => ({}));
+        if (!response.ok || !json.success) throw new Error(json.message || json.error || 'No linked bridge stream');
+        setLiveStreamSourceUrl(typeof json.playbackUrl === 'string' ? json.playbackUrl : null);
+      })
+      .catch(() => setLiveStreamSourceUrl(null));
+  }, [authToken]);
   const refreshBridgeLogs = useCallback(async () => {
     if (!authToken) return;
     setBridgeLogsLoading(true);
@@ -2151,6 +2165,7 @@ export default function App() {
             onSaveLiveFile={handleLiveFileSave}
             liveStreamOpen={isLiveStreamOpen}
             onCloseLiveStream={() => setIsLiveStreamOpen(false)}
+            liveStreamSourceUrl={liveStreamSourceUrl}
             mapGeometry={reconstructionMapGeometry}
             mapSelection={reconstructionMapSelection}
             mapMarkingEnabled={mapMarkingEnabled}
