@@ -19,6 +19,7 @@ interface MainToolbarProps {
   onOpenLiveStream?: () => void;
   onOpenBridgeLogs?: () => void;
   isLiveStreamOpen?: boolean;
+  liveStreamAvailable?: boolean;
 }
 
 export const MainToolbar: React.FC<MainToolbarProps> = ({
@@ -38,6 +39,7 @@ export const MainToolbar: React.FC<MainToolbarProps> = ({
   onOpenLiveStream,
   onOpenBridgeLogs,
   isLiveStreamOpen = false,
+  liveStreamAvailable = false,
 }) => {
   // Dropdown states
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
@@ -296,11 +298,12 @@ export const MainToolbar: React.FC<MainToolbarProps> = ({
         </button>
         <button
           onClick={onOpenLiveStream}
-          title="Open DJI live camera in the viewer"
-          aria-label="Open DJI live camera"
-          className={`relative w-7 h-7 flex items-center justify-center border rounded-[2px] cursor-pointer ${isLiveStreamOpen ? 'bg-[#e88724] text-black border-[#b35e0e]' : 'bg-[#3a3a3a] hover:bg-[#484848] border-t-[#525252] border-b-[#1f1f1f] text-[#e88724]'}`}
+          title={liveStreamAvailable && !isLiveStreamOpen ? 'Live camera stream available' : 'Open DJI live camera in the viewer'}
+          aria-label={liveStreamAvailable && !isLiveStreamOpen ? 'Live camera stream available' : 'Open DJI live camera'}
+          className={`relative w-7 h-7 flex items-center justify-center border rounded-[2px] cursor-pointer ${isLiveStreamOpen ? 'bg-[#e88724] text-black border-[#b35e0e]' : liveStreamAvailable ? 'bg-[#3a3a3a] hover:bg-[#484848] border-[#e88724] text-[#e88724] animate-pulse shadow-[0_0_7px_rgba(232,135,36,0.65)]' : 'bg-[#3a3a3a] hover:bg-[#484848] border-t-[#525252] border-b-[#1f1f1f] text-[#e88724]'}`}
         >
           <Radio className="h-4 w-4" />
+          {liveStreamAvailable && !isLiveStreamOpen && <span className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-[#f1a24b]" aria-hidden="true" />}
         </button>
         <button
           onClick={onOpenBridgeLogs}

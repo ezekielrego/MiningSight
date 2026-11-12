@@ -454,6 +454,26 @@ app.get('/api/bridge/live', async (req, res) => {
   return res.json({ success: true, email, streamId: record.streamId, playbackUrl: record.playbackUrl, updatedAt: record.updatedAt });
 });
 
+app.get('/api/bridge/status', async (req, res) => {
+  const user = await requireAuthenticated(req, res);
+  if (!user) return;
+  const email = normalizeBridgeEmail(user.email);
+  const links = await readBridgeLinks();
+  const record = links[email];
+  if (!record) return res.status(404).json({ success: false, available: false, error: 'BRIDGE_STREAM_NOT_LINKED' });
+  let available = false;
+  try {
+    const response = await fetch(`http://127.0.0.1:8898/${record.streamPath}/index.m3u8`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(1800),
+    });
+    available = response.ok;
+  } catch {
+    available = false;
+  }
+  return res.json({ success: true, available, streamId: record.streamId, playbackUrl: record.playbackUrl, updatedAt: record.updatedAt });
+});
+
 app.post('/api/bridge/logs', async (req, res) => {
   if (!bridgeLogUploadToken || req.header('x-bridge-log-token') !== bridgeLogUploadToken) {
     return res.status(401).json({ success: false, error: 'BRIDGE_LOG_AUTH_FAILED' });

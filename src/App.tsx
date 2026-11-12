@@ -337,24 +337,31 @@ export default function App() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(() => localStorage.getItem('miningsight_auth_token'));
   const [liveStreamSourceUrl, setLiveStreamSourceUrl] = useState<string | null>(null);
+  const [liveStreamAvailable, setLiveStreamAvailable] = useState(false);
   useEffect(() => {
     if (!authToken) {
       setLiveStreamSourceUrl(null);
+      setLiveStreamAvailable(false);
       return;
     }
     let cancelled = false;
-    const refresh = () => fetch('/api/bridge/live', { headers: { Authorization: `Bearer ${authToken}` }, cache: 'no-store' })
+    const refresh = () => fetch('/api/bridge/status', { headers: { Authorization: `Bearer ${authToken}` }, cache: 'no-store' })
       .then(async (response) => {
         const json = await response.json().catch(() => ({}));
         if (!response.ok || !json.success) throw new Error(json.message || json.error || 'No linked bridge stream');
-        if (!cancelled) setLiveStreamSourceUrl(typeof json.playbackUrl === 'string' ? json.playbackUrl : null);
+        if (!cancelled) {
+          setLiveStreamSourceUrl(typeof json.playbackUrl === 'string' ? json.playbackUrl : null);
+          setLiveStreamAvailable(json.available === true);
+        }
       })
-      .catch(() => { if (!cancelled) setLiveStreamSourceUrl(null); });
+      .catch(() => {
+        if (!cancelled) setLiveStreamAvailable(false);
+      });
     void refresh();
-    const timer = isLiveStreamOpen ? window.setInterval(refresh, 10000) : null;
+    const timer = window.setInterval(refresh, 5000);
     return () => {
       cancelled = true;
-      if (timer !== null) window.clearInterval(timer);
+      window.clearInterval(timer);
     };
   }, [authToken, isLiveStreamOpen]);
   const refreshBridgeLogs = useCallback(async () => {
@@ -2033,6 +2040,7 @@ export default function App() {
           } else setShowBridgeLogs(true);
         }}
         isLiveStreamOpen={isLiveStreamOpen}
+        liveStreamAvailable={liveStreamAvailable}
       />
 
       {/* 3. Docking Layout: Central Viewport, Object Manager / Camera Tours / AI Survey, Attribute Manager, Timeline, Materials, Coordinates */}
