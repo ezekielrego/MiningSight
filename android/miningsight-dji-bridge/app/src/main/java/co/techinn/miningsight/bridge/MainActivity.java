@@ -9,6 +9,8 @@ import android.net.wifi.WifiManager;
 import android.net.wifi.WifiInfo;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.InputType;
 import android.view.View;
 import android.widget.Button;
@@ -52,6 +54,7 @@ public class MainActivity extends Activity {
     private boolean registered;
     private volatile boolean productConnected;
     private boolean connectionStarted;
+    private final Handler diagnosticHandler = new Handler(Looper.getMainLooper());
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -241,7 +244,29 @@ public class MainActivity extends Activity {
         BridgeLog.info("DJI", "Starting product connection (" + reason + "); Wi-Fi=" + ssid);
         connectionStarted = true;
         setStatus("Connecting to DJI controller over " + ssid + "…");
-        DJISDKManager.getInstance().startConnectionToProduct();
+        boolean started = DJISDKManager.getInstance().startConnectionToProduct();
+        BridgeLog.info("DJI", "startConnectionToProduct returned " + started);
+        logProductState("immediate");
+        diagnosticHandler.postDelayed(() -> logProductState("3 seconds"), 3000);
+        diagnosticHandler.postDelayed(() -> logProductState("10 seconds"), 10000);
+        diagnosticHandler.postDelayed(() -> logProductState("30 seconds"), 30000);
+        if (!started) setStatus("DJI did not start a new connection attempt. Check diagnostics and tap Reconnect DJI.");
+    }
+
+    private void logProductState(String elapsed) {
+        try {
+            BaseProduct product = DJISDKManager.getInstance().getProduct();
+            String model = product == null || product.getModel() == null ? "none" : product.getModel().getDisplayName();
+            boolean connected = product != null && product.isConnected();
+            BridgeLog.info("DJI", "Product state " + elapsed + ": model=" + model + ", connected=" + connected);
+            if (connected && !productConnected) {
+                productConnected = true;
+                setStatus("DJI product detected: " + model + ". Waiting for camera feed…");
+                attachPrimaryVideoFeed();
+            }
+        } catch (Exception error) {
+            BridgeLog.warn("DJI", "Could not read product state at " + elapsed + ": " + error.getMessage());
+        }
     }
 
     private String currentSsid() {
@@ -381,6 +406,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        diagnosticHandler.removeCallbacksAndMessages(null);
         stopStream();
         if (videoPreview != null) videoPreview.detachFromPrimaryFeed();
         streamExecutor.shutdownNow();
