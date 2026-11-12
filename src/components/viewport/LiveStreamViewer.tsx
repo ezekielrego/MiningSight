@@ -18,9 +18,12 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
   const hlsRef = useRef<Hls | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
+  const hasRenderedFrameRef = useRef(false);
   const [retryToken, setRetryToken] = useState(0);
   const [streamState, setStreamState] = useState<StreamState>('connecting');
   const [message, setMessage] = useState('Connecting to the DJI live relay…');
+  const [hasRenderedFrame, setHasRenderedFrame] = useState(false);
+  const [isRecovering, setIsRecovering] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
@@ -31,18 +34,34 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
 
     setStreamState('connecting');
     setMessage('Connecting to the live relay…');
+    hasRenderedFrameRef.current = false;
+    setHasRenderedFrame(false);
+    setIsRecovering(false);
     setIsPaused(false);
     video.muted = true;
     const onPlaying = () => {
+      hasRenderedFrameRef.current = true;
+      setHasRenderedFrame(true);
+      setIsRecovering(false);
       setStreamState('live');
       setMessage('Live camera feed');
       setIsPaused(false);
     };
     const onWaiting = () => {
+      if (hasRenderedFrameRef.current) {
+        setIsRecovering(true);
+        setMessage('Connection recovering…');
+        return;
+      }
       setStreamState('waiting');
       setMessage('Waiting for the bridge to publish video…');
     };
     const onError = () => {
+      if (hasRenderedFrameRef.current) {
+        setIsRecovering(true);
+        setMessage('Connection recovering…');
+        return;
+      }
       setStreamState('waiting');
       setMessage('Waiting for the bridge to publish video…');
     };
@@ -56,22 +75,49 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
         enableWorker: true,
         lowLatencyMode: true,
         liveSyncDurationCount: 2,
+        liveMaxLatencyDurationCount: 5,
         maxLiveSyncPlaybackRate: 1.2,
+        maxBufferLength: 6,
+        maxMaxBufferLength: 10,
+        backBufferLength: 5,
+        maxBufferHole: 0.8,
       });
       hlsRef.current = hls;
       hls.attachMedia(video);
       hls.on(Hls.Events.MEDIA_ATTACHED, () => hls?.loadSource(sourceUrl));
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        setStreamState('waiting');
-        setMessage('Relay reached. Waiting for the bridge to publish video…');
+        if (!hasRenderedFrameRef.current) {
+          setStreamState('waiting');
+          setMessage('Relay reached. Waiting for the bridge to publish video…');
+        }
         void video.play().catch(() => setMessage('Tap Play when the live feed is available.'));
+      });
+      hls.on(Hls.Events.LEVEL_UPDATED, () => {
+        const livePosition = hls?.liveSyncPosition;
+        if (hasRenderedFrameRef.current && livePosition !== null && livePosition !== undefined
+            && Number.isFinite(livePosition) && livePosition - video.currentTime > 5) {
+          video.currentTime = livePosition;
+          setIsRecovering(false);
+          setMessage('Live camera feed');
+        }
       });
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (!data.fatal) return;
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-          setStreamState('waiting');
-          setMessage('Waiting for the bridge stream. Retrying automatically…');
+          if (hasRenderedFrameRef.current) {
+            setIsRecovering(true);
+            setMessage('Connection recovering…');
+          } else {
+            setStreamState('waiting');
+            setMessage('Waiting for the bridge stream. Retrying automatically…');
+          }
           hls?.startLoad();
+          return;
+        }
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR && hasRenderedFrameRef.current) {
+          setIsRecovering(true);
+          setMessage('Connection recovering…');
+          hls?.recoverMediaError();
           return;
         }
         setStreamState('error');
@@ -180,8 +226,8 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
         <div className="flex min-w-0 items-center gap-2">
           <Radio className="h-4 w-4 shrink-0 text-[#e88724]" />
           <span className="truncate text-[10px] font-bold uppercase tracking-wide">TunnelSight live camera</span>
-          <span className={`flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[8px] font-bold ${streamState === 'live' ? 'bg-red-600/90 text-white' : 'bg-[#3b3b3b] text-[#bbb]'}`}>
-            {streamState === 'live' ? <><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />LIVE</> : streamState.toUpperCase()}
+          <span className={`flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[8px] font-bold ${hasRenderedFrame ? 'bg-red-600/90 text-white' : 'bg-[#3b3b3b] text-[#bbb]'}`}>
+            {hasRenderedFrame ? <><span className={`h-1.5 w-1.5 rounded-full bg-white ${isRecovering ? 'animate-pulse' : ''}`} />LIVE</> : streamState.toUpperCase()}
           </span>
         </div>
         <button onClick={closeViewer} title="Close live view" className="rounded-sm p-1 text-[#aaa] hover:bg-white/10 hover:text-white">
@@ -191,7 +237,7 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
 
       <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
         <video ref={videoRef} autoPlay muted playsInline preload="auto" className="absolute inset-0 h-full w-full bg-black object-contain" />
-        {streamState !== 'live' && (
+        {!hasRenderedFrame && streamState !== 'live' && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/35 p-4">
             <div className="max-w-sm text-center">
               {streamState === 'connecting' ? <LoaderCircle className="mx-auto mb-2 h-6 w-6 animate-spin text-[#e88724]" /> : <Radio className="mx-auto mb-2 h-6 w-6 text-[#e88724]" />}
@@ -216,10 +262,10 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
           <button onClick={() => setRetryToken((value) => value + 1)} className="flex items-center gap-1 rounded-sm px-2 py-1 text-[9px] text-[#ccc] hover:bg-white/10">
             <RefreshCw className="h-3 w-3" />Retry
           </button>
-          <button onClick={toggleRecording} disabled={streamState !== 'live' && !isRecording} className={`flex items-center gap-1 rounded-sm px-2 py-1 text-[9px] font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${isRecording ? 'bg-red-700 text-white' : 'border border-white/15 text-[#ddd] hover:bg-white/10'}`}>
+          <button onClick={toggleRecording} disabled={!hasRenderedFrame && !isRecording} className={`flex items-center gap-1 rounded-sm px-2 py-1 text-[9px] font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${isRecording ? 'bg-red-700 text-white' : 'border border-white/15 text-[#ddd] hover:bg-white/10'}`}>
             {isRecording ? <Square className="h-3 w-3 fill-current" /> : <Circle className="h-3 w-3 text-red-400" />}{isRecording ? 'Stop & save' : 'Record'}
           </button>
-          <button onClick={captureFrame} disabled={streamState !== 'live'} className="flex items-center gap-1 rounded-sm bg-[#e88724] px-2 py-1 text-[9px] font-bold text-black hover:bg-[#f0a44e] disabled:cursor-not-allowed disabled:opacity-40">
+          <button onClick={captureFrame} disabled={!hasRenderedFrame} className="flex items-center gap-1 rounded-sm bg-[#e88724] px-2 py-1 text-[9px] font-bold text-black hover:bg-[#f0a44e] disabled:cursor-not-allowed disabled:opacity-40">
             <Camera className="h-3 w-3" />Capture frame
           </button>
         </div>
