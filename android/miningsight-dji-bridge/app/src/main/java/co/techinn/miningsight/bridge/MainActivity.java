@@ -218,6 +218,7 @@ public class MainActivity extends Activity {
 
         djiNavButton.setOnClickListener(v -> selectMode(false));
         phoneNavButton.setOnClickListener(v -> selectMode(true));
+        setContentView(root);
         selectMode(false);
         diagnosticHandler.postDelayed(serverLogSyncTask, 1200);
     }
