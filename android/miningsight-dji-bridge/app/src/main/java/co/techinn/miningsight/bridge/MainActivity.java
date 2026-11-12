@@ -121,14 +121,14 @@ public class MainActivity extends Activity {
         networkText = text("Checking Wi-Fi and permissions…", 12, Color.LTGRAY);
         content.addView(networkText, marginParams(0, 8, 0, 0));
 
-        TextView note = text("For Phantom 3 Standard: connect this phone to the controller’s PHANTOM3 Wi-Fi, allow location and nearby Wi-Fi access, then wait for the camera preview before streaming.", 12, Color.GRAY);
+        TextView note = text("Phantom 3 Standard setup: power on the controller and aircraft and wait for the controller link light to go solid green. Connect this phone to PHANTOM3 Wi-Fi. For the bridge test, force-stop DJI GO first, then tap Connect / retry DJI. Open TunnelSight on another device to watch the stream.", 12, Color.GRAY);
         content.addView(note, marginParams(0, 12, 0, 0));
 
         LinearLayout diagnostics = new LinearLayout(this);
         diagnostics.setOrientation(LinearLayout.HORIZONTAL);
         Button copyLogs = button("Copy diagnostics");
         Button clearLogs = button("Clear diagnostics");
-        Button reconnect = button("Reconnect DJI");
+        Button reconnect = button("Connect / retry DJI");
         Button checkWifi = button("Check Wi-Fi and permissions");
         diagnostics.addView(copyLogs, weightParams(1, 8));
         diagnostics.addView(clearLogs, weightParams(1, 8));
@@ -163,8 +163,7 @@ public class MainActivity extends Activity {
                 registered = error == DJISDKError.REGISTRATION_SUCCESS;
                 if (registered) {
                     BridgeLog.info("DJI", "SDK registration succeeded");
-                    setStatus("SDK registered. Checking Wi-Fi permissions…");
-                    connectToProduct("SDK registration");
+                    setStatus("SDK registered. Power on and link the Phantom, connect to PHANTOM3 Wi-Fi, then tap Connect / retry DJI.");
                 } else {
                     BridgeLog.warn("DJI", "SDK registration failed: " + (error == null ? "unknown error" : error.getDescription()));
                     setStatus("SDK registration failed: " + (error == null ? "unknown error" : error.getDescription()));
@@ -257,16 +256,36 @@ public class MainActivity extends Activity {
         if (!ssid.toUpperCase().contains("PHANTOM3")) {
             BridgeLog.warn("Wi-Fi", "Connected Wi-Fi does not have the default Phantom 3 name (it may have been renamed): " + ssid);
         }
-        BridgeLog.info("DJI", "Starting product connection (" + reason + "); Wi-Fi=" + ssid);
-        connectionStarted = true;
+        if (productConnected) {
+            setStatus("DJI product is already connected. Wait for the camera preview.");
+            return;
+        }
+        if (connectionStarted) {
+            BridgeLog.info("DJI", "Connection scan already active; ignoring duplicate request (" + reason + ")");
+            setStatus("DJI connection scan is still active. Wait up to 15 seconds before retrying.");
+            return;
+        }
+        BridgeLog.info("DJI", "Starting product connection (" + reason + "); Wi-Fi=" + ssid
+                + ", package=" + getPackageName() + ", sdk=" + DJISDKManager.getInstance().getSDKVersion());
         setStatus("Connecting to DJI controller over " + ssid + "…");
         boolean started = DJISDKManager.getInstance().startConnectionToProduct();
+        connectionStarted = started;
         BridgeLog.info("DJI", "startConnectionToProduct returned " + started);
         logProductState("immediate");
         diagnosticHandler.postDelayed(() -> logProductState("3 seconds"), 3000);
         diagnosticHandler.postDelayed(() -> logProductState("10 seconds"), 10000);
         diagnosticHandler.postDelayed(() -> logProductState("30 seconds"), 30000);
-        if (!started) setStatus("DJI did not start a new connection attempt. Check diagnostics and tap Reconnect DJI.");
+        if (!started) {
+            setStatus("DJI rejected the connection start. Confirm DJI GO is force-stopped, the aircraft is linked to the controller, then tap Connect / retry DJI once.");
+        } else {
+            diagnosticHandler.postDelayed(() -> {
+                if (connectionStarted && !productConnected) {
+                    connectionStarted = false;
+                    BridgeLog.warn("DJI", "No product callback after 15 seconds; retry is enabled");
+                    setStatus("No DJI product detected yet. Verify DJI GO is force-stopped and the controller link light is solid green, then retry.");
+                }
+            }, 15000);
+        }
     }
 
     private void logProductState(String elapsed) {
@@ -427,7 +446,7 @@ public class MainActivity extends Activity {
         if (requestCode == REQUEST_DJI_PERMISSIONS || requestCode == REQUEST_LOCATION) {
             if (hasDjiConnectionPermissions()) {
                 if (!registered) registerDjiSdk();
-                else connectToProduct("permissions granted");
+                else setStatus("Permissions ready. Confirm the Phantom is linked and DJI GO is force-stopped, then tap Connect / retry DJI.");
             }
             else setStatus("DJI needs location and nearby Wi-Fi permissions to find the controller.");
         }

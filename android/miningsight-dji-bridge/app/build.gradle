@@ -15,8 +15,8 @@ android {
         // DJI MSDK V4.18 has Android 14 compatibility issues when targeting API 34+.
         // Keep targetSdk at 33 while still running on newer Android devices.
         targetSdk 33
-        versionCode 5
-        versionName '0.5.0'
+        versionCode 6
+        versionName '0.6.0'
         multiDexEnabled true
         manifestPlaceholders = [DJI_APP_KEY: djiAppKey]
     }

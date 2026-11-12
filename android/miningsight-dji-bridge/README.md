@@ -8,6 +8,7 @@ This is the lightweight Android field transmitter for a DJI Phantom 3 Standard. 
 - Uses DJI Mobile SDK 4.18 and `LiveStreamManager`.
 - The app has a small foreground screen for entering an RTMP publish URL and starting or stopping the stream.
 - A real DJI App Key is required at build time and must not be committed.
+- Bridge version 0.6.0 adds a user-triggered DJI connection attempt, suppresses duplicate scans, and reports when the SDK declines to start the connection.
 - The app has not been flight-tested from this server; that requires the Phantom, controller, Android phone, and a network-accessible ingest endpoint.
 
 ## Build
@@ -26,10 +27,12 @@ The APK is written to `app/build/outputs/apk/debug/app-debug.apk`. Set `DJI_APP_
 
 ## Field flow
 
-1. Activate the aircraft and complete DJI's first-run requirements in DJI GO.
-2. Connect the Android phone to the Phantom 3 Standard controller's Wi-Fi.
-3. Give the app the protected RTMP publish URL issued by the MiningSight stream service.
-4. Start the stream and open MiningSight in a browser to view the live feed and capture frames.
+1. Complete DJI's one-time aircraft activation in DJI GO.
+2. Power on the remote controller and aircraft; wait for the controller link indicator to become solid green.
+3. Connect the Android phone to the controller's `PHANTOM3_…` Wi-Fi.
+4. Force-stop DJI GO and other DJI camera apps before testing the bridge. Keep only the bridge app connected during a test; use a second device to view TunnelSight.
+5. Open the bridge app, tap **Connect / retry DJI**, and wait for its local camera preview before starting the RTMP stream.
+6. Enter the protected RTMP publish URL issued by the MiningSight stream service, start streaming, then view TunnelSight in a browser.
 
 The Phantom 3 Standard uses the controller's Wi-Fi connection rather than the USB accessory flow used by newer DJI products. The default RTMP ingest address points to the TunnelSight VPS on port 1935; use the protected publish URL when authentication is enabled. Browser playback is available at `https://tunnelsight.applications.co.zw/dji/live/index.m3u8` and in the app's live viewport.
 
