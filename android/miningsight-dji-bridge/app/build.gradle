@@ -12,9 +12,11 @@ android {
     defaultConfig {
         applicationId 'com.techinn.djiwebstreamer'
         minSdk 23
-        targetSdk 35
-        versionCode 2
-        versionName '0.2.0'
+        // DJI MSDK V4.18 has Android 14 compatibility issues when targeting API 34+.
+        // Keep targetSdk at 33 while still running on newer Android devices.
+        targetSdk 33
+        versionCode 3
+        versionName '0.3.0'
         multiDexEnabled true
         manifestPlaceholders = [DJI_APP_KEY: djiAppKey]
     }
