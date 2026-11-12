@@ -1,25 +1,29 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
-import { Camera, LoaderCircle, Pause, Play, Radio, RefreshCw, Volume2, VolumeX, X } from 'lucide-react';
+import { Camera, Circle, LoaderCircle, Pause, Play, Radio, RefreshCw, Square, Volume2, VolumeX, X } from 'lucide-react';
 
 type StreamState = 'connecting' | 'waiting' | 'live' | 'error';
 
 interface LiveStreamViewerProps {
   onClose: () => void;
   onCapture: (dataUrl: string, name: string) => void;
+  onSaveFile?: (file: File) => void;
   sourceUrl?: string;
 }
 
 const DEFAULT_SOURCE = '/dji/live/index.m3u8';
 
-export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onCapture, sourceUrl = DEFAULT_SOURCE }) => {
+export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onCapture, onSaveFile, sourceUrl = DEFAULT_SOURCE }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const recordingChunksRef = useRef<Blob[]>([]);
   const [retryToken, setRetryToken] = useState(0);
   const [streamState, setStreamState] = useState<StreamState>('connecting');
   const [message, setMessage] = useState('Connecting to the DJI live relay…');
   const [isPaused, setIsPaused] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
+  const [isRecording, setIsRecording] = useState(false);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -120,9 +124,55 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
     }
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    onCapture(canvas.toDataURL('image/jpeg', 0.92), `DJI live frame ${timestamp}.jpg`);
-    setMessage('Frame captured and sent to AI Survey as a reconstruction reference.');
-  }, [onCapture]);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    const filename = `DJI-live-frame-${timestamp}.jpg`;
+    onCapture(dataUrl, filename);
+    void fetch(dataUrl).then((response) => response.blob()).then((blob) => onSaveFile?.(new File([blob], filename, { type: 'image/jpeg' })));
+    setMessage('Frame sent to AI Survey and saved to this project.');
+  }, [onCapture, onSaveFile]);
+
+  const toggleRecording = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (recorderRef.current?.state === 'recording') {
+      recorderRef.current.stop();
+      return;
+    }
+    const captureStream = (video as HTMLVideoElement & { captureStream?: () => MediaStream }).captureStream;
+    if (!captureStream || typeof MediaRecorder === 'undefined') {
+      setMessage('This browser cannot record the live playback. Use Capture frame instead.');
+      return;
+    }
+    try {
+      const stream = captureStream.call(video);
+      const mimeType = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find((type) => MediaRecorder.isTypeSupported(type));
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      recordingChunksRef.current = [];
+      recorder.ondataavailable = (event) => { if (event.data.size) recordingChunksRef.current.push(event.data); };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const blob = new Blob(recordingChunksRef.current, { type: recorder.mimeType || 'video/webm' });
+        recordingChunksRef.current = [];
+        recorderRef.current = null;
+        setIsRecording(false);
+        if (!blob.size) { setMessage('No video data was captured. Wait for a live picture and try again.'); return; }
+        const filename = `DJI-live-recording-${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
+        onSaveFile?.(new File([blob], filename, { type: blob.type }));
+        setMessage(`Recording saved to this project (${(blob.size / (1024 * 1024)).toFixed(1)} MB).`);
+      };
+      recorder.start(1000);
+      recorderRef.current = recorder;
+      setIsRecording(true);
+      setMessage('Recording live playback. Stop to save the WebM file to this project.');
+    } catch (error) {
+      setMessage(error instanceof Error ? `Recording could not start: ${error.message}` : 'Recording could not start.');
+    }
+  }, [onSaveFile]);
+
+  const closeViewer = useCallback(() => {
+    if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
+    onClose();
+  }, [onClose]);
 
   return (
     <section className="absolute inset-x-0 top-7 bottom-0 z-[40] flex min-h-0 flex-col overflow-hidden border-t border-[#343434] bg-[#111] text-[#ddd]">
@@ -134,7 +184,7 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
             {streamState === 'live' ? <><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />LIVE</> : streamState.toUpperCase()}
           </span>
         </div>
-        <button onClick={onClose} title="Close live view" className="rounded-sm p-1 text-[#aaa] hover:bg-white/10 hover:text-white">
+        <button onClick={closeViewer} title="Close live view" className="rounded-sm p-1 text-[#aaa] hover:bg-white/10 hover:text-white">
           <X className="h-4 w-4" />
         </button>
       </header>
@@ -165,6 +215,9 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
         <div className="flex shrink-0 items-center gap-1.5">
           <button onClick={() => setRetryToken((value) => value + 1)} className="flex items-center gap-1 rounded-sm px-2 py-1 text-[9px] text-[#ccc] hover:bg-white/10">
             <RefreshCw className="h-3 w-3" />Retry
+          </button>
+          <button onClick={toggleRecording} disabled={streamState !== 'live' && !isRecording} className={`flex items-center gap-1 rounded-sm px-2 py-1 text-[9px] font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${isRecording ? 'bg-red-700 text-white' : 'border border-white/15 text-[#ddd] hover:bg-white/10'}`}>
+            {isRecording ? <Square className="h-3 w-3 fill-current" /> : <Circle className="h-3 w-3 text-red-400" />}{isRecording ? 'Stop & save' : 'Record'}
           </button>
           <button onClick={captureFrame} disabled={streamState !== 'live'} className="flex items-center gap-1 rounded-sm bg-[#e88724] px-2 py-1 text-[9px] font-bold text-black hover:bg-[#f0a44e] disabled:cursor-not-allowed disabled:opacity-40">
             <Camera className="h-3 w-3" />Capture frame

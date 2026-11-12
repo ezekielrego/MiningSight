@@ -52,6 +52,7 @@ interface AIGeologicalMapperPanelProps {
   savedReconstructionBrief?: ReconstructionBrief | null;
   onSaveReconstructionBrief?: (brief: ReconstructionBrief) => void;
   capturedReferenceImage?: { dataUrl: string; name: string } | null;
+  projectAssets?: ProjectAsset[];
   mapGeometry?: ReconstructionMapGeometry | null;
   mapSelection?: ReconstructionMapSelection | null;
   mapMarkingEnabled?: boolean;
@@ -114,6 +115,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   savedReconstructionBrief = null,
   onSaveReconstructionBrief,
   capturedReferenceImage = null,
+  projectAssets = [],
   mapGeometry = null,
   mapSelection = null,
   mapMarkingEnabled = false,
@@ -134,6 +136,10 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   const [reconstructImage, setReconstructImage] = useState<string>('/assets/reference/rugged_timbered_mine_reference.png');
   const [reconstructImageName, setReconstructImageName] = useState('rugged_timbered_mine_reference.png');
   const [reconstructReferenceLoading, setReconstructReferenceLoading] = useState(false);
+  const [showProjectFilePicker, setShowProjectFilePicker] = useState(false);
+  const [selectedProjectFileIds, setSelectedProjectFileIds] = useState<string[]>([]);
+  const [projectFilePreview, setProjectFilePreview] = useState<{ name: string; url: string } | null>(null);
+  const [projectFileBusy, setProjectFileBusy] = useState(false);
   const [reconstructTargetMode, setReconstructTargetMode] = useState<ReconstructionBrief['targetMode']>('extend-current');
   const [reconstructBasePresetId, setReconstructBasePresetId] = useState(currentPresetId || 'rugged_timbered_photo');
   const [reconstructMapName, setReconstructMapName] = useState('');
@@ -459,6 +465,63 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
     reader.onerror = () => reject(new Error('Could not read the reference image.'));
     reader.readAsDataURL(file);
   });
+
+  const readProjectAsset = async (asset: ProjectAsset) => {
+    const response = await fetch(asset.url, { headers: authToken ? { Authorization: `Bearer ${authToken}` } : {} });
+    if (!response.ok) throw new Error(`Could not load ${asset.name} (${response.status}).`);
+    const blob = await response.blob();
+    if (blob.size > 25 * 1024 * 1024) throw new Error(`${asset.name} exceeds the 25 MB AI reference limit.`);
+    return readFileAsDataUrl(blob);
+  };
+
+  const previewProjectAsset = async (asset: ProjectAsset) => {
+    setProjectFileBusy(true);
+    try {
+      setProjectFilePreview({ name: asset.name, url: await readProjectAsset(asset) });
+    } catch (error: any) {
+      setWorldError(error.message || 'Could not preview this project file.');
+    } finally {
+      setProjectFileBusy(false);
+    }
+  };
+
+  const attachSelectedProjectImages = async (asMap = false) => {
+    const selected = projectAssets.filter((asset) => selectedProjectFileIds.includes(asset.id) && asset.kind === 'image');
+    if (!selected.length) return;
+    setProjectFileBusy(true);
+    try {
+      const loaded = await Promise.all(selected.map(async (asset) => ({ asset, dataUrl: await readProjectAsset(asset) })));
+      if (asMap) {
+        const first = loaded[0];
+        setReconstructMapImage(first.dataUrl);
+        setReconstructMapImageName(first.asset.name);
+        setReconstructMapName(first.asset.name);
+        setReconstructMapText('');
+        setWorldError('');
+        onStatusChange({ type: 'success', message: `Attached ${first.asset.name} as the reconstruction map.`, timestamp: new Date().toLocaleTimeString() });
+      } else {
+        const first = loaded[0];
+        setReconstructImage(first.dataUrl);
+        setReconstructImageName(first.asset.name);
+        setImages((previous) => {
+          const existing = new Set(previous.map((image) => image.name));
+          const additions = loaded.filter(({ asset }) => !existing.has(asset.name)).map(({ asset, dataUrl }, index) => {
+            const sequence = previous.length + index + 1;
+            return { id: `project_${asset.id}`, name: asset.name, dataUrl, distanceFromLast: 2.5, stationId: `ST-${String(sequence).padStart(2, '0')}`, depthBelowSurface: 140 + sequence * 2.5, headingAzimuth: 115, pitchAngle: -4, rockStrata: 'Unspecified', rqdPercent: 75, fractureSpacingCm: 25 };
+          });
+          return [...previous, ...additions];
+        });
+        setWorldError('');
+        onStatusChange({ type: 'success', message: `Attached ${loaded.length} project image${loaded.length === 1 ? '' : 's'} to reconstruction and survey inputs.`, details: 'The first selected image is the primary reference; all selected images are available in the survey set.', timestamp: new Date().toLocaleTimeString() });
+      }
+      setShowProjectFilePicker(false);
+      setSelectedProjectFileIds([]);
+    } catch (error: any) {
+      setWorldError(error.message || 'Could not attach selected project files.');
+    } finally {
+      setProjectFileBusy(false);
+    }
+  };
 
   const handleReconstructionReference = async (file?: File) => {
     if (!file) return;
@@ -2158,6 +2221,9 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                   <span className="mt-0.5 block text-[8.5px] text-[#888]">Drag/drop image, JSON, GeoJSON, CSV, TXT · {reconstructMapImage || reconstructMapText ? 'ready to interpret' : 'required for extensions'}</span>
                 </label>
               </div>
+              <button onClick={() => { setSelectedProjectFileIds([]); setShowProjectFilePicker(true); }} disabled={!projectAssets.some((asset) => asset.kind === 'image') || isReconstructing} className="w-full border border-[#555] bg-[#292929] px-2 py-1.5 text-left text-[9.5px] text-[#ddd] hover:border-[#e88724] disabled:opacity-40">
+                Choose images from this project’s files · {projectAssets.filter((asset) => asset.kind === 'image').length} available
+              </button>
 
               <div className="grid grid-cols-4 gap-1.5 text-[9px]">
                 <label className="text-[#999] col-span-1">Next part offset (m)
@@ -2207,11 +2273,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
               </div>
 
               <div className="relative rounded overflow-hidden border border-[#444] bg-[#181818] flex items-center justify-center max-h-[160px]">
-                <img
-                  src={reconstructImage}
-                  alt="Reference Mine Tunnel"
-                  className="max-h-[160px] object-contain select-none"
-                />
+                <button onClick={() => setProjectFilePreview({ name: reconstructImageName, url: reconstructImage })} title="View full-size reference" className="max-h-[160px] cursor-zoom-in"><img src={reconstructImage} alt="Reference image" className="max-h-[160px] object-contain select-none" /></button>
                 <div className="absolute top-1.5 left-1.5 bg-black/80 text-[#e88724] font-mono text-[9px] px-1.5 py-0.5 rounded border border-[#444]">
                   4-Tier Side Lagging • Inward Batter • Adit Bore
                 </div>
@@ -2335,6 +2397,30 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
           </div>
         )}
       </div>
+      {showProjectFilePicker && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/75 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowProjectFilePicker(false); }}>
+          <section className="flex max-h-[85vh] w-full max-w-4xl flex-col border border-[#555] bg-[#202020] text-[#eee] shadow-2xl">
+            <header className="flex items-center justify-between border-b border-white/10 px-4 py-3"><div><h2 className="text-sm font-semibold">Project images</h2><p className="mt-1 text-[10px] text-[#aaa]">{projectTitle} · select multiple images, preview them, then attach.</p></div><button onClick={() => setShowProjectFilePicker(false)} className="px-2 py-1 text-[#aaa] hover:text-white">×</button></header>
+            <div className="min-h-0 flex-1 overflow-y-auto p-3">
+              {projectAssets.filter((asset) => asset.kind === 'image').length ? <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                {projectAssets.filter((asset) => asset.kind === 'image').map((asset) => {
+                  const checked = selectedProjectFileIds.includes(asset.id);
+                  return <article key={asset.id} className={`overflow-hidden border ${checked ? 'border-[#e88724] bg-[#342719]' : 'border-[#444] bg-[#292929]'}`}>
+                    <button onClick={() => void previewProjectAsset(asset)} className="flex h-32 w-full items-center justify-center bg-[#151515] p-1" title="Preview full size"><img src={asset.thumbnailUrl || asset.url} alt={asset.name} className="max-h-full max-w-full object-contain" loading="lazy" /></button>
+                    <div className="flex items-start gap-2 p-2"><input type="checkbox" checked={checked} onChange={() => setSelectedProjectFileIds((current) => checked ? current.filter((id) => id !== asset.id) : [...current, asset.id])} className="mt-0.5 accent-[#e88724]" /><button onClick={() => void previewProjectAsset(asset)} className="min-w-0 text-left"><span className="block truncate text-[10px]" title={asset.name}>{asset.name}</span><span className="text-[9px] text-[#888]">{(asset.size / (1024 * 1024)).toFixed(1)} MB · Preview</span></button></div>
+                  </article>;
+                })}
+              </div> : <p className="p-10 text-center text-xs text-[#999]">This project has no uploaded image files yet.</p>}
+            </div>
+            <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 px-3 py-2.5"><span className="text-[10px] text-[#aaa]">{selectedProjectFileIds.length} selected · primary reference uses the first selected image</span><div className="flex gap-2"><button onClick={() => void attachSelectedProjectImages(true)} disabled={!selectedProjectFileIds.length || projectFileBusy} className="border border-[#555] px-3 py-1.5 text-[10px] disabled:opacity-40">Use first as map</button><button onClick={() => void attachSelectedProjectImages(false)} disabled={!selectedProjectFileIds.length || projectFileBusy} className="bg-[#e88724] px-3 py-1.5 text-[10px] font-semibold text-black disabled:opacity-40">{projectFileBusy ? 'Loading…' : 'Attach selected'}</button></div></footer>
+          </section>
+        </div>
+      )}
+      {projectFilePreview && (
+        <div className="fixed inset-0 z-[160] flex items-center justify-center bg-black/90 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setProjectFilePreview(null); }}>
+          <section className="flex max-h-[95vh] w-full max-w-6xl flex-col border border-[#555] bg-[#171717] text-white"><header className="flex items-center justify-between gap-3 border-b border-white/10 px-3 py-2"><span className="truncate text-xs" title={projectFilePreview.name}>{projectFilePreview.name}</span><button onClick={() => setProjectFilePreview(null)} className="px-2 py-1 text-[#aaa] hover:text-white">Close</button></header><div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-2"><img src={projectFilePreview.url} alt={projectFilePreview.name} className="max-h-[calc(95vh-60px)] max-w-full object-contain" /></div></section>
+        </div>
+      )}
     </div>
   );
 };

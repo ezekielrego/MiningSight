@@ -263,6 +263,8 @@ export default function App() {
   // Modal dialogs
   const [showPictureViewer, setShowPictureViewer] = useState<boolean>(false);
   const [isLiveStreamOpen, setIsLiveStreamOpen] = useState(false);
+  const [showLiveProjectChooser, setShowLiveProjectChooser] = useState(false);
+  const [liveProjectNameDraft, setLiveProjectNameDraft] = useState('DJI Live Survey');
   const [showRenderSettings, setShowRenderSettings] = useState<boolean>(false);
   const [showHelpGuide, setShowHelpGuide] = useState(false);
   const [showAboutModal, setShowAboutModal] = useState(false);
@@ -684,7 +686,7 @@ export default function App() {
           : `${providerProject.assets?.length || 0} provider asset${providerProject.assets?.length === 1 ? '' : 's'} available. Click an asset to open it in the viewer.`,
         timestamp: new Date().toLocaleTimeString(),
       });
-      return;
+      return false;
     }
     // Clear the previous project's asset view immediately while the selected project loads.
     setActiveProjectId(projectId);
@@ -728,8 +730,10 @@ export default function App() {
         setActiveTourId(project.tours[0].id);
       }
       setStatusAlert({ type: 'success', message: `Loaded server project “${project.projectName}”.`, details: `${project.assets?.length || 0} linked assets are available in the Objects panel.`, timestamp: new Date().toLocaleTimeString() });
+      return true;
     } catch (error: any) {
       setStatusAlert({ type: 'error', message: `Project load failed: ${error.message}`, timestamp: new Date().toLocaleTimeString() });
+      return false;
     }
   }, [authToken, providerProjects, saveTours]);
 
@@ -808,6 +812,45 @@ export default function App() {
       setStatusAlert({ type: 'error', message: `Project creation failed: ${error.message}`, timestamp: new Date().toLocaleTimeString() });
     }
   }, [authToken, authUser, handleUploadAssets, newProjectFiles, newProjectName]);
+
+  const openLiveInProject = useCallback(async (projectId: string) => {
+    const loaded = await handleSelectServerProject(projectId);
+    if (!loaded) return;
+    setShowLiveProjectChooser(false);
+    setIsLiveStreamOpen(true);
+  }, [handleSelectServerProject]);
+
+  const createLiveProject = useCallback(async () => {
+    const name = liveProjectNameDraft.trim();
+    if (!name || !authToken || !authUser) {
+      setAuthError('Sign in to save live captures and recordings to a project.');
+      setShowAuthModal(true);
+      return;
+    }
+    try {
+      const response = await fetch('/api/reconstruction/ai/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ projectName: name, projectData: { projectName: name, assets: [], reconstructionBrief: null } }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || !json.success || !json.project?.id) throw new Error(json.message || 'Could not create project.');
+      const created = json.project as ProjectSummary;
+      setProjects((current) => [created, ...current.filter((project) => project.id !== created.id)]);
+      setStatusAlert({ type: 'success', message: `Created “${name}” for the live survey.`, details: 'Captured frames and saved browser recordings will appear in this project’s Objects files.', timestamp: new Date().toLocaleTimeString() });
+      await openLiveInProject(created.id);
+    } catch (error: any) {
+      setStatusAlert({ type: 'error', message: `Could not prepare live project: ${error.message || 'Unknown error'}`, timestamp: new Date().toLocaleTimeString() });
+    }
+  }, [authToken, authUser, liveProjectNameDraft, openLiveInProject]);
+
+  const handleLiveFileSave = useCallback((file: File) => {
+    if (!activeProjectId || activeProjectId.startsWith('provider_')) {
+      setStatusAlert({ type: 'error', message: 'Choose a writable project before saving live media.', timestamp: new Date().toLocaleTimeString() });
+      return;
+    }
+    void handleUploadAssets([file], activeProjectId, projectName);
+  }, [activeProjectId, handleUploadAssets, projectName]);
 
   const handleAddMediaMarker = useCallback((timeSeconds: number, note: string) => {
     if (!activeAssetId) return;
@@ -1930,7 +1973,13 @@ export default function App() {
         onTriggerRender={() => setShowPictureViewer(true)}
         onOpenRenderSettings={() => setShowRenderSettings(true)}
         onOpenPictureViewer={() => setShowPictureViewer(true)}
-        onOpenLiveStream={() => setIsLiveStreamOpen((open) => !open)}
+        onOpenLiveStream={() => {
+          if (isLiveStreamOpen) setIsLiveStreamOpen(false);
+          else if (!authUser || !authToken) {
+            setAuthError('Sign in to choose a project and save live captures.');
+            setShowAuthModal(true);
+          } else setShowLiveProjectChooser(true);
+        }}
         isLiveStreamOpen={isLiveStreamOpen}
       />
 
@@ -2003,6 +2052,7 @@ export default function App() {
             activeAssetName={activeAsset?.name || null}
             savedReconstructionBrief={reconstructionBrief}
             capturedReferenceImage={capturedReferenceImage}
+            projectAssets={projectAssets}
             mapGeometry={reconstructionMapGeometry}
             mapSelection={reconstructionMapSelection}
             mapMarkingEnabled={mapMarkingEnabled}
@@ -2067,6 +2117,7 @@ export default function App() {
               setCapturedReferenceImage({ dataUrl, name });
               setActiveUpperTab('AI Survey');
             }}
+            onSaveLiveFile={handleLiveFileSave}
             liveStreamOpen={isLiveStreamOpen}
             onCloseLiveStream={() => setIsLiveStreamOpen(false)}
             mapGeometry={reconstructionMapGeometry}
@@ -2240,6 +2291,33 @@ export default function App() {
               <div className="text-[8.5px] text-[#888] leading-relaxed">Google accounts only. Your projects and uploaded files are private to the Google account you use here.</div>
             </div>}
           </div>
+        </div>
+      )}
+
+      {showLiveProjectChooser && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowLiveProjectChooser(false); }}>
+          <section className="w-full max-w-lg border border-[#555] bg-[#202020] text-[#eee] shadow-2xl">
+            <header className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+              <div><h2 className="text-sm font-semibold">Choose a project for live survey</h2><p className="mt-1 text-[11px] text-[#aaa]">Frames and recordings you save will be stored in this project’s files.</p></div>
+              <button onClick={() => setShowLiveProjectChooser(false)} className="px-2 py-1 text-[#aaa] hover:text-white" aria-label="Close">×</button>
+            </header>
+            <div className="max-h-[55vh] space-y-1 overflow-y-auto p-3">
+              {projects.filter((project) => !project.provider && !project.readOnly).map((project) => (
+                <button key={project.id} onClick={() => void openLiveInProject(project.id)} className="flex w-full items-center justify-between border border-[#3d3d3d] bg-[#282828] px-3 py-2.5 text-left hover:border-[#e88724] hover:bg-[#30291f]">
+                  <span className="min-w-0"><span className="block truncate text-xs font-medium">{project.projectName}</span><span className="mt-0.5 block text-[10px] text-[#999]">{project.assetCount || project.assets?.length || 0} files</span></span>
+                  <span className="ml-3 text-[10px] text-[#e88724]">Open live →</span>
+                </button>
+              ))}
+              {!projects.some((project) => !project.provider && !project.readOnly) && <p className="px-2 py-4 text-center text-[11px] text-[#999]">No saved projects yet. Create one below.</p>}
+            </div>
+            <div className="border-t border-white/10 p-3">
+              <label className="block text-[10px] text-[#aaa]">Create a new project</label>
+              <div className="mt-1 flex gap-2">
+                <input value={liveProjectNameDraft} onChange={(event) => setLiveProjectNameDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void createLiveProject(); }} maxLength={120} placeholder="Project name" className="min-w-0 flex-1 border border-[#4a4a4a] bg-[#171717] px-2 py-2 text-xs outline-none focus:border-[#e88724]" />
+                <button onClick={() => void createLiveProject()} disabled={!liveProjectNameDraft.trim()} className="bg-[#e88724] px-3 py-2 text-[11px] font-semibold text-black disabled:opacity-40">Create & open</button>
+              </div>
+            </div>
+          </section>
         </div>
       )}
 

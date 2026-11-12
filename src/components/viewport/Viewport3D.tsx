@@ -143,6 +143,7 @@ interface Viewport3DProps {
   onAddGasMark?: (mark: GasMark) => void;
   onSetPlayback?: (isPlaying: boolean) => void;
   onCaptureReferenceImage?: (dataUrl: string, name: string) => void;
+  onSaveLiveFile?: (file: File) => void;
   mapGeometry?: ReconstructionMapGeometry | null;
   mapSelection?: ReconstructionMapSelection | null;
   mapMarkingEnabled?: boolean;
@@ -191,6 +192,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   onAddGasMark,
   onSetPlayback,
   onCaptureReferenceImage,
+  onSaveLiveFile,
   mapGeometry = null,
   mapSelection = null,
   mapMarkingEnabled = false,
@@ -2519,6 +2521,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         <LiveStreamViewer
           onClose={() => onCloseLiveStream?.()}
           onCapture={(dataUrl, name) => onCaptureReferenceImage?.(dataUrl, name)}
+          onSaveFile={onSaveLiveFile}
         />
       )}
     </div>
