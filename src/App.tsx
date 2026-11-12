@@ -342,14 +342,21 @@ export default function App() {
       setLiveStreamSourceUrl(null);
       return;
     }
-    fetch('/api/bridge/live', { headers: { Authorization: `Bearer ${authToken}` } })
+    let cancelled = false;
+    const refresh = () => fetch('/api/bridge/live', { headers: { Authorization: `Bearer ${authToken}` }, cache: 'no-store' })
       .then(async (response) => {
         const json = await response.json().catch(() => ({}));
         if (!response.ok || !json.success) throw new Error(json.message || json.error || 'No linked bridge stream');
-        setLiveStreamSourceUrl(typeof json.playbackUrl === 'string' ? json.playbackUrl : null);
+        if (!cancelled) setLiveStreamSourceUrl(typeof json.playbackUrl === 'string' ? json.playbackUrl : null);
       })
-      .catch(() => setLiveStreamSourceUrl(null));
-  }, [authToken]);
+      .catch(() => { if (!cancelled) setLiveStreamSourceUrl(null); });
+    void refresh();
+    const timer = isLiveStreamOpen ? window.setInterval(refresh, 10000) : null;
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearInterval(timer);
+    };
+  }, [authToken, isLiveStreamOpen]);
   const refreshBridgeLogs = useCallback(async () => {
     if (!authToken) return;
     setBridgeLogsLoading(true);

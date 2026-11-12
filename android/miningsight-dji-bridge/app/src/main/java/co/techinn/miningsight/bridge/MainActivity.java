@@ -15,6 +15,8 @@ import android.text.InputType;
 import android.view.View;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.TextureView;
+import android.graphics.SurfaceTexture;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -68,7 +70,7 @@ public class MainActivity extends Activity {
     private Button phoneStartButton;
     private Button phoneStopButton;
     private TextView phoneStatusText;
-    private SurfaceView phonePreview;
+    private TextureView phonePreview;
     private PhoneCameraStreamer phoneStreamer;
     private EditText accountEmailInput;
     private Button linkAccountButton;
@@ -312,18 +314,21 @@ public class MainActivity extends Activity {
         FrameLayout screen = new FrameLayout(this);
         screen.setBackgroundColor(Color.BLACK);
 
-        phonePreview = new SurfaceView(this);
-        phonePreview.setBackgroundColor(Color.BLACK);
+        phonePreview = new TextureView(this);
         phonePreview.setKeepScreenOn(true);
-        phonePreview.getHolder().addCallback(new SurfaceHolder.Callback() {
-            @Override public void surfaceCreated(SurfaceHolder holder) {
-                if (phoneMode) phonePreview.postDelayed(MainActivity.this::ensurePhonePreview, 150);
+        phonePreview.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
+            @Override public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
+                if (phoneMode) ensurePhonePreview();
             }
-            @Override public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-                if (phoneMode && width > 0 && height > 0) phonePreview.post(MainActivity.this::ensurePhonePreview);
+            @Override public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
+                if (phoneStreamer != null) phoneStreamer.resizePreview(width, height);
             }
-            @Override public void surfaceDestroyed(SurfaceHolder holder) {
-                BridgeLog.info("Phone", "Phone preview surface destroyed");
+            @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
+                if (phoneStreamer != null) phoneStreamer.stopPreview();
+                return true;
+            }
+            @Override public void onSurfaceTextureUpdated(SurfaceTexture surface) {
+                if (phoneStreamer != null) phoneStreamer.onPreviewFrame();
             }
         });
         screen.addView(phonePreview, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
@@ -378,7 +383,11 @@ public class MainActivity extends Activity {
 
             @Override public void onPhoneStreamError(String message) {
                 BridgeLog.warn("Phone", message);
-                runOnUiThread(() -> { if (phoneStatusText != null) phoneStatusText.setText(message); });
+                runOnUiThread(() -> {
+                    if (phoneStatusText != null) phoneStatusText.setText(message);
+                    if (phoneStartButton != null) phoneStartButton.setEnabled(true);
+                    if (phoneStopButton != null) phoneStopButton.setEnabled(false);
+                });
             }
         });
 
@@ -410,6 +419,7 @@ public class MainActivity extends Activity {
             if (phonePreview != null) phonePreview.postDelayed(this::ensurePhonePreview, 250);
         } else {
             if (phoneStreamer != null && phoneStreamer.isStreaming()) stopPhoneStream();
+            if (phoneStreamer != null) phoneStreamer.stopPreview();
             refreshNetworkDiagnostics("DJI mode selected");
             setStatus(registered ? "DJI mode ready. Connect to the Phantom controller when available." : "Waiting for DJI SDK registration…");
         }
@@ -922,6 +932,15 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         refreshNetworkDiagnostics("resume");
+        if (phoneMode && phonePreview != null) phonePreview.post(this::ensurePhonePreview);
+    }
+
+    @Override protected void onPause() {
+        if (phoneStreamer != null) {
+            if (phoneStreamer.isStreaming()) stopPhoneStream();
+            phoneStreamer.stopPreview();
+        }
+        super.onPause();
     }
 
     private TextView text(String value, int size, int color) {

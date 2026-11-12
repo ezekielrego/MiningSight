@@ -429,7 +429,7 @@ app.post('/api/bridge/link', async (req, res) => {
     deviceId,
     streamId,
     streamPath,
-    publishUrl: `rtmp://bridge:${encodeURIComponent(bridgeRtmpPassword)}@5.189.146.229:1935/${streamPath}`,
+    publishUrl: `rtmp://5.189.146.229:1935/${streamPath}?user=bridge&pass=${encodeURIComponent(bridgeRtmpPassword)}`,
     playbackUrl: `https://tunnelsight.applications.co.zw/${streamPath}/index.m3u8`,
     updatedAt: new Date().toISOString(),
   };

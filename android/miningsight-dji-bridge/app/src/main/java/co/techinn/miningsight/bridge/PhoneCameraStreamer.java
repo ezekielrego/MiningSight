@@ -6,7 +6,9 @@ import com.pedro.common.ConnectChecker;
 import com.pedro.common.StreamingStatsReport;
 import com.pedro.library.rtmp.RtmpStream;
 import com.pedro.encoder.input.sources.video.Camera2Source;
-import android.view.SurfaceView;
+import com.pedro.encoder.input.video.CameraCallbacks;
+import com.pedro.encoder.input.video.CameraHelper;
+import android.view.TextureView;
 
 /**
  * Direct handset camera source. RootEncoder handles camera2 preview, H.264/AAC
@@ -21,20 +23,44 @@ final class PhoneCameraStreamer implements ConnectChecker {
 
     private final RtmpStream camera;
     private final Listener listener;
-    private final SurfaceView preview;
+    private final TextureView preview;
+    private boolean videoPrepared;
+    private boolean audioPrepared;
+    private boolean firstFrame;
+    private boolean released;
+    private boolean stopping;
 
-    PhoneCameraStreamer(Context context, SurfaceView preview, Listener listener) {
+    PhoneCameraStreamer(Context context, TextureView preview, Listener listener) {
         this.listener = listener;
         this.preview = preview;
         this.camera = new RtmpStream(context, this);
+        ((Camera2Source) camera.getVideoSource()).setCameraCallback(new CameraCallbacks() {
+            @Override public void onCameraChanged(CameraHelper.Facing facing) {
+                BridgeLog.info("Phone", "Camera lens: " + facing);
+            }
+            @Override public void onCameraOpened() { BridgeLog.info("Phone", "Android camera device opened"); }
+            @Override public void onCameraDisconnected() { BridgeLog.warn("Phone", "Android camera disconnected"); }
+            @Override public void onCameraError(String error) {
+                BridgeLog.warn("Phone", "Android camera error: " + error);
+                if (listener != null) listener.onPhoneStreamError("Camera error: " + error);
+            }
+        });
     }
 
-    boolean prepare() {
+    PhoneCameraStreamer(RtmpStream camera, TextureView preview, Listener listener) {
+        this.listener = listener;
+        this.preview = preview;
+        this.camera = camera;
+    }
+
+    private boolean prepareVideo() {
+        if (released) return false;
+        if (videoPrepared) return true;
         try {
-            boolean video = camera.prepareVideo(1280, 720, 1_500_000);
-            boolean audio = camera.prepareAudio(64 * 1024, true, 32_000);
-            if ((!video || !audio) && listener != null) listener.onPhoneStreamError("The phone camera or microphone could not be prepared.");
-            return video && audio;
+            if (camera.isOnPreview() || camera.isStreaming()) return false;
+            videoPrepared = camera.prepareVideo(1280, 720, 1_500_000, 30, 2, 90);
+            if (!videoPrepared && listener != null) listener.onPhoneStreamError("The camera does not support the requested video settings.");
+            return videoPrepared;
         } catch (Throwable error) {
             BridgeLog.error("Phone", "Camera preparation failed", error);
             if (listener != null) listener.onPhoneStreamError("Camera preparation failed: " + error.getMessage());
@@ -43,26 +69,39 @@ final class PhoneCameraStreamer implements ConnectChecker {
     }
 
     void startPreview() {
+        if (released || camera.isOnPreview() || !preview.isAvailable()
+                || preview.getWidth() <= 0 || preview.getHeight() <= 0) return;
         try {
-            if (!prepare()) return;
-            if (!camera.isOnPreview()) camera.startPreview(preview);
+            if (!prepareVideo()) return;
+            firstFrame = false;
+            camera.startPreview(preview);
             BridgeLog.info("Phone", "Camera preview start requested; preview=" + camera.isOnPreview());
-            if (camera.isOnPreview() && listener != null) listener.onPhoneStreamStatus("Phone camera preview active.");
+            if (listener != null) listener.onPhoneStreamStatus("Opening camera · waiting for first image…");
+            preview.postDelayed(() -> {
+                if (!released && camera.isOnPreview() && !firstFrame && listener != null)
+                    listener.onPhoneStreamError("Camera opened but no preview image arrived. Tap the camera switch to retry another lens.");
+            }, 10000);
         } catch (Throwable error) {
+            stopPreview();
             BridgeLog.error("Phone", "Camera preview failed", error);
             if (listener != null) listener.onPhoneStreamError("Camera preview failed: " + error.getMessage());
         }
     }
 
     void startStream(String url) {
+        if (released || camera.isStreaming()) return;
         try {
-            // Preview setup may reset the encoder. Prepare again immediately before publishing.
-            if (!prepare()) return;
-            if (!camera.isOnPreview()) camera.startPreview(preview);
+            if (!prepareVideo()) return;
+            if (!audioPrepared) {
+                audioPrepared = camera.prepareAudio(44100, false, 64000);
+                if (!audioPrepared) throw new IllegalStateException("Microphone encoder preparation failed");
+            }
+            startPreview();
             BridgeLog.info("Phone", "Starting handset camera stream to configured RTMP endpoint");
-            camera.startStream(url);
+            camera.startStream(normalizePublishUrl(url));
             if (listener != null) listener.onPhoneStreamStatus("Connecting phone camera to TunnelSight…");
         } catch (Throwable error) {
+            if (camera.isStreaming()) stopStream();
             BridgeLog.error("Phone", "Phone stream start failed", error);
             if (listener != null) listener.onPhoneStreamError("Phone stream could not start: " + error.getMessage());
         }
@@ -70,7 +109,14 @@ final class PhoneCameraStreamer implements ConnectChecker {
 
     void stopStream() {
         try {
-            if (camera.isStreaming()) camera.stopStream();
+            if (camera.isStreaming()) {
+                stopping = true;
+                boolean restored = camera.stopStream();
+                videoPrepared = restored;
+                audioPrepared = restored;
+                if (!restored) stopPreview();
+                stopping = false;
+            }
             if (listener != null) listener.onPhoneStreamStatus("Phone stream stopped.");
         } catch (Throwable error) {
             BridgeLog.error("Phone", "Phone stream stop failed", error);
@@ -95,6 +141,7 @@ final class PhoneCameraStreamer implements ConnectChecker {
         try {
             if (camera.isStreaming()) camera.stopStream();
             camera.release();
+            released = true;
         } catch (Throwable error) {
             BridgeLog.warn("Phone", "Camera release failed: " + error.getMessage());
         }
@@ -112,17 +159,21 @@ final class PhoneCameraStreamer implements ConnectChecker {
 
     @Override public void onConnectionFailed(String reason) {
         BridgeLog.warn("Phone", "RTMP connection failed: " + reason);
-        if (listener != null) listener.onPhoneStreamError("Phone stream connection failed: " + reason);
+        preview.post(() -> {
+            if (released) return;
+            stopStream();
+            if (listener != null) listener.onPhoneStreamError("Phone stream connection failed: " + reason);
+        });
     }
 
     @Override public void onDisconnect() {
         BridgeLog.info("Phone", "RTMP connection disconnected");
-        if (listener != null) listener.onPhoneStreamStatus("Phone stream disconnected.");
+        if (!stopping && listener != null) listener.onPhoneStreamStatus("Phone stream disconnected.");
     }
 
     @Override public void onAuthError() {
         BridgeLog.warn("Phone", "RTMP authentication failed");
-        if (listener != null) listener.onPhoneStreamError("RTMP authentication failed. Check the publish URL.");
+        onConnectionFailed("Relay authentication failed. Link your TunnelSight account again from the menu.");
     }
 
     @Override public void onAuthSuccess() {
@@ -135,5 +186,35 @@ final class PhoneCameraStreamer implements ConnectChecker {
 
     @Override public void onStreamingStats(StreamingStatsReport report) {
         // Keep diagnostics lightweight; the web viewer remains the monitoring surface.
+    }
+
+    void stopPreview() {
+        if (released) return;
+        try {
+            if (camera.isOnPreview()) camera.stopPreview();
+            firstFrame = false;
+        } catch (Throwable error) { BridgeLog.error("Phone", "Preview cleanup failed", error); }
+    }
+
+    void resizePreview(int width, int height) {
+        if (!released && camera.isOnPreview()) camera.getGlInterface().setPreviewResolution(width, height);
+    }
+
+    void onPreviewFrame() {
+        if (firstFrame || released) return;
+        firstFrame = true;
+        BridgeLog.info("Phone", "First camera image rendered in local preview");
+        if (!camera.isStreaming() && listener != null) listener.onPhoneStreamStatus("Camera image ready · tap ▶ to stream");
+    }
+
+    static String normalizePublishUrl(String url) throws Exception {
+        java.net.URI uri = java.net.URI.create(url);
+        if (uri.getUserInfo() == null) return url;
+        String[] credentials = uri.getUserInfo().split(":", 2);
+        String base = new java.net.URI(uri.getScheme(), null, uri.getHost(), uri.getPort(),
+                uri.getPath(), uri.getQuery(), null).toASCIIString();
+        return base + (uri.getQuery() == null ? "?" : "&") + "user="
+                + java.net.URLEncoder.encode(credentials[0], "UTF-8") + "&pass="
+                + java.net.URLEncoder.encode(credentials.length > 1 ? credentials[1] : "", "UTF-8");
     }
 }
