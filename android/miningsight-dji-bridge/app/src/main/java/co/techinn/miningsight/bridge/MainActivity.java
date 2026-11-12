@@ -85,6 +85,8 @@ public class MainActivity extends Activity {
     private final ExecutorService registrationExecutor = Executors.newSingleThreadExecutor();
     private volatile boolean productConnected;
     private boolean connectionStarted;
+    private android.net.ConnectivityManager.NetworkCallback controllerNetworkCallback;
+    private boolean connectionRetryPending;
     private final Handler diagnosticHandler = new Handler(Looper.getMainLooper());
     private final Runnable serverLogSyncTask = new Runnable() {
         @Override public void run() {
@@ -112,6 +114,7 @@ public class MainActivity extends Activity {
             BridgeLog.warn("Build", "Could not read app/SDK version: " + error.getMessage());
         }
         refreshNetworkDiagnostics("app launch");
+        watchControllerWifi();
         requestRuntimePermissions();
     }
 
@@ -358,10 +361,21 @@ public class MainActivity extends Activity {
         phoneStartButton = floatingButton("▶", "Start phone stream");
         phoneStopButton = floatingButton("■", "Stop stream");
         Button switchCamera = floatingButton("↺", "Switch front / back camera");
+        Button orientation = floatingButton("▭", "Switch portrait or landscape capture");
+        orientation.setTextSize(13);
+        orientation.setText("Portrait");
+        orientation.setOnClickListener(v -> {
+            boolean landscape = !"Landscape".contentEquals(orientation.getText());
+            if (phoneStreamer != null) phoneStreamer.setLandscape(landscape);
+            orientation.setText(landscape ? "Landscape" : "Portrait");
+            setRequestedOrientation(landscape ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                    : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+        });
         phoneStopButton.setEnabled(false);
         controls.addView(phoneStartButton, weightParams(1, 5));
         controls.addView(phoneStopButton, weightParams(1, 5));
         controls.addView(switchCamera, weightParams(1, 5));
+        controls.addView(orientation, weightParams(1, 5));
         FrameLayout.LayoutParams controlParams = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dp(76));
         controlParams.gravity = android.view.Gravity.BOTTOM;
         screen.addView(controls, controlParams);
@@ -412,6 +426,7 @@ public class MainActivity extends Activity {
         if (djiNavButton != null) setNavSelected(djiNavButton, !usePhone);
         if (phoneNavButton != null) setNavSelected(phoneNavButton, usePhone);
         if (usePhone) {
+            releaseControllerRoute();
             if (isDjiStreaming()) stopStream();
             if (hasPhoneCameraPermission()) ensurePhonePreview();
             else requestPhoneCameraPermission();
@@ -579,15 +594,28 @@ public class MainActivity extends Activity {
         }, 45000);
         registrationExecutor.execute(() -> {
         try {
+        android.net.ConnectivityManager internet = (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        android.net.Network registrationNetwork = null;
+        for (android.net.Network network : internet.getAllNetworks()) {
+            android.net.NetworkCapabilities caps = internet.getNetworkCapabilities(network);
+            if (caps != null && caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                    && caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+                registrationNetwork = network;
+                if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)) break;
+            }
+        }
+        internet.bindProcessToNetwork(registrationNetwork);
+        BridgeLog.info("DJI", "Registration internet route=" + registrationNetwork);
         DJISDKManager.getInstance().registerApp(getApplicationContext(), new DJISDKManager.SDKManagerCallback() {
             @Override
             public void onRegister(DJIError error) {
+                releaseControllerRoute();
                 registrationPending = false;
                 registered = error == DJISDKError.REGISTRATION_SUCCESS;
                 if (registered) {
                     BridgeLog.info("DJI", "SDK registration succeeded");
                     setStatus("SDK registered. Starting the Phantom Wi-Fi connection…");
-                    startProductConnection("SDK registration callback");
+                    diagnosticHandler.post(() -> connectToProduct("SDK registration callback"));
                 } else {
                     BridgeLog.warn("DJI", "SDK registration failed: " + (error == null ? "unknown error" : error.getDescription()));
                     setStatus("SDK registration failed: " + (error == null ? "unknown error" : error.getDescription()));
@@ -614,7 +642,11 @@ public class MainActivity extends Activity {
             @Override
             public void onProductChanged(BaseProduct product) {
                 BridgeLog.info("DJI", "Product changed: " + (product == null ? "null" : product.getModel()));
-                if (product != null && product.isConnected()) setStatus("DJI product connected.");
+                productConnected = product != null && product.isConnected();
+                if (productConnected) {
+                    setStatus("DJI product connected.");
+                    attachPrimaryVideoFeed();
+                }
             }
 
             @Override
@@ -694,6 +726,35 @@ public class MainActivity extends Activity {
     private void startProductConnection(String reason) {
         DJISDKManager sdkManager = DJISDKManager.getInstance();
         String ssid = currentSsid();
+        if (phoneMode || connectionRetryPending) return;
+        if (!hasConnectedWifi() || ssid == null || !ssid.toUpperCase(java.util.Locale.US).startsWith("PHANTOM")) {
+            setStatus("SDK ready. Connect Android Wi-Fi to PHANTOM3, then tap ⟳. No extra password is required here.");
+            return;
+        }
+        boolean access = DJISDKManager.shouldAllowAccessToSDK();
+        BridgeLog.info("DJI", "SDK activation gate=" + access);
+        if (!access) {
+            registered = false;
+            releaseControllerRoute();
+            setStatus("DJI registration callback succeeded but SDK activation is not ready. Enable internet and tap ⟳ to register again.");
+            return;
+        }
+        android.net.ConnectivityManager networks = (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        android.net.Network wifiNetwork = null;
+        for (android.net.Network network : networks.getAllNetworks()) {
+            android.net.NetworkCapabilities caps = networks.getNetworkCapabilities(network);
+            if (caps != null && caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)) wifiNetwork = network;
+        }
+        if (wifiNetwork == null || !networks.bindProcessToNetwork(wifiNetwork)) {
+            setStatus("The Phantom Wi-Fi route is not available to this app yet. Reconnect Wi-Fi and tap ⟳.");
+            return;
+        }
+        BridgeLog.info("DJI", "Bound discovery to Wi-Fi network " + wifiNetwork + "; routes=" + networks.getLinkProperties(wifiNetwork));
+        connectionRetryPending = true;
+        sdkManager.stopConnectionToProduct();
+        diagnosticHandler.postDelayed(() -> {
+        connectionRetryPending = false;
+        if (phoneMode || productConnected) return;
         BridgeLog.info("DJI", "Starting product connection (" + reason + "); Wi-Fi="
                 + (ssid == null ? "unknown" : ssid) + ", package=" + getPackageName()
                 + ", sdk=" + sdkManager.getSDKVersion());
@@ -711,7 +772,7 @@ public class MainActivity extends Activity {
         diagnosticHandler.postDelayed(() -> logProductState("10 seconds"), 10000);
         diagnosticHandler.postDelayed(() -> logProductState("30 seconds"), 30000);
         if (!started) {
-            setStatus("DJI rejected the connection start. Confirm DJI GO is force-stopped, the aircraft is linked to the controller, then tap Connect / retry DJI once.");
+            setStatus("DJI did not start discovery on the Phantom Wi-Fi route. Diagnostics include activation and network state; tap ⟳ to retry.");
         } else {
             diagnosticHandler.postDelayed(() -> {
                 if (connectionStarted && !productConnected) {
@@ -721,6 +782,32 @@ public class MainActivity extends Activity {
                 }
             }, 15000);
         }
+        }, 700);
+    }
+
+    private void releaseControllerRoute() {
+        android.net.ConnectivityManager networks = (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        if (networks != null) networks.bindProcessToNetwork(null);
+    }
+
+    private void watchControllerWifi() {
+        android.net.ConnectivityManager networks = (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        controllerNetworkCallback = new android.net.ConnectivityManager.NetworkCallback() {
+            @Override public void onAvailable(android.net.Network network) {
+                diagnosticHandler.postDelayed(() -> {
+                    if (registered && !phoneMode && !productConnected) connectToProduct("Wi-Fi became available");
+                }, 1000);
+            }
+            @Override public void onLost(android.net.Network network) {
+                diagnosticHandler.post(() -> {
+                    connectionStarted = false;
+                    releaseControllerRoute();
+                    BridgeLog.warn("DJI", "Wi-Fi network lost: " + network);
+                });
+            }
+        };
+        networks.registerNetworkCallback(new android.net.NetworkRequest.Builder()
+                .addTransportType(android.net.NetworkCapabilities.TRANSPORT_WIFI).build(), controllerNetworkCallback);
     }
 
     private void logProductState(String elapsed) {
@@ -829,6 +916,7 @@ public class MainActivity extends Activity {
                 return;
             }
             manager.setLiveUrl(url);
+            releaseControllerRoute();
             manager.setVideoEncodingEnabled(true);
             manager.setVideoSource(LiveStreamManager.LiveStreamVideoSource.Primary);
             manager.registerListener(status -> BridgeLog.info("Stream", "DJI stream status changed: " + status));
@@ -919,6 +1007,9 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        android.net.ConnectivityManager networks = (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        if (networks != null && controllerNetworkCallback != null) networks.unregisterNetworkCallback(controllerNetworkCallback);
+        releaseControllerRoute();
         diagnosticHandler.removeCallbacksAndMessages(null);
         if (phoneStreamer != null) phoneStreamer.release();
         stopStream();

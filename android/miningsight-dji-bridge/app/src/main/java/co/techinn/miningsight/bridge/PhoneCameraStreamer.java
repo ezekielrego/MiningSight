@@ -29,6 +29,7 @@ final class PhoneCameraStreamer implements ConnectChecker {
     private boolean firstFrame;
     private boolean released;
     private boolean stopping;
+    private boolean landscape;
 
     PhoneCameraStreamer(Context context, TextureView preview, Listener listener) {
         this.listener = listener;
@@ -58,7 +59,7 @@ final class PhoneCameraStreamer implements ConnectChecker {
         if (videoPrepared) return true;
         try {
             if (camera.isOnPreview() || camera.isStreaming()) return false;
-            videoPrepared = camera.prepareVideo(1280, 720, 1_500_000, 30, 2, 90);
+            videoPrepared = camera.prepareVideo(1280, 720, 1_500_000, 30, 2, landscape ? 0 : 90);
             if (!videoPrepared && listener != null) listener.onPhoneStreamError("The camera does not support the requested video settings.");
             return videoPrepared;
         } catch (Throwable error) {
@@ -198,6 +199,17 @@ final class PhoneCameraStreamer implements ConnectChecker {
 
     void resizePreview(int width, int height) {
         if (!released && camera.isOnPreview()) camera.getGlInterface().setPreviewResolution(width, height);
+    }
+
+    void setLandscape(boolean landscape) {
+        if (this.landscape == landscape || released) return;
+        if (camera.isStreaming()) stopStream();
+        stopPreview();
+        this.landscape = landscape;
+        videoPrepared = false;
+        audioPrepared = false;
+        BridgeLog.info("Phone", "Capture orientation=" + (landscape ? "landscape 1280x720" : "portrait 720x1280"));
+        startPreview();
     }
 
     void onPreviewFrame() {

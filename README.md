@@ -93,7 +93,7 @@ The repository includes [`android/miningsight-dji-bridge`](android/miningsight-d
 
 MediaMTX accepts the bridge stream on RTMP port 1935 and serves HLS through the same-origin HTTPS route `https://tunnelsight.applications.co.zw/dji/live/index.m3u8`. The HLS listener is loopback-only and proxied through the TunnelSight virtual host. The browser player stays inside the 3D viewport, shows connection and waiting states, retries while the bridge is offline, and supports frame capture. The protected publish URL remains server-local; credentials are not committed to this repository.
 
-The Android bridge links to the same email used for the signed-in TunnelSight account. The server creates a private stream path for that device and email, so the web viewer can resolve the correct live feed without exposing an RTMP URL in the browser. The bridge APK is available at [`MiningSight-DJI-Web-Streamer-v1.0.5.apk`](https://tunnelsight.applications.co.zw/downloads/MiningSight-DJI-Web-Streamer-v1.0.5.apk).
+The Android bridge links to the same email used for the signed-in TunnelSight account. The server creates a private stream path for that device and email, so the web viewer can resolve the correct live feed without exposing an RTMP URL in the browser. The bridge APK is available at [`MiningSight-DJI-Web-Streamer-v1.0.6.apk`](https://tunnelsight.applications.co.zw/downloads/MiningSight-DJI-Web-Streamer-v1.0.6.apk).
 
 See the Android bridge README for build commands, field setup, and the remaining flight-test requirements.
 

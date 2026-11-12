@@ -30,6 +30,11 @@ public class PhoneCameraStreamerTest {
             return true;
         });
         when(camera.prepareAudio(44100, false, 64000)).thenReturn(true);
+        when(camera.prepareVideo(1280, 720, 1500000, 30, 2, 0)).thenAnswer(i -> {
+            assertFalse(previewing);
+            assertFalse(streaming);
+            return true;
+        });
         doAnswer(i -> { previewing = true; return null; }).when(camera).startPreview(preview);
         doAnswer(i -> { previewing = false; return null; }).when(camera).stopPreview();
         doAnswer(i -> { streaming = true; return null; }).when(camera).startStream(anyString());
@@ -85,5 +90,22 @@ public class PhoneCameraStreamerTest {
     @Test public void legacyCredentialsBecomeRelayQueryParameters() throws Exception {
         assertEquals("rtmp://example:1935/dji/test?user=bridge&pass=secret",
                 PhoneCameraStreamer.normalizePublishUrl("rtmp://bridge:secret@example:1935/dji/test"));
+    }
+
+    @Test public void landscapeSwitchStopsStreamAndPreviewBeforePreparing() {
+        stream.startPreview(); stream.startStream("rtmp://example/live/test");
+        stream.setLandscape(true);
+        assertFalse(stream.isStreaming());
+        org.mockito.InOrder order = inOrder(camera);
+        order.verify(camera).stopStream();
+        order.verify(camera).stopPreview();
+        order.verify(camera).prepareVideo(1280, 720, 1500000, 30, 2, 0);
+        order.verify(camera).startPreview(preview);
+    }
+
+    @Test public void switchingBackRestoresPortraitRotation() {
+        stream.startPreview(); stream.setLandscape(true); stream.setLandscape(false);
+        verify(camera, times(2)).prepareVideo(1280, 720, 1500000, 30, 2, 90);
+        verify(camera, times(1)).prepareVideo(1280, 720, 1500000, 30, 2, 0);
     }
 }
