@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { Camera, Circle, LoaderCircle, Pause, Play, Radio, RefreshCw, Square, Volume2, VolumeX, X } from 'lucide-react';
+import { DraggableViewerItem } from './DraggableViewerItem';
 
 type StreamState = 'connecting' | 'waiting' | 'live' | 'error';
 
@@ -324,7 +325,7 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
 
   return (
     <section data-media-stage className="absolute inset-x-0 top-7 bottom-0 z-[40] flex min-h-0 flex-col overflow-hidden border-t border-[#343434] bg-[#111] text-[#ddd]">
-      <header className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-white/10 bg-[#202020] px-3">
+      <DraggableViewerItem id="Live stream header" wholeSurface className="relative z-20 shrink-0"><header className="flex h-9 items-center justify-between gap-2 border-b border-white/10 bg-[#202020] px-3">
         <div className="flex min-w-0 items-center gap-2">
           <Radio className="h-4 w-4 shrink-0 text-[#e88724]" />
           <span className="truncate text-[10px] font-bold uppercase tracking-wide">TunnelSight live stream</span>
@@ -335,22 +336,22 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
         <button onClick={closeViewer} title="Close live view" className="rounded-sm p-1 text-[#aaa] hover:bg-white/10 hover:text-white">
           <X className="h-4 w-4" />
         </button>
-      </header>
+      </header></DraggableViewerItem>
 
       <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
         <video ref={videoRef} autoPlay muted playsInline preload="auto" className="absolute inset-0 h-full w-full bg-black object-contain" />
         {!hasRenderedFrame && streamState !== 'live' && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/35 p-4">
-            <div className="max-w-sm text-center">
+            <DraggableViewerItem id="Live stream status" wholeSurface className="pointer-events-auto max-w-sm text-center">
               {streamState === 'connecting' ? <LoaderCircle className="mx-auto mb-2 h-6 w-6 animate-spin text-[#e88724]" /> : <Radio className="mx-auto mb-2 h-6 w-6 text-[#e88724]" />}
               <p className="text-[11px] font-semibold text-white">{streamState === 'waiting' ? 'Stream not live yet' : streamState === 'error' ? 'Live playback unavailable' : 'Connecting to live view'}</p>
               <p className="mt-1 text-[10px] text-[#aaa]">{message}</p>
-            </div>
+            </DraggableViewerItem>
           </div>
         )}
       </div>
 
-      <footer className="flex min-h-10 shrink-0 items-center justify-between gap-2 border-t border-white/10 bg-[#202020] px-2 py-1.5">
+      <DraggableViewerItem id="Live stream controls" wholeSurface className="relative z-20 shrink-0"><footer className="flex min-h-10 items-center justify-between gap-2 border-t border-white/10 bg-[#202020] px-2 py-1.5">
         <div className="flex min-w-0 items-center gap-1.5">
           <button onClick={togglePlayback} title={isPaused ? 'Play live feed' : 'Pause live feed'} className="rounded-sm p-1.5 text-[#ddd] hover:bg-white/10">
             {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
@@ -373,7 +374,7 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
             <Camera className="h-3 w-3" />Capture frame
           </button>
         </div>
-      </footer>
+      </footer></DraggableViewerItem>
     </section>
   );
 };

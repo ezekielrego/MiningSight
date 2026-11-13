@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { DraggableViewerItem } from '../viewport/DraggableViewerItem';
 import {
   Check,
   Download,
@@ -352,7 +353,7 @@ export const UndergroundMapEditor: React.FC<UndergroundMapEditorProps> = ({ geom
             <g transform="translate(0.91 0.08)"><text x="0" y="0" fontSize="0.055" fontWeight="700" fill="#111827">N</text><path d="M 0.012 0.012 L 0.03 0.075 L 0.048 0.012 L 0.03 0.027 Z" fill="#111827" /></g>
             {draftPoints.length >= 2 && <foreignObject x="0.03" y="0.91" width="0.25" height="0.06"><button onClick={commitDraft} style={{ fontSize: '10px', padding: '4px 8px', background: '#e88724', border: '1px solid #9a5c1b', borderRadius: '3px', fontWeight: 700 }}>Finish geometry</button></foreignObject>}
           </svg>
-          {geometry.accuracy !== 'surveyed' && <div className="absolute bottom-2 left-2 rounded border border-[#a16207] bg-[#fffbeb]/95 px-2 py-1 text-[9px] font-semibold text-[#854d0e] shadow">{geometry.accuracy === 'calibrated' ? 'CALIBRATED — verify against survey control' : 'ILLUSTRATIVE — not survey-accurate'}</div>}
+          {geometry.accuracy !== 'surveyed' && <DraggableViewerItem id="Map accuracy" wholeSurface className="absolute bottom-2 left-2 z-10 rounded border border-[#a16207] bg-[#fffbeb]/95 px-2 py-1 text-[9px] font-semibold text-[#854d0e] shadow">{geometry.accuracy === 'calibrated' ? 'CALIBRATED — verify against survey control' : 'ILLUSTRATIVE — not survey-accurate'}</DraggableViewerItem>}
         </div>
 
         <aside className="w-full space-y-2 border-t border-[#3d3d3d] bg-[#202020] p-2 lg:w-56 lg:border-l lg:border-t-0">

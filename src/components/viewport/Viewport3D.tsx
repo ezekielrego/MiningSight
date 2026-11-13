@@ -32,6 +32,7 @@ import { TunnelPresetId, ProceduralTunnelParams } from '../../types/tunnelScene'
 import { TUNNEL_PRESETS, createTunnelRigByPreset, getPresetRootId } from '../../scene/tunnelPresetRegistry';
 import { ReferencePhotoModal } from '../modals/ReferencePhotoModal';
 import { LiveStreamViewer } from './LiveStreamViewer';
+import { DraggableViewerItem, ViewerDragProvider } from './DraggableViewerItem';
 import { SceneParametersModal } from '../modals/SceneParametersModal';
 import { UndergroundMapEditor } from '../panels/UndergroundMapEditor';
 import { C4DMaterial, C4DSceneObject, ToolMode, Vector3D } from '../../types/c4d';
@@ -75,25 +76,26 @@ interface ViewerOverlayProps {
 }
 
 const ViewerOverlay: React.FC<ViewerOverlayProps> = ({ title, minimized, onToggle, className = '', children }) => (
-  <div className={`pointer-events-auto transition-opacity duration-150 opacity-60 hover:opacity-100 ${className}`}>
+  <DraggableViewerItem id={title} className={`pointer-events-auto max-w-[calc(100%-8px)] max-h-[calc(100%-36px)] overflow-auto transition-opacity duration-150 opacity-60 hover:opacity-100 ${className}`} style={minimized ? { width: 'max-content' } : undefined}>
     {minimized ? (
       <button
+        data-viewer-drag-handle
         onClick={onToggle}
-        className="flex items-center gap-1 px-2 py-1 bg-black/55 hover:bg-black/85 border border-[#555] rounded-[3px] text-[9px] text-[#ddd] cursor-pointer shadow-lg"
+        className="flex items-center gap-1 px-2 py-1 bg-black/55 hover:bg-black/85 border border-[#555] rounded-[3px] text-[9px] text-[#ddd] cursor-move touch-none shadow-lg"
         title={`Restore ${title}`}
       >
         <span className="text-[#e88724] font-bold">+</span><span>{title}</span>
       </button>
     ) : (
       <div className="bg-black/55 hover:bg-black/85 backdrop-blur-md border border-[#555] rounded-[3px] shadow-xl">
-        <div className="flex items-center justify-between gap-3 px-2 py-1 border-b border-white/10 text-[9px] text-[#bbb]">
+        <div data-viewer-drag-handle title="Drag to move" className="flex items-center justify-between gap-3 px-2 py-1 border-b border-white/10 text-[9px] text-[#bbb] cursor-move touch-none">
           <span className="font-bold uppercase tracking-wide truncate">{title}</span>
           <button onClick={onToggle} className="text-[#aaa] hover:text-white cursor-pointer px-1" title={`Minimize ${title}`}>−</button>
         </div>
         <div className="p-2">{children}</div>
       </div>
     )}
-  </div>
+  </DraggableViewerItem>
 );
 
 interface Viewport3DProps {
@@ -1698,16 +1700,18 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   };
 
   return (
+    <ViewerDragProvider>
     <div
       ref={mountRef}
+      data-viewer-boundary
       data-onboarding-target="viewport"
       className="relative w-full h-full select-none overflow-hidden bg-[#555555]"
       onContextMenu={(e) => e.preventDefault()}
     >
-      {viewerLoadError && <div role="alert" className="absolute top-10 left-1/2 z-[90] flex max-w-[90%] -translate-x-1/2 items-center gap-3 border border-[#713333] bg-[#321d1d]/90 px-3 py-2 text-[10px] text-[#ffb0b0]">
+      {viewerLoadError && <DraggableViewerItem id="Loading error" wholeSurface className="absolute top-10 left-1/2 z-[90] max-w-[90%] -translate-x-1/2"><div role="alert" className="flex items-center gap-3 border border-[#713333] bg-[#321d1d]/90 px-3 py-2 text-[10px] text-[#ffb0b0]">
         <span title={viewerLoadName}>{viewerLoadError}</span>
         <button onClick={() => setConnectedViewerReload((value) => value + 1)} className="shrink-0 text-white hover:text-[#e88724]">Retry</button>
-      </div>}
+      </div></DraggableViewerItem>}
       {/* 3D WebGL Canvas */}
       <canvas
         ref={canvasRef}
@@ -1768,21 +1772,21 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
           }}
         >
           {minimizedOverlays.video ? (
-            <div className="flex h-full items-end justify-start p-3">
-              <button onClick={() => toggleOverlay('video')} className="rounded-[3px] border border-[#555] bg-black/70 px-2 py-1 text-[9px] text-[#ddd] shadow-lg hover:bg-black/90 cursor-pointer">
+            <DraggableViewerItem id="Video controls" className="absolute bottom-3 left-3 z-20">
+              <button data-viewer-drag-handle onClick={() => toggleOverlay('video')} className="rounded-[3px] border border-[#555] bg-black/70 px-2 py-1 text-[9px] text-[#ddd] shadow-lg hover:bg-black/90 cursor-move touch-none">
                 <span className="mr-1 text-[#e88724] font-bold">+</span> Restore video view
               </button>
-            </div>
+            </DraggableViewerItem>
           ) : (
             <>
-              <div data-workspace-chrome className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 bg-black/55 px-2 py-1 text-[9px] text-[#ccc] backdrop-blur-md">
+              <DraggableViewerItem id="Video controls" wholeSurface className="relative z-20 shrink-0"><div data-workspace-chrome className="flex items-center justify-between gap-2 border-b border-white/10 bg-black/55 px-2 py-1 text-[9px] text-[#ccc] backdrop-blur-md">
                 <span className="min-w-0 truncate font-bold uppercase tracking-wide">Video view · {activeAsset.name}</span>
                 <div className="flex shrink-0 items-center gap-2">
                   <button onClick={handleAddVideoMarker} className="rounded-[2px] bg-[#ffb347] px-1.5 py-0.5 font-bold text-black hover:bg-[#ffc46b] cursor-pointer">Mark {videoTime.toFixed(1)}s</button>
                   <span className="text-[#999]">{mediaMarkers.filter((marker) => marker.assetId === activeAsset.id).length} markers</span>
                   <button onClick={() => toggleOverlay('video')} className="px-1 text-[#aaa] hover:text-white cursor-pointer" title="Minimize video view">−</button>
                 </div>
-              </div>
+              </div></DraggableViewerItem>
               <div
                 className={`relative min-h-0 flex-1 overflow-hidden bg-black ${isGasBrushActive ? 'cursor-cell' : ''}`}
                 onPointerDown={(event) => handleGasMediaPointerDown(event, activeAsset.id)}
@@ -1815,7 +1819,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
                 {gasMarks.filter((mark) => mark.space === 'media' && mark.assetId === activeAsset.id && mark.screen && Math.abs((mark.timeSeconds ?? 0) - videoTime) <= Math.max(0.15, videoDuration / Math.max(1, timelineMaxFrame - timelineMinFrame) / 2)).map((mark) => (
                   <span key={mark.id} className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ left: `${(mark.screen?.x || 0) * 100}%`, top: `${(mark.screen?.y || 0) * 100}%`, width: `${Math.max(28, Math.min(320, mark.radius * 64))}px`, height: `${Math.max(28, Math.min(320, mark.radius * 64))}px`, opacity: Math.max(0.08, Math.min(0.7, 0.08 + mark.concentration * 0.62)), background: `radial-gradient(circle, ${mark.color} 0%, ${mark.color}99 28%, ${mark.color}22 62%, transparent 76%)`, filter: 'blur(1px)', mixBlendMode: 'screen' }} />
                 ))}
-                {mediaMarkers.filter((marker) => marker.assetId === activeAsset.id).length > 0 && <div className="absolute bottom-2 left-2 z-10 max-h-20 max-w-[min(420px,70%)] overflow-y-auto space-y-0.5 rounded-[3px] border border-white/15 bg-black/70 px-2 py-1.5 text-[8.5px] shadow-xl backdrop-blur-sm">{mediaMarkers.filter((marker) => marker.assetId === activeAsset.id).map((marker) => <button key={marker.id} onClick={() => { if (videoRef.current) videoRef.current.currentTime = marker.timeSeconds; setVideoTime(marker.timeSeconds); videoTimeRef.current = marker.timeSeconds; }} className="block w-full truncate text-left text-[#d8c19e] hover:text-white cursor-pointer" title={marker.note}><span className="text-[#ffb347]">{marker.timeSeconds.toFixed(2)}s</span> · {marker.note}</button>)}</div>}
+                {mediaMarkers.filter((marker) => marker.assetId === activeAsset.id).length > 0 && <DraggableViewerItem id="Video markers" wholeSurface className="absolute bottom-2 left-2 z-10 max-h-20 max-w-[min(420px,70%)] overflow-y-auto space-y-0.5 rounded-[3px] border border-white/15 bg-black/70 px-2 py-1.5 text-[8.5px] shadow-xl backdrop-blur-sm"><div className="text-[#999] text-[8px]">Markers · drag to move</div>{mediaMarkers.filter((marker) => marker.assetId === activeAsset.id).map((marker) => <button key={marker.id} onClick={() => { if (videoRef.current) videoRef.current.currentTime = marker.timeSeconds; setVideoTime(marker.timeSeconds); videoTimeRef.current = marker.timeSeconds; }} className="block w-full truncate text-left text-[#d8c19e] hover:text-white cursor-pointer" title={marker.note}><span className="text-[#ffb347]">{marker.timeSeconds.toFixed(2)}s</span> · {marker.note}</button>)}</DraggableViewerItem>}
               </div>
             </>
           )}
@@ -1831,17 +1835,17 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
           }}
         >
           {minimizedOverlays.image ? (
-            <div className="flex h-full items-end justify-start p-3">
-              <button onClick={() => toggleOverlay('image')} className="rounded-[3px] border border-[#555] bg-black/70 px-2 py-1 text-[9px] text-[#ddd] shadow-lg hover:bg-black/90 cursor-pointer">
+            <DraggableViewerItem id="Image controls" className="absolute bottom-3 left-3 z-20">
+              <button data-viewer-drag-handle onClick={() => toggleOverlay('image')} className="rounded-[3px] border border-[#555] bg-black/70 px-2 py-1 text-[9px] text-[#ddd] shadow-lg hover:bg-black/90 cursor-move touch-none">
                 <span className="mr-1 text-[#e88724] font-bold">+</span> Restore image view
               </button>
-            </div>
+            </DraggableViewerItem>
           ) : (
             <>
-              <div data-workspace-chrome className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 bg-black/55 px-2 py-1 text-[9px] text-[#ccc] backdrop-blur-md">
+              <DraggableViewerItem id="Image controls" wholeSurface className="relative z-20 shrink-0"><div data-workspace-chrome className="flex items-center justify-between gap-2 border-b border-white/10 bg-black/55 px-2 py-1 text-[9px] text-[#ccc] backdrop-blur-md">
                 <span className="min-w-0 truncate font-bold uppercase tracking-wide">Image view · {activeAsset.name}</span>
                 <button onClick={() => toggleOverlay('image')} className="px-1 text-[#aaa] hover:text-white cursor-pointer" title="Minimize image view">−</button>
-              </div>
+              </div></DraggableViewerItem>
               <div
                 className={`relative min-h-0 flex-1 overflow-hidden bg-black ${isGasBrushActive ? 'cursor-cell' : ''}`}
                 onPointerDown={(event) => handleGasMediaPointerDown(event, activeAsset.id)}
@@ -1864,21 +1868,21 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
           className="absolute inset-x-0 top-7 bottom-0 z-[6] flex min-h-0 flex-col overflow-hidden border-t border-[#252525] bg-[#202020] pointer-events-auto"
         >
           {minimizedOverlays.world ? (
-            <div className="flex h-full items-end justify-start p-3">
-              <button onClick={() => toggleOverlay('world')} className="rounded-[3px] border border-[#555] bg-black/70 px-2 py-1 text-[9px] text-[#ddd] shadow-lg hover:bg-black/90 cursor-pointer">
+            <DraggableViewerItem id="Connected model controls" className="absolute bottom-3 left-3 z-20">
+              <button data-viewer-drag-handle onClick={() => toggleOverlay('world')} className="rounded-[3px] border border-[#555] bg-black/70 px-2 py-1 text-[9px] text-[#ddd] shadow-lg hover:bg-black/90 cursor-move touch-none">
                 <span className="mr-1 text-[#e88724] font-bold">+</span> Restore connected model
               </button>
-            </div>
+            </DraggableViewerItem>
           ) : (
             <>
-              <div data-workspace-chrome className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 bg-black/65 px-2 py-1 text-[9px] text-[#ccc] backdrop-blur-md">
+              <DraggableViewerItem id="Connected model controls" wholeSurface className="relative z-20 shrink-0"><div data-workspace-chrome className="flex items-center justify-between gap-2 border-b border-white/10 bg-black/65 px-2 py-1 text-[9px] text-[#ccc] backdrop-blur-md">
                 <span className="min-w-0 truncate font-bold uppercase tracking-wide">{activeAsset.provider === 'gomera' ? 'GOMERA X' : activeAsset.provider === 'gemini' ? 'Gemini scene' : 'World Labs Marble'} · {activeAsset.name}</span>
                 <div className="flex shrink-0 items-center gap-2">
                   <button onClick={() => setConnectedViewerReload((value) => value + 1)} className="text-[#ccc] hover:text-white" title="Reload connected model">Reload</button>
                   <a href={activeAsset.remoteUrl || activeAsset.url} target="_blank" rel="noreferrer" className="text-[#9bcaf0] hover:text-white hover:underline">Open externally</a>
                   <button onClick={() => toggleOverlay('world')} className="px-1 text-[#aaa] hover:text-white cursor-pointer" title="Minimize connected model">−</button>
                 </div>
-              </div>
+              </div></DraggableViewerItem>
               <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
                 <iframe
                   ref={worldFrameRef}
@@ -1897,7 +1901,8 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       )}
 
       {/* Top Viewport Navigation and Mode Bar */}
-      <div data-workspace-chrome data-onboarding-target="viewport-controls" aria-label="Viewport controls" className="absolute top-0 left-0 right-0 h-8 bg-[#383838]/95 border-b border-[#252525] flex items-center justify-start gap-2 px-2 text-[11px] text-[#cfcfcf] z-[80] backdrop-blur-sm overflow-x-auto overflow-y-hidden overscroll-x-contain touch-pan-x [scrollbar-width:thin] [scrollbar-color:#777_transparent]">
+      <DraggableViewerItem id="Viewer toolbar" wholeSurface className="absolute top-0 left-0 right-0 z-[80]">
+      <div data-workspace-chrome data-onboarding-target="viewport-controls" aria-label="Viewport controls" className="h-8 bg-[#383838]/95 border-b border-[#252525] flex items-center justify-start gap-2 px-2 text-[11px] text-[#cfcfcf] backdrop-blur-sm overflow-x-auto overflow-y-hidden overscroll-x-contain touch-pan-x [scrollbar-width:thin] [scrollbar-color:#777_transparent]">
         {/* Left Controls: Preset Selector, Menus, Orbit vs Walk, Flashlight, Ruler, Hotspots */}
         <div className="flex items-center space-x-1 sm:space-x-1.5 min-w-max">
           {/* SCENE PRESET SELECTOR (Classic Diorama vs Rugged Timbered Photo vs AI Custom) */}
@@ -2335,6 +2340,8 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         </div>
       </div>
 
+      </DraggableViewerItem>
+
       {/* Mode Status Banner / Reticle */}
       {navMode === 'walk' && (
         <div className="absolute top-9 left-1/2 -translate-x-1/2 z-10 flex flex-col items-center">
@@ -2579,14 +2586,14 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       )}
 
       {/* Top Left Projection Name */}
-      <div className="absolute top-9 left-3 right-3 flex min-w-0 flex-wrap items-center gap-x-2 text-[11px] text-[#d0d0d0] font-sans tracking-wide pointer-events-none drop-shadow">
+      <DraggableViewerItem id="Camera location" wholeSurface className="absolute top-9 left-3 z-10 flex w-fit max-w-[calc(100%-24px)] min-w-0 flex-wrap items-center gap-x-2 text-[11px] text-[#d0d0d0] font-sans tracking-wide drop-shadow">
         <span className="min-w-0 truncate">{navMode === 'walk' ? 'Perspective (First-Person Walkthrough)' : 'Perspective (Orbit)'}</span>
         {navMode === 'walk' && walkPosition && <span data-walk-position className="min-w-0 truncate text-[10px] font-mono tabular-nums text-[#bbb]" title="Camera location in model metres (not survey coordinates)">X {walkPosition.x.toFixed(2)} · Y {walkPosition.y.toFixed(2)} · Z {walkPosition.z.toFixed(2)} m</span>}
         {navMode === 'orbit' && <span className="ml-2 text-[9px] text-[#999]">Drag to orbit · Shift-drag to edit object · double-click to focus · wheel / +/- to zoom</span>}
-      </div>
+      </DraggableViewerItem>
 
       {/* Bottom Left 3D Coordinate Axis Indicator */}
-      <div className="absolute bottom-3 left-3 pointer-events-none flex flex-col items-center">
+      <DraggableViewerItem id="Axis indicator" wholeSurface className="absolute bottom-3 left-3 z-10 flex flex-col items-center">
         <svg width="44" height="44" viewBox="0 0 50 50">
           <circle cx="16" cy="34" r="2" fill="#fff" opacity="0.8" />
           <line x1="16" y1="34" x2="16" y2="12" stroke="#4ade80" strokeWidth="2" />
@@ -2596,12 +2603,12 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
           <line x1="16" y1="34" x2="30" y2="22" stroke="#60a5fa" strokeWidth="2" />
           <text x="32" y="20" fill="#60a5fa" fontSize="10" fontWeight="bold">Z</text>
         </svg>
-      </div>
+      </DraggableViewerItem>
 
       {/* Bottom Right Grid Spacing Indicator */}
-      <div className="absolute bottom-2.5 right-24 text-[11px] text-[#c0c0c0] font-sans tracking-wide pointer-events-none">
+      <DraggableViewerItem id="Grid scale" wholeSurface className="absolute bottom-2.5 right-24 z-10 text-[11px] text-[#c0c0c0] font-sans tracking-wide">
         Grid : 100 cm (1 m)
-      </div>
+      </DraggableViewerItem>
 
       {/* Reference Photo Comparison Modal */}
       <ReferencePhotoModal
@@ -2633,5 +2640,6 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         />
       )}
     </div>
+    </ViewerDragProvider>
   );
 };
