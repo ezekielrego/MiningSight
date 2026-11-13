@@ -25,6 +25,7 @@ import {
   Crosshair,
   Image as ImageIcon,
   Sliders as SlidersIcon,
+  Loader2,
   Map as MapIcon,
 } from 'lucide-react';
 import { MiningTunnelRig, ShadingDisplayMode } from '../../scene/miningTunnelGenerator';
@@ -144,7 +145,7 @@ interface Viewport3DProps {
   onAddGasMark?: (mark: GasMark) => void;
   onSetPlayback?: (isPlaying: boolean) => void;
   onCaptureReferenceImage?: (dataUrl: string, name: string) => void;
-  onSaveLiveFile?: (file: File) => void;
+  onSaveLiveFile?: (file: File) => void | Promise<void>;
   mapGeometry?: ReconstructionMapGeometry | null;
   mapSelection?: ReconstructionMapSelection | null;
   mapMarkingEnabled?: boolean;
@@ -237,6 +238,16 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   const [videoTime, setVideoTime] = useState(0);
   const [assetLoadState, setAssetLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [assetLoadMessage, setAssetLoadMessage] = useState('');
+  const [assetLoadId, setAssetLoadId] = useState<string | null>(null);
+  const worldFrameRef = useRef<HTMLIFrameElement>(null);
+  const [rigLoad, setRigLoad] = useState<{ params: ProceduralTunnelParams | null; state: 'loading' | 'ready' | 'error'; message?: string }>({ params: null, state: 'loading' });
+  const viewerLoading = !showMap && !liveStreamOpen && (activeAsset
+    ? ['model', 'world', 'image', 'video'].includes(activeAsset.kind) && (assetLoadId !== activeAsset.id || assetLoadState === 'loading')
+    : !activeProjectId && (rigLoad.params !== proceduralParams || rigLoad.state === 'loading'));
+  const viewerLoadError = !showMap && !liveStreamOpen && (activeAsset ? assetLoadId === activeAsset.id && assetLoadState === 'error' ? assetLoadMessage : '' : !activeProjectId && rigLoad.state === 'error' ? rigLoad.message : '');
+  const viewerLoadName = activeAsset?.name || proceduralParams.name || TUNNEL_PRESETS[currentPresetId]?.name || 'model';
+  const blockedNavigationRef = useRef(false);
+  blockedNavigationRef.current = Boolean(viewerLoading || viewerLoadError);
 
   // Navigation mode: 'orbit' (C4D orbital viewer) vs 'walk' (First-Person walkable drift inspection)
   const [navMode, setNavMode] = useState<'orbit' | 'walk'>('orbit');
@@ -505,7 +516,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       gold.metalness = goldMat.metalness;
       gold.needsUpdate = true;
     }
-  }, [materials]);
+  }, [materials, rigLoad.state]);
 
   // Sync selected object transformation to 3D scene
   useEffect(() => {
@@ -529,7 +540,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       gizmoGroupRef.current.position.copy(tunnel.position);
       gizmoGroupRef.current.visible = !activeProjectId && selectedObject.id === rootId && selectedObject.visibleInEditor && (activeTool === 'move' || activeTool === 'rotate' || activeTool === 'scale');
     }
-  }, [selectedObject, activeProjectId, activeTool, currentPresetId]);
+  }, [selectedObject, activeProjectId, activeTool, currentPresetId, rigLoad.state]);
 
   useEffect(() => {
     setHighlightedSelectionId(null);
@@ -558,7 +569,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       const id = node.userData?.selectionId || node.name;
       node.visible = visibility.has(id) && Boolean(visibility.get(id)?.visibleInEditor);
     });
-  }, [sceneObjects, currentPresetId, activeProjectId, clearView]);
+  }, [sceneObjects, currentPresetId, activeProjectId, clearView, rigLoad.state]);
 
   useEffect(() => {
     if (gridHelperRef.current) gridHelperRef.current.visible = showGrid && !clearView;
@@ -581,12 +592,14 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     }
     walkBoundsRef.current = { minX: -4.2, maxX: 2.4, minY: 1.2, maxY: 4.8, minZ: -23.0, maxZ: 23.0 };
     if (!activeAsset || activeAsset.kind !== 'model') {
-      setAssetLoadState(activeAsset ? 'ready' : 'idle');
+      setAssetLoadId(activeAsset?.id || null);
+      setAssetLoadState(activeAsset && ['world', 'image', 'video'].includes(activeAsset.kind) ? 'loading' : activeAsset ? 'ready' : 'idle');
       setAssetLoadMessage('');
       return;
     }
 
     let cancelled = false;
+    setAssetLoadId(activeAsset.id);
     setAssetLoadState('loading');
     setAssetLoadMessage(`Loading ${activeAsset.name}…`);
     const draco = new DRACOLoader();
@@ -654,7 +667,30 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       cancelled = true;
       draco.dispose();
     };
-  }, [activeAsset, clearView]);
+  }, [activeAsset, clearView, connectedViewerReload]);
+
+  useEffect(() => {
+    if (!activeAsset || !['model', 'world', 'image', 'video'].includes(activeAsset.kind) || assetLoadState !== 'loading') return;
+    const timeout = window.setTimeout(() => {
+      setAssetLoadState('error');
+      setAssetLoadMessage(`Loading ${activeAsset.name} is taking too long. Check the connection, then retry.`);
+    }, 90000);
+    return () => window.clearTimeout(timeout);
+  }, [activeAsset, assetLoadState, connectedViewerReload]);
+
+  useEffect(() => {
+    if (activeAsset?.kind !== 'world') return;
+    const receive = (event: MessageEvent) => {
+      if (event.origin !== 'https://www.tunnelsight.applications.co.zw' || event.source !== worldFrameRef.current?.contentWindow) return;
+      if (event.data?.type === 'tunnelsight:viewer-ready') setAssetLoadState('ready');
+      if (event.data?.type === 'tunnelsight:viewer-error') {
+        setAssetLoadState('error');
+        setAssetLoadMessage(String(event.data.message || 'The connected model could not be loaded.'));
+      }
+    };
+    window.addEventListener('message', receive);
+    return () => window.removeEventListener('message', receive);
+  }, [activeAsset?.id, activeAsset?.kind, connectedViewerReload]);
 
   useEffect(() => {
     if (externalModelGroupRef.current) externalModelGroupRef.current.visible = !clearView;
@@ -1165,6 +1201,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   // Keyboard navigation for Walk Mode (WASD + Space/Shift, F flashlight, V mode toggle)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (blockedNavigationRef.current) return;
       const target = e.target as HTMLElement;
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes(target?.tagName) || target?.isContentEditable) return;
 
@@ -1243,12 +1280,16 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   useEffect(() => {
     if (!sceneRef.current) return;
     const scene = sceneRef.current;
-
-    if (miningTunnelRigRef.current) {
-      scene.remove(miningTunnelRigRef.current.root);
-    }
-
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let readyTimer: ReturnType<typeof setTimeout>;
+    const loadStarted = performance.now();
+    setRigLoad({ params: proceduralParams, state: 'loading' });
+    const frame = requestAnimationFrame(() => { timer = setTimeout(() => {
+    if (cancelled) return;
+    try {
     const newRig = createTunnelRigByPreset(currentPresetId, proceduralParams);
+    if (miningTunnelRigRef.current) scene.remove(miningTunnelRigRef.current.root);
     miningTunnelRigRef.current = newRig;
     scene.add(newRig.root);
     const rootId = getPresetRootId(currentPresetId);
@@ -1264,7 +1305,13 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     if (gizmoGroupRef.current) {
       gizmoGroupRef.current.position.copy(newRig.root.position);
     }
-  }, [currentPresetId, proceduralParams]);
+    readyTimer = setTimeout(() => requestAnimationFrame(() => { if (!cancelled) setRigLoad({ params: proceduralParams, state: 'ready' }); }), Math.max(0, 300 - (performance.now() - loadStarted)));
+    } catch (error) {
+      if (!cancelled) setRigLoad({ params: proceduralParams, state: 'error', message: 'This model could not be prepared. Please retry.' });
+    }
+    }, 0); });
+    return () => { cancelled = true; cancelAnimationFrame(frame); clearTimeout(timer); clearTimeout(readyTimer); };
+  }, [currentPresetId, proceduralParams, connectedViewerReload]);
 
   // Give the selected sample-scene part a clear, full-surface highlight. The
   // materials are cloned only for selected meshes so shared materials elsewhere
@@ -1308,7 +1355,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         mesh.material = material;
       });
     };
-  }, [highlightedSelectionId, currentPresetId, proceduralParams, activeProjectId, clearView, sceneObjects]);
+  }, [highlightedSelectionId, currentPresetId, proceduralParams, activeProjectId, clearView, sceneObjects, rigLoad.state]);
 
   // Sync Shading Mode with Rig
   useEffect(() => {
@@ -1620,7 +1667,16 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       data-onboarding-target="viewport"
       className="relative w-full h-full select-none overflow-hidden bg-[#555555]"
       onContextMenu={(e) => e.preventDefault()}
+      onKeyDownCapture={(event) => { if (viewerLoading && (event.target as HTMLElement).tagName !== 'BUTTON') { event.preventDefault(); event.stopPropagation(); } }}
     >
+      {(viewerLoading || viewerLoadError) && <div role={viewerLoadError ? 'alert' : 'status'} aria-live="polite" aria-busy={viewerLoading} data-viewer-loading className="absolute inset-0 z-[120] flex items-center justify-center bg-[#171717]/90 px-6 text-center text-[#ddd] backdrop-blur-sm" onPointerDown={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()}>
+        <div className="max-w-sm space-y-3">
+          {!viewerLoadError && <Loader2 className="mx-auto h-7 w-7 animate-spin text-[#e88724]" />}
+          <div className="text-[12px] font-semibold">{viewerLoadError ? `Could not load ${viewerLoadName}` : `Loading ${viewerLoadName}…`}</div>
+          <div className="text-[10px] text-[#aaa]">{viewerLoadError || 'Please wait while the viewer prepares this model.'}</div>
+          {viewerLoadError && <button onClick={() => setConnectedViewerReload((value) => value + 1)} className="border border-[#666] px-3 py-1 text-[11px] text-white hover:border-[#e88724]">Retry loading</button>}
+        </div>
+      </div>}
       {/* 3D WebGL Canvas */}
       <canvas
         ref={canvasRef}
@@ -1659,16 +1715,6 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
             <div className="mt-1 text-[10px] text-[#bbb]">Upload a model, video, or image, then click its file in Project Assets to render it here.</div>
           </ViewerOverlay>
         </div>
-      )}
-      {activeAsset && assetLoadState === 'loading' && (
-        <ViewerOverlay title="Asset loading" minimized={Boolean(minimizedOverlays.assetLoading)} onToggle={() => toggleOverlay('assetLoading')} className="absolute top-9 left-1/2 -translate-x-1/2 z-20">
-          <div className="text-[10px] text-[#ddd]">{assetLoadMessage}</div>
-        </ViewerOverlay>
-      )}
-      {activeAsset && assetLoadState === 'error' && (
-        <ViewerOverlay title="Asset error" minimized={Boolean(minimizedOverlays.assetError)} onToggle={() => toggleOverlay('assetError')} className="absolute top-9 left-1/2 -translate-x-1/2 z-20 max-w-sm">
-          <div className="text-[10px] text-[#ffb0b0] text-center">{assetLoadMessage}</div>
-        </ViewerOverlay>
       )}
       {activeAsset && !['model', 'world', 'video', 'image'].includes(activeAsset.kind) && (
         <div className="absolute inset-0 z-[5] flex items-center justify-center pointer-events-none">
@@ -1714,6 +1760,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
                 onPointerCancel={handleGasMediaPointerUp}
               >
                 <video
+                  key={connectedViewerReload}
                   ref={videoRef}
                   src={activeAsset.url}
                   playsInline
@@ -1723,6 +1770,8 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
                     setVideoDuration(event.currentTarget.duration || 0);
                     event.currentTarget.playbackRate = playbackSpeed;
                   }}
+                  onLoadedData={() => setAssetLoadState('ready')}
+                  onError={() => { setAssetLoadState('error'); setAssetLoadMessage(`Could not open ${activeAsset.name}.`); }}
                   onPlay={() => onSetPlayback?.(true)}
                   onPause={() => onSetPlayback?.(false)}
                   onEnded={() => onSetPlayback?.(false)}
@@ -1769,7 +1818,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
                 onPointerUp={handleGasMediaPointerUp}
                 onPointerCancel={handleGasMediaPointerUp}
               >
-                <img src={activeAsset.url} alt={activeAsset.name} className="block h-full w-full object-cover" />
+                <img key={connectedViewerReload} src={activeAsset.url} alt={activeAsset.name} onLoad={() => setAssetLoadState('ready')} onError={() => { setAssetLoadState('error'); setAssetLoadMessage(`Could not open ${activeAsset.name}.`); }} className="block h-full w-full object-cover" />
                 {gasMarks.filter((mark) => mark.space === 'media' && mark.assetId === activeAsset.id && mark.frame === currentFrame && mark.screen).map((mark) => (
                   <span key={mark.id} className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ left: `${(mark.screen?.x || 0) * 100}%`, top: `${(mark.screen?.y || 0) * 100}%`, width: `${Math.max(28, Math.min(320, mark.radius * 64))}px`, height: `${Math.max(28, Math.min(320, mark.radius * 64))}px`, opacity: Math.max(0.08, Math.min(0.7, 0.08 + mark.concentration * 0.62)), background: `radial-gradient(circle, ${mark.color} 0%, ${mark.color}99 28%, ${mark.color}22 62%, transparent 76%)`, filter: 'blur(1px)', mixBlendMode: 'screen' }} />
                 ))}
@@ -1801,7 +1850,9 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
               </div>
               <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
                 <iframe
+                  ref={worldFrameRef}
                   key={`${activeAsset.id}-${connectedViewerReload}`}
+                  onError={() => { setAssetLoadState('error'); setAssetLoadMessage('The remote viewer connection failed.'); }}
                   src={toEmbeddedWebViewerUrl(activeAsset.remoteUrl || activeAsset.url)}
                   title={`${activeAsset.provider || 'provider'} model: ${activeAsset.name}`}
                   className="block h-full w-full border-0 bg-black"

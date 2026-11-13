@@ -684,12 +684,12 @@ export default function App() {
 
   const handleUploadAssets = useCallback(async (fileList: FileList | File[], forcedProjectId?: string, forcedProjectName?: string, forcedProjectData?: Record<string, any>) => {
     const files = Array.from(fileList);
-    if (!files.length) return;
+    if (!files.length) return false;
     if (!authToken || !authUser) {
       setPendingUploadFiles(files);
       setAuthError('Sign in or create an account to upload files.');
       setShowAuthModal(true);
-      return;
+      return false;
     }
     try {
       setUploadRetryAction(null);
@@ -714,6 +714,7 @@ export default function App() {
       await refreshStorageQuota();
       setUploadRetryAction(null);
       setStatusAlert({ type: 'success', message: `Uploaded ${uploaded.length} asset${uploaded.length === 1 ? '' : 's'} to ${savedName}.`, details: 'The files are stored on the server and linked to this project.', timestamp: new Date().toLocaleTimeString() });
+      return true;
     } catch (error: any) {
       setUploadRetryAction(() => () => {
         setUploadRetryAction(null);
@@ -723,6 +724,7 @@ export default function App() {
       const errorMessage = String(error?.message || 'Unknown upload error');
       const errorCode = errorMessage.includes('PROJECT_SAVE') ? 'ERR_PROJECT_SAVE' : errorMessage.includes('VALIDATION') ? 'ERR_UPLOAD_VALIDATION' : errorMessage.includes('QUOTA') ? 'ERR_STORAGE_QUOTA' : 'ERR_ASSET_UPLOAD';
       setStatusAlert({ type: 'error', message: `Asset upload failed: ${errorMessage}`, details: 'Use Retry to restart this batch. The original server response is shown above.', errorCode, timestamp: new Date().toLocaleTimeString() });
+      return false;
     } finally {
       setUploadProgress((current) => ({ ...current, active: false, status: current.status || 'Upload complete' }));
     }
@@ -933,12 +935,13 @@ export default function App() {
     }
   }, [authToken, authUser, liveProjectNameDraft, openLiveInProject]);
 
-  const handleLiveFileSave = useCallback((file: File) => {
+  const handleLiveFileSave = useCallback(async (file: File) => {
     if (!activeProjectId || activeProjectId.startsWith('provider_')) {
       setStatusAlert({ type: 'error', message: 'Choose a writable project before saving live media.', timestamp: new Date().toLocaleTimeString() });
-      return;
+      throw new Error('Choose a writable project before saving live media.');
     }
-    void handleUploadAssets([file], activeProjectId, projectName);
+    const saved = await handleUploadAssets([file], activeProjectId, projectName);
+    if (!saved) throw new Error('The recording upload did not complete.');
   }, [activeProjectId, handleUploadAssets, projectName]);
 
   const handleAddMediaMarker = useCallback((timeSeconds: number, note: string) => {
@@ -1079,6 +1082,10 @@ export default function App() {
 
   // Preset switching handler
   const handleSelectPreset = useCallback((presetId: TunnelPresetId, customParams?: ProceduralTunnelParams) => {
+    setActiveAssetId(null);
+    setActiveProjectId(null);
+    setIsLiveStreamOpen(false);
+    setShowMap(false);
     setActiveLeftMode(presetId === 'branching_drift' ? 'edge' : 'model');
     setCurrentPresetId(presetId);
     const preset = TUNNEL_PRESETS[presetId];
@@ -2335,6 +2342,8 @@ export default function App() {
             onOpenAuth={() => { setAuthError(''); setShowAuthModal(true); }}
             uploadProgress={uploadProgress}
             onSelectAsset={(asset) => {
+              setShowMap(false);
+              setIsLiveStreamOpen(false);
               setActiveAssetId(asset.id);
               setStatusAlert({ type: 'idle', message: `Loaded ${asset.name} into the viewport.`, timestamp: new Date().toLocaleTimeString() });
             }}

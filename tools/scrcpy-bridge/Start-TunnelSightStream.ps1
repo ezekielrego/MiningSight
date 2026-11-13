@@ -1,4 +1,4 @@
-# TunnelSight Scrcpy Bridge 1.3 - Windows 10/11, PowerShell 5.1+.
+# TunnelSight Scrcpy Bridge 1.4 - Windows 10/11, PowerShell 5.1+.
 [CmdletBinding()]
 param(
     [string]$WindowTitle,
@@ -6,6 +6,8 @@ param(
     [switch]$StartScrcpy,
     [string]$Serial,
     [string]$Email,
+    [ValidateSet('Phone', 'Window')]
+    [string]$CaptureSource = 'Phone',
     [ValidateSet('Landscape', 'Original')]
     [string]$StreamOrientation = 'Landscape',
     [ValidateSet('clock', 'cclock')]
@@ -15,7 +17,8 @@ $ErrorActionPreference = 'Stop'
 $ffmpeg = (Get-Command ffmpeg -ErrorAction Stop).Source
 if ($WindowTitle -match '["\r\n]') { throw 'Window title cannot contain quotes or newlines.' }
 if ($Serial -and $Serial -notmatch '^[a-zA-Z0-9_.:\-]+$') { throw 'Invalid device serial.' }
-Write-Host 'TunnelSight Scrcpy Bridge v1.3'
+if ($UseExistingWindow -or $WindowTitle) { $CaptureSource = 'Window' }
+Write-Host 'TunnelSight Scrcpy Bridge v1.4'
 Write-Host 'Your laptop mirrors the phone and sends its screen to your TunnelSight account.'
 if (-not $Email) { $Email = Read-Host 'TunnelSight account email' }
 $Email = $Email.Trim().ToLowerInvariant()
@@ -40,7 +43,7 @@ if (-not [Uri]::TryCreate($publishUrl, [UriKind]::Absolute, [ref]$uri) -or $uri.
     throw 'Enter a valid RTMP or RTMPS publish URL.'
 }
 if ($publishUrl -match '["\r\n]') { throw 'Invalid publish URL.' }
-Add-Type @'
+if ($CaptureSource -eq 'Window') { Add-Type @'
 using System;
 using System.Text;
 using System.Diagnostics;
@@ -75,7 +78,12 @@ public class TunnelSightWindow {
   }
 }
 '@
+}
 $mirror = $null
+$phoneCaptureProcess = $null
+$adb = $null
+$adbPort = $null
+$remoteServer = $null
 try {
     if ($StartScrcpy) {
         if ($UseExistingWindow) { throw 'Choose StartScrcpy or UseExistingWindow, not both.' }
@@ -85,6 +93,57 @@ try {
         $mirror = Start-Process -FilePath $scrcpy -ArgumentList $mirrorArgs -PassThru
         Start-Sleep -Seconds 2
     }
+    if ($CaptureSource -eq 'Phone') {
+        $scrcpy = (Get-Command scrcpy -ErrorAction Stop).Source
+        $scrcpyItem = Get-Item $scrcpy
+        if ($scrcpyItem.Target) {
+            $target = @($scrcpyItem.Target)[0]
+            if (Test-Path $target) { $scrcpy = (Resolve-Path $target).Path }
+        }
+        $serverCandidates = @()
+        if ($env:SCRCPY_SERVER_PATH) { $serverCandidates += $env:SCRCPY_SERVER_PATH }
+        $serverCandidates += (Join-Path (Split-Path $scrcpy) 'scrcpy-server')
+        $packageRoot = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+        if (Test-Path $packageRoot) {
+            foreach ($package in Get-ChildItem $packageRoot -Directory -Filter 'Genymobile.scrcpy*') {
+                $serverCandidates += @(Get-ChildItem $package.FullName -Recurse -File -Filter 'scrcpy-server' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
+            }
+        }
+        $serverFile = $serverCandidates | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+        if (-not $serverFile) { throw 'Cannot find scrcpy-server beside scrcpy.exe. Install the full Scrcpy package, or set SCRCPY_SERVER_PATH to its bundled scrcpy-server file.' }
+        $bundledScrcpy = Join-Path (Split-Path $serverFile) 'scrcpy.exe'
+        if (Test-Path $bundledScrcpy) { $scrcpy = $bundledScrcpy }
+        $versionText = (& $scrcpy --version 2>$null) -join "`n"
+        $version = [regex]::Match($versionText, 'scrcpy\s+([0-9]+\.[0-9]+(?:\.[0-9]+)?)').Groups[1].Value
+        if (-not $version) { throw 'Could not identify the installed Scrcpy version.' }
+        $bundledAdb = Join-Path (Split-Path $serverFile) 'adb.exe'
+        if (Test-Path $bundledAdb) { $adb = $bundledAdb }
+        else { $adb = (Get-Command adb -ErrorAction Stop).Source }
+        if (-not $Serial) {
+            $devices = @(& $adb devices | Where-Object { $_ -match '^\S+\s+device\s*$' } | ForEach-Object { ($_ -split '\s+')[0] })
+            if ($devices.Count -eq 0) { throw 'No authorized phone found. Connect USB, enable USB debugging, and accept the authorization prompt on the phone.' }
+            if ($devices.Count -eq 1) { $Serial = $devices[0] }
+            else {
+                for ($i = 0; $i -lt $devices.Count; $i++) { Write-Host ('  {0}. {1}' -f ($i + 1), $devices[$i]) }
+                $deviceChoice = 0
+                $answer = Read-Host 'Choose the phone number to stream'
+                if (-not [int]::TryParse($answer, [ref]$deviceChoice) -or $deviceChoice -lt 1 -or $deviceChoice -gt $devices.Count) { throw 'Choose a valid connected phone number.' }
+                $Serial = $devices[$deviceChoice - 1]
+            }
+        }
+        if ($Serial -notmatch '^[a-zA-Z0-9_.:\-]+$') { throw 'Invalid phone identifier.' }
+        $sessionId = (Get-Random -Minimum 268435456 -Maximum 1879048191).ToString('x8')
+        $remoteServer = "/data/local/tmp/tunnelsight-$sessionId.jar"
+        & $adb -s $Serial push $serverFile $remoteServer | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Could not prepare screen capture on the phone.' }
+        $adbPort = ((& $adb -s $Serial forward tcp:0 "localabstract:scrcpy_$sessionId") -join '').Trim()
+        if ($LASTEXITCODE -ne 0 -or $adbPort -notmatch '^\d{1,5}$') { throw 'Could not connect the laptop to the phone video channel.' }
+        $phoneServerArgs = @('-s', $Serial, 'shell', "CLASSPATH=$remoteServer", 'app_process', '/', 'com.genymobile.scrcpy.Server', $version,
+            "scid=$sessionId", 'tunnel_forward=true', 'audio=false', 'control=false', 'cleanup=false', 'raw_stream=true', 'video_codec=h264',
+            'max_size=1280', 'max_fps=30', 'video_bit_rate=4000000', 'log_level=warn')
+        $inputArgs = @('-fflags', '+genpts', '-use_wallclock_as_timestamps', '1', '-thread_queue_size', '512', '-f', 'h264', '-i', "tcp://127.0.0.1:${adbPort}?timeout=15000000")
+        Write-Host 'Capturing the full phone display directly. Resizing or minimizing the laptop mirror will not change the web feed.'
+    } else {
     $windowHandle = [IntPtr]::Zero
     if ($WindowTitle) {
         $windowHandle = [TunnelSightWindow]::FindWindow($null, $WindowTitle)
@@ -113,6 +172,9 @@ try {
     Write-Host "Selected: $WindowTitle"
     # Use the actual window identity so changes to its title do not stop capture.
     $captureInput = 'hwnd=0x' + $windowHandle.ToInt64().ToString('X')
+    $inputArgs = @('-f', 'gdigrab', '-framerate', '30', '-draw_mouse', '0', '-i', $captureInput)
+    Write-Host 'Window capture depends on the computer window. Use the default Phone source for a stream independent of minimization.'
+    }
     # Rotate portrait captures before encoding so the website, recordings and
     # captured reconstruction frames all receive the same landscape picture.
     # Already-landscape windows pass through without being rotated.
@@ -121,27 +183,35 @@ try {
         $videoFilter = "transpose=dir=${PortraitRotation}:passthrough=landscape,$videoFilter"
         Write-Host 'Web feed: landscape 1280x720. Portrait windows rotate sideways; existing landscape windows remain upright.'
     }
-    $streamArgs = @('-hide_banner', '-loglevel', 'warning', '-nostdin',
-        '-f', 'gdigrab', '-framerate', '30', '-draw_mouse', '0', '-i', $captureInput,
+    $streamArgs = @('-hide_banner', '-loglevel', 'warning', '-nostdin') + $inputArgs + @(
         '-an', '-vf', $videoFilter,
         '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p',
         '-b:v', '2000k', '-maxrate', '2500k', '-bufsize', '2000k', '-g', '30', '-keyint_min', '30', '-sc_threshold', '0',
-        '-rw_timeout', '10000000', '-f', 'flv', '-flvflags', 'no_duration_filesize', $publishUrl)
+        '-r', '30', '-rw_timeout', '10000000', '-f', 'flv', '-flvflags', 'no_duration_filesize', $publishUrl)
     Write-Host "Streaming to $Email. On TunnelSight, sign in with this email, open Live, and choose a project."
-    Write-Host 'Keep the selected window visible. Press Ctrl+C to stop streaming. Your existing window stays open.'
+    Write-Host 'Press Ctrl+C to stop streaming. Your existing Scrcpy window stays open.'
     # Network failures restart FFmpeg while scrcpy remains open. Credentials are redacted.
     $ErrorActionPreference = 'Continue'
-    while ([TunnelSightWindow]::IsWindow($windowHandle)) {
+    $lastDiagnosticAt = [DateTime]::MinValue
+    while ($CaptureSource -eq 'Phone' -or [TunnelSightWindow]::IsWindow($windowHandle)) {
+        if ($CaptureSource -eq 'Phone') {
+            if ($phoneCaptureProcess -and -not $phoneCaptureProcess.HasExited) { Stop-Process -Id $phoneCaptureProcess.Id -ErrorAction SilentlyContinue }
+            $phoneCaptureProcess = Start-Process -FilePath $adb -ArgumentList $phoneServerArgs -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $settingsDirectory 'scrcpy-capture.log') -RedirectStandardError (Join-Path $settingsDirectory 'scrcpy-capture-error.log')
+            Start-Sleep -Milliseconds 1000
+        }
         & $ffmpeg @streamArgs 2>&1 | ForEach-Object {
             $line = $_.ToString().Replace($publishUrl, '[publish URL]')
             $line = $line -replace '(?i)(pass=)[^&\s]+', '$1[hidden]'
-            Write-Host $line
+            if (([DateTime]::UtcNow - $lastDiagnosticAt).TotalSeconds -ge 30) { Write-Host $line; $lastDiagnosticAt = [DateTime]::UtcNow }
         }
-        if (-not [TunnelSightWindow]::IsWindow($windowHandle)) { break }
-        Write-Host 'Publisher stopped. Retrying in 3 seconds; check internet and keep the phone connected.'
+        if ($CaptureSource -eq 'Window' -and -not [TunnelSightWindow]::IsWindow($windowHandle)) { break }
+        if (([DateTime]::UtcNow - $lastDiagnosticAt).TotalSeconds -ge 30) { Write-Host 'Connection interrupted. Retrying automatically; check internet and USB.'; $lastDiagnosticAt = [DateTime]::UtcNow }
         Start-Sleep -Seconds 3
     }
 } finally {
+    if ($phoneCaptureProcess -and -not $phoneCaptureProcess.HasExited) { Stop-Process -Id $phoneCaptureProcess.Id -ErrorAction SilentlyContinue }
+    if ($adb -and $adbPort) { & $adb -s $Serial forward --remove "tcp:$adbPort" 2>$null | Out-Null }
+    if ($adb -and $remoteServer) { & $adb -s $Serial shell rm $remoteServer 2>$null | Out-Null }
     if ($mirror -and -not $mirror.HasExited) { Stop-Process -Id $mirror.Id -ErrorAction SilentlyContinue }
     $publishUrl = $null
 }
