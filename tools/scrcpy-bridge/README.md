@@ -23,7 +23,9 @@ Run the downloaded script:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Start-TunnelSightStream.ps1
 ```
 
-Enter your email when prompted. It launches scrcpy, waits for its window, then sends a 720p/30fps H.264 stream with one-second keyframes. Sign in to TunnelSight with the same email, open the live radio button, choose a project, and use the existing capture/record controls. Closing scrcpy or pressing Ctrl+C stops the bridge. Network failures retry in the background. The email is a destination label, not proof of account ownership.
+Enter your email when prompted. Version 1.2 lists open windows with Scrcpy windows first. Enter the number of the Scrcpy window (or another visible window you want to stream). Capture uses the selected window's handle, so a changing title does not stop the stream. Restore minimized windows before choosing, enter R to refresh the list, or Q to cancel. Nothing is streamed until a window is selected.
+
+The script sends a 720p/30fps H.264 stream with one-second keyframes. Sign in to TunnelSight with the same email, open the live radio button, choose a project, and use the existing capture/record controls. Closing the selected window or pressing Ctrl+C stops publishing. An existing window stays open when the script stops. Network failures retry in the background. The email is a destination label, not proof of account ownership.
 
 To provide the email directly:
 
@@ -33,11 +35,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Start-TunnelSightStream.ps
 
 The phone remains interactive in the Scrcpy desktop window. The website provides video playback, frame capture, and recording; remote control from a browser is not provided by this script.
 
-To use a scrcpy window already running, provide its exact title:
+Selecting an existing window is the default. To skip the picker using a known title:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Start-TunnelSightStream.ps1 -UseExistingWindow -WindowTitle "TECNO BG6m"
 ```
+
+To launch a new Scrcpy mirror before selecting a window:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Start-TunnelSightStream.ps1 -StartScrcpy
+```
+
+If an older FFmpeg build does not recognize `hwnd=`, update it with `winget upgrade --id Gyan.FFmpeg -e` and reopen PowerShell.
 
 Keep scrcpy visible and avoid resizing, minimizing, or changing orientation during a session. Restart the bridge after changing orientation. Window capture may include padding or desktop occlusion; protected phone content can appear black. This Windows capture path requires a laptop/phone test; it cannot be tested on the Linux web server.
 
