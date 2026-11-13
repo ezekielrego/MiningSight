@@ -1,6 +1,8 @@
 import type { Express, Request, Response } from 'express';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 export const WEB_VIEWER_PROXY_PREFIX = '/api/reconstruction/ai/webviewer/p';
 const WEB_VIEWER_INTERNAL_PREFIX = '/api/ai/webviewer/p';
@@ -88,7 +90,7 @@ function buildViewerShim(targetUrl: string): string {
   }).replace(/</g, '\\u003c');
   return `<script data-tunnelsight-viewer="1">(function(){
 var c=${config},o=c.targetOrigin,p=c.proxyPrefix,r=c.proxyRoot;
-function u(v){if(typeof v!=="string")return v;var s=v.trim();if(!s||s.indexOf(r+"/")===0||/^(blob:|data:|javascript:|mailto:|tel:|#)/i.test(s))return v;try{var x=new URL(s,o+location.pathname);if(x.origin===o)return p+x.pathname+x.search+x.hash;if(x.origin===location.origin&&x.pathname.indexOf(r+"/")!==0)return p+x.pathname+x.search+x.hash;}catch(e){}return v;}
+function u(v){if(typeof v!=="string")return v;var s=v.trim();if(!s||s.indexOf(r+"/")===0||/^(blob:|data:|javascript:|mailto:|tel:|#)/i.test(s))return v;try{var x=new URL(s,o+location.pathname);if(x.hostname==="cdn.marble.worldlabs.ai"&&x.protocol==="https:")return x.href;if(x.origin===o)return p+x.pathname+x.search+x.hash;if(x.origin===location.origin){if(x.pathname.indexOf(r+"/")===0)return x.pathname+x.search+x.hash;return p+x.pathname+x.search+x.hash;}if(x.protocol==="https:"||x.protocol==="http:")return r+"/"+x.protocol.slice(0,-1)+"/"+x.host+x.pathname+x.search+x.hash;}catch(e){}return v;}
 try{history.replaceState(history.state,"",c.initialPath+(location.hash||""));}catch(e){}
 if(window.fetch){var f=window.fetch;window.fetch=function(i,n){try{if(typeof i==="string")i=u(i);else if(i instanceof URL)i=u(i.toString());else if(i&&typeof i.url==="string"){var q=u(i.url);if(q!==i.url)i=new Request(q,i);}}catch(e){}return f.call(this,i,n);};}
 var xo=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(m,v){var a=Array.prototype.slice.call(arguments);a[1]=u(String(v));return xo.apply(this,a);};
@@ -132,20 +134,20 @@ async function readBody(req: Request): Promise<Buffer | undefined> {
   return chunks.length ? Buffer.concat(chunks) : undefined;
 }
 
-async function proxyViewerRequest(req: Request, res: Response): Promise<void> {
-  const rawTarget = fromProxyPath(req.originalUrl);
+async function proxyViewerRequest(req: Request, res: Response, fallbackTarget?: string): Promise<void> {
+  const rawTarget = fallbackTarget || fromProxyPath(req.originalUrl);
   if (!rawTarget) { res.status(400).send('Malformed viewer URL.'); return; }
   try {
     const target = await validatePublicViewerUrl(rawTarget);
     const headers = new Headers();
     for (const [key, value] of Object.entries(req.headers)) {
-      if (!value || ['host', 'connection', 'content-length', 'accept-encoding', 'origin', 'referer', 'sec-fetch-dest', 'sec-fetch-mode', 'sec-fetch-site'].includes(key.toLowerCase())) continue;
+      if (!value || ['host', 'cookie', 'authorization', 'connection', 'content-length', 'accept-encoding', 'origin', 'referer', 'sec-fetch-dest', 'sec-fetch-mode', 'sec-fetch-site'].includes(key.toLowerCase())) continue;
       headers.set(key, Array.isArray(value) ? value.join(', ') : String(value));
     }
     headers.set('origin', target.origin);
     headers.set('referer', `${target.origin}/`);
     const body = await readBody(req);
-    const upstream = await fetch(target, { method: req.method, headers, body: body ? new Uint8Array(body) : undefined, redirect: 'manual' });
+    const upstream = await fetch(target, { method: req.method, headers, body: body ? new Uint8Array(body) : undefined, redirect: 'manual', signal: AbortSignal.timeout(45000) });
     if (upstream.status >= 300 && upstream.status < 400 && upstream.headers.get('location')) {
       const redirect = new URL(upstream.headers.get('location')!, target);
       await validatePublicViewerUrl(redirect.toString());
@@ -159,18 +161,36 @@ async function proxyViewerRequest(req: Request, res: Response): Promise<void> {
     if (req.method === 'HEAD') { res.end(); return; }
     const contentType = upstream.headers.get('content-type') || '';
     if (contentType.includes('text/html')) {
+      res.setHeader('Set-Cookie', `__viewer_origin=${encodeURIComponent(target.origin)}; Path=/; HttpOnly; Secure; SameSite=Lax`);
       res.type('html').send(rewriteHtml(await upstream.text(), target.toString()));
     } else if (contentType.includes('text/css')) {
       res.type('css').send(rewriteCss(await upstream.text(), target.toString()));
     } else {
-      res.send(Buffer.from(await upstream.arrayBuffer()));
+      if (upstream.body) await pipeline(Readable.fromWeb(upstream.body as any), res);
+      else res.end();
     }
   } catch (error: any) {
+    if (res.headersSent) { res.end(); return; }
     res.status(502).type('html').send(`<div style="height:100vh;display:grid;place-items:center;background:#151515;color:#ddd;font:14px sans-serif"><div><strong>Viewer connection failed</strong><p>${String(error.message || 'The remote viewer could not be loaded.').replace(/[<>&]/g, '')}</p></div></div>`);
   }
 }
 
 export function mountWebViewerProxy(app: Express): void {
+  // A dedicated origin gives provider routers, storage and workers a normal
+  // browser context while keeping them separate from the signed-in application.
+  app.use((req, res, next) => {
+    if (req.hostname !== 'www.tunnelsight.applications.co.zw') { next(); return; }
+    if (fromProxyPath(req.originalUrl)) { void proxyViewerRequest(req, res); return; }
+    const cookie = req.headers.cookie?.split(';').map((part) => part.trim()).find((part) => part.startsWith('__viewer_origin='));
+    let origin = '';
+    try {
+      const ref = req.headers.referer ? new URL(req.headers.referer) : null;
+      const refTarget = ref && fromProxyPath(ref.pathname + ref.search);
+      origin = refTarget ? new URL(refTarget).origin : cookie ? decodeURIComponent(cookie.slice('__viewer_origin='.length)) : '';
+      if (origin) { void proxyViewerRequest(req, res, new URL(req.originalUrl, origin).toString()); return; }
+    } catch { /* Show a useful empty state for missing viewer context. */ }
+    res.status(400).send('Choose a connected model in TunnelSight to open this viewer.');
+  });
   app.use(WEB_VIEWER_PROXY_PREFIX, (req, res) => { void proxyViewerRequest(req, res); });
   app.use(WEB_VIEWER_INTERNAL_PREFIX, (req, res) => { void proxyViewerRequest(req, res); });
 }

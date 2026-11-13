@@ -212,6 +212,9 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const coveredByWorldRef = useRef(false);
+  coveredByWorldRef.current = activeAsset?.kind === 'world' && !showMap;
+  const [connectedViewerReload, setConnectedViewerReload] = useState(0);
 
   // Three.js internal references
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -1055,7 +1058,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         }
       }
 
-      renderer.render(scene, camera);
+      if (!coveredByWorldRef.current) renderer.render(scene, camera);
       animationFrameId = requestAnimationFrame(render);
     };
 
@@ -1788,17 +1791,19 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
               <div className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 bg-black/65 px-2 py-1 text-[9px] text-[#ccc] backdrop-blur-md">
                 <span className="min-w-0 truncate font-bold uppercase tracking-wide">{activeAsset.provider === 'gomera' ? 'GOMERA X' : activeAsset.provider === 'gemini' ? 'Gemini scene' : 'World Labs Marble'} · {activeAsset.name}</span>
                 <div className="flex shrink-0 items-center gap-2">
+                  <button onClick={() => setConnectedViewerReload((value) => value + 1)} className="text-[#ccc] hover:text-white" title="Reload connected model">Reload</button>
                   <a href={activeAsset.remoteUrl || activeAsset.url} target="_blank" rel="noreferrer" className="text-[#9bcaf0] hover:text-white hover:underline">Open externally</a>
                   <button onClick={() => toggleOverlay('world')} className="px-1 text-[#aaa] hover:text-white cursor-pointer" title="Minimize connected model">−</button>
                 </div>
               </div>
               <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
                 <iframe
+                  key={`${activeAsset.id}-${connectedViewerReload}`}
                   src={toEmbeddedWebViewerUrl(activeAsset.remoteUrl || activeAsset.url)}
                   title={`${activeAsset.provider || 'provider'} model: ${activeAsset.name}`}
                   className="block h-full w-full border-0 bg-black"
                   allow="fullscreen; accelerometer; gyroscope; xr-spatial-tracking"
-                  sandbox="allow-scripts allow-forms allow-pointer-lock allow-popups allow-downloads allow-presentation"
+                  sandbox="allow-same-origin allow-scripts allow-forms allow-pointer-lock allow-popups allow-downloads allow-presentation"
                 />
               </div>
             </>
