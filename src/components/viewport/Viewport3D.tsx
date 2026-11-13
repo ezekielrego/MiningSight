@@ -25,7 +25,6 @@ import {
   Crosshair,
   Image as ImageIcon,
   Sliders as SlidersIcon,
-  Loader2,
   Map as MapIcon,
 } from 'lucide-react';
 import { MiningTunnelRig, ShadingDisplayMode } from '../../scene/miningTunnelGenerator';
@@ -241,13 +240,8 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   const [assetLoadId, setAssetLoadId] = useState<string | null>(null);
   const worldFrameRef = useRef<HTMLIFrameElement>(null);
   const [rigLoad, setRigLoad] = useState<{ params: ProceduralTunnelParams | null; state: 'loading' | 'ready' | 'error'; message?: string }>({ params: null, state: 'loading' });
-  const viewerLoading = !showMap && !liveStreamOpen && (activeAsset
-    ? ['model', 'world', 'image', 'video'].includes(activeAsset.kind) && (assetLoadId !== activeAsset.id || assetLoadState === 'loading')
-    : !activeProjectId && (rigLoad.params !== proceduralParams || rigLoad.state === 'loading'));
   const viewerLoadError = !showMap && !liveStreamOpen && (activeAsset ? assetLoadId === activeAsset.id && assetLoadState === 'error' ? assetLoadMessage : '' : !activeProjectId && rigLoad.state === 'error' ? rigLoad.message : '');
   const viewerLoadName = activeAsset?.name || proceduralParams.name || TUNNEL_PRESETS[currentPresetId]?.name || 'model';
-  const blockedNavigationRef = useRef(false);
-  blockedNavigationRef.current = Boolean(viewerLoading || viewerLoadError);
 
   // Navigation mode: 'orbit' (C4D orbital viewer) vs 'walk' (First-Person walkable drift inspection)
   const [navMode, setNavMode] = useState<'orbit' | 'walk'>('orbit');
@@ -1201,7 +1195,6 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   // Keyboard navigation for Walk Mode (WASD + Space/Shift, F flashlight, V mode toggle)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (blockedNavigationRef.current) return;
       const target = e.target as HTMLElement;
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes(target?.tagName) || target?.isContentEditable) return;
 
@@ -1282,8 +1275,6 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     const scene = sceneRef.current;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
-    let readyTimer: ReturnType<typeof setTimeout>;
-    const loadStarted = performance.now();
     setRigLoad({ params: proceduralParams, state: 'loading' });
     const frame = requestAnimationFrame(() => { timer = setTimeout(() => {
     if (cancelled) return;
@@ -1305,12 +1296,12 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     if (gizmoGroupRef.current) {
       gizmoGroupRef.current.position.copy(newRig.root.position);
     }
-    readyTimer = setTimeout(() => requestAnimationFrame(() => { if (!cancelled) setRigLoad({ params: proceduralParams, state: 'ready' }); }), Math.max(0, 300 - (performance.now() - loadStarted)));
+    if (!cancelled) setRigLoad({ params: proceduralParams, state: 'ready' });
     } catch (error) {
       if (!cancelled) setRigLoad({ params: proceduralParams, state: 'error', message: 'This model could not be prepared. Please retry.' });
     }
     }, 0); });
-    return () => { cancelled = true; cancelAnimationFrame(frame); clearTimeout(timer); clearTimeout(readyTimer); };
+    return () => { cancelled = true; cancelAnimationFrame(frame); clearTimeout(timer); };
   }, [currentPresetId, proceduralParams, connectedViewerReload]);
 
   // Give the selected sample-scene part a clear, full-surface highlight. The
@@ -1667,15 +1658,10 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       data-onboarding-target="viewport"
       className="relative w-full h-full select-none overflow-hidden bg-[#555555]"
       onContextMenu={(e) => e.preventDefault()}
-      onKeyDownCapture={(event) => { if (viewerLoading && (event.target as HTMLElement).tagName !== 'BUTTON') { event.preventDefault(); event.stopPropagation(); } }}
     >
-      {(viewerLoading || viewerLoadError) && <div role={viewerLoadError ? 'alert' : 'status'} aria-live="polite" aria-busy={viewerLoading} data-viewer-loading className="absolute inset-0 z-[120] flex items-center justify-center bg-[#171717]/90 px-6 text-center text-[#ddd] backdrop-blur-sm" onPointerDown={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()}>
-        <div className="max-w-sm space-y-3">
-          {!viewerLoadError && <Loader2 className="mx-auto h-7 w-7 animate-spin text-[#e88724]" />}
-          <div className="text-[12px] font-semibold">{viewerLoadError ? `Could not load ${viewerLoadName}` : `Loading ${viewerLoadName}…`}</div>
-          <div className="text-[10px] text-[#aaa]">{viewerLoadError || 'Please wait while the viewer prepares this model.'}</div>
-          {viewerLoadError && <button onClick={() => setConnectedViewerReload((value) => value + 1)} className="border border-[#666] px-3 py-1 text-[11px] text-white hover:border-[#e88724]">Retry loading</button>}
-        </div>
+      {viewerLoadError && <div role="alert" className="absolute top-10 left-1/2 z-[90] flex max-w-[90%] -translate-x-1/2 items-center gap-3 border border-[#713333] bg-[#321d1d]/90 px-3 py-2 text-[10px] text-[#ffb0b0]">
+        <span title={viewerLoadName}>{viewerLoadError}</span>
+        <button onClick={() => setConnectedViewerReload((value) => value + 1)} className="shrink-0 text-white hover:text-[#e88724]">Retry</button>
       </div>}
       {/* 3D WebGL Canvas */}
       <canvas
