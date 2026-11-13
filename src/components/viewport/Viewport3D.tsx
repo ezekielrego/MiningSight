@@ -529,6 +529,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
 
   useEffect(() => {
     setHighlightedSelectionId(null);
+    setShadingMode(currentPresetId === 'branching_drift' ? 'wireframe' : 'gouraud');
   }, [currentPresetId]);
 
   useEffect(() => {

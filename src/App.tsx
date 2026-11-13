@@ -1043,6 +1043,7 @@ export default function App() {
 
   // Preset switching handler
   const handleSelectPreset = useCallback((presetId: TunnelPresetId, customParams?: ProceduralTunnelParams) => {
+    setActiveLeftMode(presetId === 'branching_drift' ? 'edge' : 'model');
     setCurrentPresetId(presetId);
     const preset = TUNNEL_PRESETS[presetId];
     if (customParams) {
