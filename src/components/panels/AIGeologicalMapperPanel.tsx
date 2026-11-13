@@ -38,6 +38,7 @@ import {
 import { ProjectAsset, ProjectProvider } from '../../types/project';
 
 interface AIGeologicalMapperPanelProps {
+  reconstructionOpenToken?: number;
   onStatusChange: (status: StatusAlert) => void;
   onApply3DMarkers?: (points: Array<{ stationId: string; x: number; y: number; z: number; color: string; label: string }>) => void;
   projectTitle?: string;
@@ -101,6 +102,7 @@ interface AISettingsState {
 }
 
 export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = ({
+  reconstructionOpenToken = 0,
   onStatusChange,
   onApply3DMarkers,
   projectTitle = 'Mining Site - Surface & Subsurface Mapping',
@@ -126,6 +128,24 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   onProviderAssetReady,
 }) => {
   const [activeTab, setActiveTab] = useState<'input' | 'preview' | 'analysis' | 'records' | 'reconstruct'>('input');
+  const [savedJobs, setSavedJobs] = useState<any[]>([]);
+  const [jobMessage, setJobMessage] = useState('');
+  useEffect(() => {
+    if (!reconstructionOpenToken) return;
+    setActiveTab('reconstruct');
+    const timer = window.setTimeout(() => document.getElementById('internal-reconstruction-builder')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 100);
+    return () => window.clearTimeout(timer);
+  }, [reconstructionOpenToken]);
+  const refreshJobs = async () => {
+    if (!authToken) return;
+    try {
+      const response = await fetch('/api/reconstruction-jobs', { headers: { Authorization: `Bearer ${authToken}` } });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.message || 'Could not load saved requests.');
+      setSavedJobs(json.jobs || []);
+    } catch (error: any) { setJobMessage(error.message); }
+  };
+  useEffect(() => { if (activeTab === 'reconstruct' && authToken) void refreshJobs(); }, [activeTab, authToken]);
   const [images, setImages] = useState<SurveyImageItem[]>(getDefaultSampleSurveyImages());
   const [selectedImageIndex, setSelectedImageIndex] = useState<number>(0);
   const [notes, setNotes] = useState<string>(
@@ -680,8 +700,8 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   };
 
   // Generate a MiningSight-compatible reconstruction plan via Gemini AI Vision.
-  const handleReconstructScene = async () => {
-    if (!authToken || (aiSettings && !aiSettings.geminiConfigured)) {
+  const handleReconstructScene = async (assisted = false) => {
+    if (!authToken) {
       setActiveTab('reconstruct');
       openProviderSettings();
       onStatusChange({
@@ -704,6 +724,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
     setIsReconstructing(true);
     setWorldError('');
     let referenceImage = '';
+    let archivedJobId: string | null = null;
     try {
       referenceImage = reconstructImage.startsWith('data:')
         ? reconstructImage
@@ -713,14 +734,11 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
         }).then(readFileAsDataUrl);
       onStatusChange({
         type: 'loading',
-        message: 'Gemini is reading the reference, map, selected scene, and next-part dimensions...',
+        message: assisted ? 'Saving assisted reconstruction inputs...' : 'Saving inputs before Gemini reconstruction...',
         details: `${reconstructTargetMode === 'extend-current' ? 'Extending' : reconstructTargetMode === 'new-part' ? 'Building a new part' : 'Rebuilding'} ${reconstructBasePresetId}.`,
         timestamp: new Date().toLocaleTimeString(),
       });
-      const resp = await fetch('/api/reconstruction/ai/reconstruct-scene-from-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
-        body: JSON.stringify({
+      const input = {
           image: referenceImage,
           imageName: reconstructImageName,
           fieldNotes: reconstructPrompt,
@@ -740,7 +758,22 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
             heightMeters: partHeightMeters,
             lengthMeters: partLengthMeters,
           },
-        }),
+        };
+      const archive = await fetch('/api/reconstruction-jobs', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ input, assisted, projectTitle }),
+      });
+      const saved = await archive.json();
+      if (!archive.ok || !saved.success) throw new Error(saved.message || 'Could not save reconstruction inputs.');
+      archivedJobId = saved.job.id;
+      setJobMessage(`Saved request ${archivedJobId}`);
+      void refreshJobs();
+      if (assisted) {
+        onStatusChange({ type: 'loading', message: 'Assisted reconstruction queued.', details: `Request ${archivedJobId} is saved for server-side work.`, timestamp: new Date().toLocaleTimeString() });
+        return;
+      }
+      const resp = await fetch('/api/reconstruction/ai/reconstruct-scene-from-image', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` }, body: JSON.stringify(input),
       });
 
       const json = await resp.json();
@@ -753,6 +786,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
       }
 
       setReconstructResult(json.data);
+      await fetch(`/api/reconstruction-jobs/${archivedJobId}/outcome`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` }, body: JSON.stringify({ status: 'completed', data: json.data }) });
       onStatusChange({
         type: 'success',
         message: 'MiningSight-compatible reconstruction plan generated.',
@@ -760,6 +794,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
         timestamp: new Date().toLocaleTimeString(),
       });
     } catch (err: any) {
+      if (archivedJobId) await fetch(`/api/reconstruction-jobs/${archivedJobId}/outcome`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` }, body: JSON.stringify({ status: 'failed', message: err.message }) }).catch(() => undefined);
       onStatusChange({
         type: 'error',
         message: `MiningSight-compatible reconstruction failed: ${err.message}`,
@@ -767,6 +802,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
       });
     } finally {
       setIsReconstructing(false);
+      void refreshJobs();
     }
   };
 
@@ -2170,10 +2206,10 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
             <div className="bg-[#252525] border border-[#4b3825] p-2.5 rounded-[3px] space-y-2.5">
               <div className="flex items-start justify-between gap-2 border-b border-[#3d3d3d] pb-1.5">
                 <div>
-                  <div className="font-bold text-[#f6d2a7] text-[11.5px]">MiningSight Compatible Reconstruction</div>
+                  <div id="internal-reconstruction-builder" className="font-bold text-[#f6d2a7] text-[11.5px]">MiningSight Compatible Reconstruction</div>
                   <div className="text-[9.5px] text-[#999] mt-0.5">Make a new mesh part, extend the current scene, or rebuild a complete selectable procedural model.</div>
                 </div>
-                <span className="shrink-0 rounded border border-[#315438] bg-[#1a2e1f] px-1.5 py-0.5 text-[8.5px] font-mono text-[#72e28e]">GEMINI REQUIRED</span>
+                <span className="shrink-0 rounded border border-[#315438] bg-[#1a2e1f] px-1.5 py-0.5 text-[8.5px] font-mono text-[#72e28e]">GEMINI / ASSISTED</span>
               </div>
 
               <div className="grid grid-cols-3 gap-1">
@@ -2292,10 +2328,26 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                 />
               </div>
 
+              <div className="border border-[#444] p-2 text-[10px] space-y-1">
+                <div className="flex justify-between"><span>Saved reconstruction requests</span><button onClick={() => void refreshJobs()} className="text-[#e88724]">Refresh results</button></div>
+                <button onClick={() => void handleReconstructScene(true)} disabled={isReconstructing} className="text-[#e88724] disabled:opacity-50">Save & queue assisted reconstruction</button>
+                <p className="text-[#999]">Inputs are saved privately on the server. Assisted requests wait for an operator; no Gemini key is needed.</p>
+                {jobMessage && <p className="break-all">{jobMessage}</p>}
+                <div className="max-h-40 overflow-y-auto">{savedJobs.map(job => <div key={job.id} className="border-t border-[#444] py-1">
+                  <div>{job.provider === 'assisted' ? 'Assisted' : 'Gemini'} · {job.status} · {job.createdAt}</div>
+                  <div className="text-[#999] break-all">{job.id}</div>
+                  {job.message && <p>{job.message}</p>}
+                  {job.status === 'completed' && <button className="text-[#e88724]" onClick={() => {
+                    if (job.presetId && ['branching_drift','rugged_timbered_photo','classic_diorama'].includes(job.presetId)) onSelectPreset?.(job.presetId);
+                    else if (job.data?.procedural3DParams) setReconstructResult(job.data);
+                    else setJobMessage('Completed result has no supported model or parameters.');
+                  }}>Load completed reconstruction</button>}
+                </div>)}</div>
+              </div>
               {/* Action Buttons */}
               <div className="flex items-center space-x-2 pt-1">
                 <button
-                  onClick={handleReconstructScene}
+                  onClick={() => void handleReconstructScene()}
                   disabled={isReconstructing}
                   aria-busy={isReconstructing}
                   className="flex-1 py-1.5 bg-[#e88724] hover:bg-[#ff9933] active:scale-[0.99] disabled:opacity-50 disabled:cursor-wait text-black font-bold rounded-[2px] flex items-center justify-center space-x-1.5 cursor-pointer shadow-md transition-colors"

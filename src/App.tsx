@@ -211,6 +211,7 @@ const restoreSceneVisibility = (object: C4DSceneObject, savedVisibility: Record<
 });
 
 export default function App() {
+  const [reconstructionOpenToken, setReconstructionOpenToken] = useState(0);
   const [layout, setLayout] = useState<string>('Startup');
   const [activeUpperTab, setActiveUpperTab] = useState<UpperTabType>('Objects');
   const [activeTool, setActiveTool] = useState<ToolMode>('move');
@@ -1980,6 +1981,7 @@ export default function App() {
 
       {/* 1. Main Top Menu Bar */}
       <MenuBar
+        onOpenReconstruction={() => { setActiveUpperTab('AI Survey'); setReconstructionOpenToken(value => value + 1); }}
         currentLayout={layout}
         onSelectLayout={handleSelectLayout}
         onNewObject={handleAddObject}
@@ -2089,6 +2091,7 @@ export default function App() {
         }
         aiSurveyPanel={
           <AIGeologicalMapperPanel
+            reconstructionOpenToken={reconstructionOpenToken}
             projectTitle={`${projectName} - Surface & Subsurface Mapping`}
             onStatusChange={setStatusAlert}
             onApply3DMarkers={handleApply3DMarkers}

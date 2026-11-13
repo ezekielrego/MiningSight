@@ -14,6 +14,7 @@ interface MenuBarProps {
   onNewProject?: () => void;
   onRevertProject?: () => void;
   onOpenAISurvey?: () => void;
+  onOpenReconstruction?: () => void;
   onOpenTours?: () => void;
   onTriggerRender?: () => void;
   currentPresetId?: string;
@@ -40,6 +41,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
   onNewProject,
   onRevertProject,
   onOpenAISurvey,
+  onOpenReconstruction,
   onOpenTours,
   onTriggerRender,
   currentPresetId = 'rugged_timbered_photo',
@@ -327,6 +329,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
           <span>Tours</span>
         </button>
 
+        <button onClick={onOpenReconstruction} title="Open internal reconstruction and saved requests" className="px-1.5 py-0.5 text-[10px] text-[#dfdfdf] hover:text-[#e88724] cursor-pointer">Reconstruct</button>
         {/* AI Quick Button */}
         <button
           data-onboarding-target="ai-survey"

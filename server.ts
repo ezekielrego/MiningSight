@@ -1,5 +1,4 @@
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import path from 'node:path';
@@ -1539,6 +1538,48 @@ Output a comprehensive, rigorous JSON object with EXACTLY the following structur
   }
 });
 
+// Private, exact reconstruction inputs retained for assisted server work.
+const reconstructionJobsRoot = path.join(path.dirname(projectsRoot), 'reconstruction-jobs');
+const jobOwner = (user: any) => createHash('sha256').update(String(user.id || user.email)).digest('hex');
+app.post('/api/reconstruction-jobs', async (req, res) => {
+  const user = await requireAuthenticated(req, res); if (!user) return;
+  const input = req.body?.input;
+  if (!input || typeof input.fieldNotes !== 'string' || typeof input.image !== 'string') return res.status(400).json({ success: false, message: 'Reference image and instructions required.' });
+  const encoded = JSON.stringify(input);
+  if (Buffer.byteLength(encoded) > 25 * 1024 * 1024) return res.status(413).json({ success: false, message: 'Reconstruction references exceed 25 MB.' });
+  const ownerDir = path.join(reconstructionJobsRoot, jobOwner(user));
+  await mkdir(ownerDir, { recursive: true, mode: 0o700 });
+  let used = 0;
+  for (const name of await readdir(ownerDir)) used += (await stat(path.join(ownerDir, name, 'request.json')).catch(() => ({ size: 0 }))).size;
+  if (used + Buffer.byteLength(encoded) > 100 * 1024 * 1024) return res.status(413).json({ success: false, message: 'Reconstruction archive is full (100 MB). Archive old requests before continuing.' });
+  const id = randomUUID(), dir = path.join(ownerDir, id);
+  await mkdir(dir, { mode: 0o700 });
+  const job = { id, createdAt: new Date().toISOString(), provider: req.body.assisted ? 'assisted' : 'gemini', status: req.body.assisted ? 'pending' : 'submitted', projectTitle: String(req.body.projectTitle || ''), input };
+  await writeFile(path.join(dir, 'request.json'), JSON.stringify(job, null, 2), { mode: 0o600 });
+  return res.json({ success: true, job: { ...job, input: undefined } });
+});
+app.get('/api/reconstruction-jobs', async (req, res) => {
+  const user = await requireAuthenticated(req, res); if (!user) return;
+  const dir = path.join(reconstructionJobsRoot, jobOwner(user));
+  const jobs = await Promise.all((await readdir(dir).catch(() => [])).map(async id => {
+    try {
+      const job = JSON.parse(await readFile(path.join(dir, id, 'request.json'), 'utf8'));
+      const outcome = JSON.parse(await readFile(path.join(dir, id, 'result.json'), 'utf8').catch(() => '{}'));
+      return { ...job, input: undefined, ...outcome, id };
+    } catch { return null; }
+  }));
+  return res.json({ success: true, jobs: jobs.filter(Boolean).sort((a,b) => b.createdAt.localeCompare(a.createdAt)) });
+});
+app.post('/api/reconstruction-jobs/:id/outcome', async (req, res) => {
+  const user = await requireAuthenticated(req, res); if (!user) return;
+  if (!/^[a-f0-9-]{36}$/.test(req.params.id)) return res.sendStatus(400);
+  const dir = path.join(reconstructionJobsRoot, jobOwner(user), req.params.id);
+  if (!(await stat(path.join(dir, 'request.json')).catch(() => null))) return res.sendStatus(404);
+  const outcome = { status: req.body.status === 'completed' ? 'completed' : 'failed', provider: 'gemini', data: req.body.data, message: String(req.body.message || ''), updatedAt: new Date().toISOString() };
+  await writeFile(path.join(dir, 'result.json'), JSON.stringify(outcome), { mode: 0o600 });
+  return res.json({ success: true });
+});
+
 // AI 3D Mine Tunnel Scene Reconstructor endpoint
 app.post('/api/ai/reconstruct-scene-from-image', async (req, res) => {
   try {
@@ -1769,6 +1810,7 @@ Return a valid JSON object matching EXACTLY this structure:
 // Mount Vite or serve static files
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',

@@ -1,0 +1,34 @@
+import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { spawn, execFileSync } from 'node:child_process';
+import assert from 'node:assert/strict';
+const root = await mkdtemp(path.join(tmpdir(), 'miningsight-job-test-'));
+const db = path.join(root, 'test.sqlite');
+const register = username => JSON.parse(execFileSync('python3', ['server/database.py', db, 'register', JSON.stringify({ username, password: 'isolated-test-password' })], { encoding: 'utf8' }));
+const a = register('testowner'), b = register('otherowner');
+const port = 31947;
+const server = spawn(process.execPath, ['/tmp/miningsight-ai-reconstruction.cjs'], { env: { ...process.env, NODE_ENV: 'production', PORT: String(port), NODE_PATH: path.resolve('node_modules'), MININGSIGHT_DATABASE_FILE: db, MININGSIGHT_DATABASE_SCRIPT: path.resolve('server/database.py'), MININGSIGHT_PROJECTS_DIR: path.join(root, 'projects') }, stdio: 'ignore' });
+try {
+  for (let i = 0; i < 60; i++) { try { await fetch(`http://127.0.0.1:${port}/api/health`); break; } catch { await new Promise(r => setTimeout(r, 100)); } }
+  const call = (token, suffix = '', body) => fetch(`http://127.0.0.1:${port}/api/reconstruction-jobs${suffix}`, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  assert.equal((await call('invalid')).status, 401);
+  const input = { image: 'data:image/png;base64,ZXhhY3Q=', fieldNotes: 'Branch left at 40 m; no carts.', dimensions: { widthMeters: 4 }, referenceMapText: 'A-B 40 m' };
+  const response = await call(a.token, '', { assisted: true, input, projectTitle: 'Test' });
+  assert.equal(response.status, 200);
+  const { job } = await response.json();
+  assert.equal(job.status, 'pending');
+  const archive = path.join(root, 'reconstruction-jobs');
+  const [owner] = await readdir(archive);
+  assert.deepEqual(JSON.parse(await readFile(path.join(archive, owner, job.id, 'request.json'))).input, input);
+  assert.equal((await (await call(b.token)).json()).jobs.length, 0);
+  assert.equal((await call(b.token, `/${job.id}/outcome`, { status: 'completed' })).status, 404);
+  await call(a.token, `/${job.id}/outcome`, { status: 'failed', message: 'Missing Gemini key' });
+  assert.equal((await (await call(a.token)).json()).jobs[0].status, 'failed');
+  const result = path.join(root, 'result.json');
+  await writeFile(result, JSON.stringify({ presetId: 'branching_drift' }));
+  execFileSync(process.execPath, ['tools/complete-reconstruction.mjs', archive, job.id, result]);
+  const completed = (await (await call(a.token)).json()).jobs[0];
+  assert.equal(completed.provider, 'assisted'); assert.equal(completed.status, 'completed'); assert.equal(completed.presetId, 'branching_drift');
+  console.log('PASS: authentication, account isolation, exact inputs, failed request retention, assisted completion.');
+} finally { server.kill(); }
