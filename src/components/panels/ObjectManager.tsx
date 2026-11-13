@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { C4DSceneObject } from '../../types/c4d';
 import { TunnelPresetId } from '../../types/tunnelScene';
-import { AuthUser, ProjectAsset, ProjectSummary, StorageQuota } from '../../types/project';
-import { ChevronDown, Check, Upload, FolderPlus, Save, Box, Image as ImageIcon, Video, FileText, Folder, RotateCcw, Cloud, RefreshCw, ExternalLink } from 'lucide-react';
+import { AuthUser, ProjectAsset, ProjectProvider, ProjectSummary, StorageQuota } from '../../types/project';
+import { ChevronDown, Check, Upload, FolderPlus, Save, Box, Image as ImageIcon, Video, FileText, Folder, RotateCcw, Cloud, RefreshCw, ExternalLink, Link2, Loader2, X } from 'lucide-react';
 
 interface ObjectManagerProps {
   objects: C4DSceneObject[];
@@ -21,10 +21,12 @@ interface ObjectManagerProps {
   projectName?: string;
   activeProjectId?: string | null;
   activeProjectReadOnly?: boolean;
+  activeProvider?: ProjectProvider | null;
   projects?: ProjectSummary[];
   providerLibraryLoading?: boolean;
   providerLibraryMessage?: string;
   onRefreshProviderLibrary?: () => void;
+  onConnectProviderAsset?: (provider: ProjectProvider, name: string, url: string) => Promise<void>;
   projectAssets?: ProjectAsset[];
   activeAssetId?: string | null;
   onSelectServerProject?: (projectId: string) => void;
@@ -54,10 +56,12 @@ export const ObjectManager: React.FC<ObjectManagerProps> = ({
   projectName = 'Mining Site',
   activeProjectId = null,
   activeProjectReadOnly = false,
+  activeProvider = null,
   projects = [],
   providerLibraryLoading = false,
   providerLibraryMessage = '',
   onRefreshProviderLibrary,
+  onConnectProviderAsset,
   projectAssets = [],
   activeAssetId = null,
   onSelectServerProject,
@@ -80,7 +84,36 @@ export const ObjectManager: React.FC<ObjectManagerProps> = ({
     document: true,
     other: true,
   });
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [connectName, setConnectName] = useState('');
+  const [connectUrl, setConnectUrl] = useState('');
+  const [connectBusy, setConnectBusy] = useState(false);
+  const [connectError, setConnectError] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setConnectOpen(false);
+    setConnectName('');
+    setConnectUrl('');
+    setConnectError('');
+  }, [activeProvider]);
+
+  const connectProviderAsset = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!activeProvider || !onConnectProviderAsset || connectBusy) return;
+    setConnectBusy(true);
+    setConnectError('');
+    try {
+      await onConnectProviderAsset(activeProvider, connectName.trim(), connectUrl.trim());
+      setConnectOpen(false);
+      setConnectName('');
+      setConnectUrl('');
+    } catch (error: any) {
+      setConnectError(error.message || 'The model URL could not be connected.');
+    } finally {
+      setConnectBusy(false);
+    }
+  };
 
   // Close menus on outside click
   useEffect(() => {
@@ -635,6 +668,7 @@ export const ObjectManager: React.FC<ObjectManagerProps> = ({
             </optgroup>}
           </select>
           <button onClick={onRefreshProviderLibrary} disabled={providerLibraryLoading || !authUser} title="Fetch your World Labs worlds and refresh provider libraries" className="p-1.5 bg-[#3a3a3a] hover:bg-[#e88724] hover:text-black text-[#ddd] rounded-[2px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"><RefreshCw className={`w-3.5 h-3.5 ${providerLibraryLoading ? 'animate-spin' : ''}`} /></button>
+          {activeProvider && <button onClick={() => { setConnectOpen((current) => !current); setConnectError(''); }} disabled={!authUser} title={`Connect a named model URL to ${activeProvider === 'worldlabs' ? 'World Labs Marble' : activeProvider === 'gomera' ? 'GOMERA X' : 'Gemini'}`} className={`p-1.5 text-[#ddd] rounded-[2px] cursor-pointer disabled:opacity-40 ${connectOpen ? 'bg-[#e88724] text-black' : 'bg-[#3a3a3a] hover:bg-[#e88724] hover:text-black'}`}><Link2 className="w-3.5 h-3.5" /></button>}
           <button onClick={onNewProject} title="Create new named project" className="p-1.5 bg-[#3b516b] hover:bg-[#4c6684] text-white rounded-[2px] cursor-pointer"><FolderPlus className="w-3.5 h-3.5" /></button>
           <button onClick={onSaveProject} disabled={activeProjectReadOnly} title={activeProjectReadOnly ? 'Provider libraries are read-only; create a local project to save uploads' : 'Save project to server and download a local copy'} className="p-1.5 bg-[#3a3a3a] hover:bg-[#e88724] hover:text-black text-[#ddd] rounded-[2px] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"><Save className="w-3.5 h-3.5" /></button>
           <label title={!authUser ? 'Sign in before uploading private project assets' : activeProjectReadOnly ? 'Provider libraries are read-only; create or select a local project before uploading' : 'Upload models, videos, images, or documents to this project'} onClick={(event) => { if (!authUser) { event.preventDefault(); onOpenAuth?.(); } else if (activeProjectReadOnly) event.preventDefault(); }} className={`p-1.5 bg-[#3a3a3a] hover:bg-[#e88724] hover:text-black text-[#ddd] rounded-[2px] ${activeProjectReadOnly ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`}>
@@ -642,6 +676,13 @@ export const ObjectManager: React.FC<ObjectManagerProps> = ({
             <input type="file" multiple accept=".glb,.gltf,.obj,.fbx,.ply,.mp4,.webm,.mov,.m4v,.png,.jpg,.jpeg,.webp,.tif,.tiff,.pdf,.json" className="hidden" onChange={(event) => { if (event.target.files) onUploadAssets?.(event.target.files); event.currentTarget.value = ''; }} />
           </label>
         </div>
+        {activeProvider && connectOpen && <form onSubmit={connectProviderAsset} className="space-y-1 border border-[#555] bg-[#252525] p-1.5">
+          <div className="flex items-center justify-between text-[9px]"><span className="font-bold text-[#f1bd82]">Connect to {activeProvider === 'worldlabs' ? 'Marble assets' : activeProvider === 'gomera' ? 'GOMERA assets' : 'Gemini assets'}</span><button type="button" onClick={() => setConnectOpen(false)} className="text-[#999] hover:text-white"><X className="h-3 w-3" /></button></div>
+          <input value={connectName} onChange={(event) => setConnectName(event.target.value)} maxLength={120} autoFocus placeholder="Model name" className="w-full border border-[#464646] bg-[#181818] px-1.5 py-1 text-[9.5px] text-white outline-none focus:border-[#e88724]" />
+          <input value={connectUrl} onChange={(event) => setConnectUrl(event.target.value)} placeholder="https://provider.example/model/..." inputMode="url" className="w-full border border-[#464646] bg-[#181818] px-1.5 py-1 text-[9.5px] text-white outline-none focus:border-[#e88724]" />
+          {connectError && <div className="text-[8.5px] text-[#ff9d9d]">{connectError}</div>}
+          <div className="flex items-center justify-between gap-2"><span className="text-[8px] text-[#888]">Saved privately to this provider library.</span><button type="submit" disabled={connectBusy || !connectName.trim() || !connectUrl.trim()} className="inline-flex items-center gap-1 bg-[#e88724] px-2 py-1 text-[8.5px] font-bold text-black disabled:opacity-40">{connectBusy && <Loader2 className="h-3 w-3 animate-spin" />}{connectBusy ? 'Connecting…' : 'Connect'}</button></div>
+        </form>}
         <div className="flex items-center justify-between text-[9px]">
           {authUser ? <><span className="text-[#8fdaa3] truncate">Signed in as {authUser.username}</span><button onClick={onOpenAuth} className="text-[#aaa] hover:text-white cursor-pointer">Account</button></> : <><span className="text-[#d7ae76]">Private uploads</span><button onClick={onOpenAuth} className="px-1.5 py-0.5 bg-[#e88724] hover:bg-[#ff9933] text-black font-bold rounded-[2px] cursor-pointer">Sign in</button></>}
         </div>

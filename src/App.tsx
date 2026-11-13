@@ -802,6 +802,31 @@ export default function App() {
     setActiveUpperTab('Objects');
   }, []);
 
+  const handleConnectProviderAsset = useCallback(async (provider: ProjectProvider, name: string, url: string) => {
+    if (!authToken || !authUser) {
+      setAuthError('Sign in with Google before connecting a model URL.');
+      setShowAuthModal(true);
+      throw new Error('Sign in before connecting a model URL.');
+    }
+    const response = await fetch('/api/reconstruction/ai/provider-library/assets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ provider, name, url }),
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok || !json.success || !json.asset) throw new Error(json.message || 'The model URL could not be connected.');
+    const asset = json.asset as ProjectAsset;
+    setProviderProjects((current) => current.map((project) => {
+      if (project.provider !== provider) return project;
+      const assets = [asset, ...(project.assets || []).filter((item) => item.id !== asset.id && item.remoteUrl !== asset.remoteUrl)];
+      return { ...project, assets, assetCount: assets.length, status: 'ready', updatedAt: asset.uploadedAt };
+    }));
+    const providerProjectId = `provider_${provider === 'worldlabs' ? 'worldlabs' : provider}`;
+    if (activeProjectId === providerProjectId) setProjectAssets((current) => [asset, ...current.filter((item) => item.id !== asset.id && item.remoteUrl !== asset.remoteUrl)]);
+    setActiveAssetId(asset.id);
+    setStatusAlert({ type: 'success', message: `Connected “${asset.name}”.`, details: 'It is now available with this account’s provider assets and opens in the embedded web viewer.', timestamp: new Date().toLocaleTimeString() });
+  }, [activeProjectId, authToken, authUser]);
+
   const handleCreateProject = useCallback(async () => {
     const name = newProjectName.trim();
     if (!name) return;
@@ -2279,9 +2304,11 @@ export default function App() {
             activeProjectId={activeProjectId}
             projects={[...providerProjects, ...projects]}
             activeProjectReadOnly={Boolean(activeProjectId?.startsWith('provider_'))}
+            activeProvider={providerProjects.find((project) => project.id === activeProjectId)?.provider || null}
             providerLibraryLoading={providerLibraryLoading}
             providerLibraryMessage={providerLibraryMessage}
             onRefreshProviderLibrary={() => void refreshProviderLibrary()}
+            onConnectProviderAsset={handleConnectProviderAsset}
             projectAssets={projectAssets}
             activeAssetId={activeAssetId}
             onSelectServerProject={handleSelectServerProject}

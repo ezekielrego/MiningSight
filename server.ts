@@ -10,6 +10,7 @@ import { promisify } from 'node:util';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { mountWebViewerProxy, validatePublicViewerUrl } from './server/webViewerProxy';
 
 dotenv.config();
 
@@ -54,6 +55,10 @@ const bridgeRtmpPassword = process.env.MININGSIGHT_RTMP_PUBLISH_PASSWORD || (() 
 })();
 const bridgeLogUploadTimes: number[] = [];
 const bridgeLogDeviceUploadTimes = new Map<string, number>();
+
+// The embedded URL viewer must be mounted before JSON/body middleware so
+// proxied provider requests retain their original request bodies.
+mountWebViewerProxy(app);
 
 app.use(express.json({ limit: '150mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -931,6 +936,35 @@ app.post('/api/ai/worldlabs/worlds', async (req, res) => {
   }
 });
 
+async function saveConnectedProviderAsset(req: express.Request, res: express.Response) {
+  const user = await requireAuthenticated(req, res);
+  if (!user) return;
+  try {
+    const provider = String(req.body?.provider || '').trim().toLowerCase();
+    if (!['worldlabs', 'gemini', 'gomera'].includes(provider)) {
+      return res.status(400).json({ success: false, error: 'PROVIDER_INVALID', message: 'Choose a valid provider library.' });
+    }
+    const name = String(req.body?.name || '').trim().slice(0, 120);
+    if (!name) return res.status(400).json({ success: false, error: 'NAME_REQUIRED', message: 'Enter a name for this model.' });
+    const enteredUrl = String(req.body?.url || '').trim();
+    const candidateUrl = /^https?:\/\//i.test(enteredUrl) ? enteredUrl : `https://${enteredUrl}`;
+    const remoteUrl = (await validatePublicViewerUrl(candidateUrl)).toString();
+    const result = await database('save_provider_asset', {
+      token: requestToken(req),
+      id: `provider_asset_${randomUUID()}`,
+      provider,
+      name,
+      remoteUrl,
+    });
+    return res.json({ success: true, asset: result.asset });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: 'PROVIDER_ASSET_CONNECT_FAILED', message: error.message || 'The model URL could not be connected.' });
+  }
+}
+
+app.post('/api/ai/provider-library/assets', saveConnectedProviderAsset);
+app.post('/api/reconstruction/ai/provider-library/assets', saveConnectedProviderAsset);
+
 // Provider libraries are virtual, account-scoped projects. They keep remote
 // AI results beside normal uploaded projects in the Objects panel without
 // copying provider files into the user's 2 GB upload quota.
@@ -973,6 +1007,16 @@ app.get('/api/ai/provider-library', async (req, res) => {
     },
   ];
 
+  const savedProviderAssets = await database('list_provider_assets', { token: requestToken(req) })
+    .then((result) => Array.isArray(result.assets) ? result.assets : [])
+    .catch(() => []);
+  providerProjects.forEach((project) => {
+    project.assets = savedProviderAssets.filter((asset: any) => asset.provider === project.provider);
+    project.assetCount = project.assets.length;
+    project.updatedAt = project.assets[0]?.uploadedAt || null;
+    if (project.assets.length) project.status = 'ready';
+  });
+
   if (hasConfiguredKey(marbleKey, 'YOUR_WORLD_LABS_API_KEY')) {
     try {
       const result = await worldLabsRequest('/worlds:list', {
@@ -980,7 +1024,7 @@ app.get('/api/ai/provider-library', async (req, res) => {
         body: JSON.stringify({ page_size: 100, sort_by: 'updated_at', status: 'SUCCEEDED' }),
       }, marbleKey);
       const marbleProject = providerProjects[0];
-      marbleProject.assets = (Array.isArray(result.worlds) ? result.worlds : []).map((world: any) => {
+      const apiAssets = (Array.isArray(result.worlds) ? result.worlds : []).map((world: any) => {
         const worldId = String(world.world_id || world.id || randomUUID());
         const remoteUrl = world.world_marble_url || world.marble_url || `https://marble.worldlabs.ai/world/${encodeURIComponent(worldId)}`;
         return {
@@ -997,10 +1041,12 @@ app.get('/api/ai/provider-library', async (req, res) => {
           provider: 'worldlabs',
         };
       });
+      const savedUrls = new Set(marbleProject.assets.map((asset: any) => asset.remoteUrl));
+      marbleProject.assets = [...marbleProject.assets, ...apiAssets.filter((asset: any) => !savedUrls.has(asset.remoteUrl))];
       marbleProject.assetCount = marbleProject.assets.length;
       marbleProject.updatedAt = marbleProject.assets[0]?.uploadedAt || null;
     } catch (error: any) {
-      providerProjects[0].status = 'offline';
+      if (!providerProjects[0].assets.length) providerProjects[0].status = 'offline';
       providerProjects[0].error = error.message;
     }
   }

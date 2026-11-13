@@ -39,6 +39,7 @@ import { CameraKeyframe, CameraTour, HotspotInfo, KeyframeAnnotation } from '../
 import { degToRad } from '../../utils/math3d';
 import { GasMark, MediaMarker, ProjectAsset } from '../../types/project';
 import { ReconstructionMapGeometry, ReconstructionMapSelection } from '../../types/aiSurvey';
+import { toEmbeddedWebViewerUrl } from '../../utils/webViewerUrl';
 import {
   interpolateCameraTour,
   calculateDistanceMeters,
@@ -1779,26 +1780,26 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
           {minimizedOverlays.world ? (
             <div className="flex h-full items-end justify-start p-3">
               <button onClick={() => toggleOverlay('world')} className="rounded-[3px] border border-[#555] bg-black/70 px-2 py-1 text-[9px] text-[#ddd] shadow-lg hover:bg-black/90 cursor-pointer">
-                <span className="mr-1 text-[#e88724] font-bold">+</span> Restore Marble world
+                <span className="mr-1 text-[#e88724] font-bold">+</span> Restore connected model
               </button>
             </div>
           ) : (
             <>
               <div className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 bg-black/65 px-2 py-1 text-[9px] text-[#ccc] backdrop-blur-md">
-                <span className="min-w-0 truncate font-bold uppercase tracking-wide">World Labs Marble · {activeAsset.name}</span>
+                <span className="min-w-0 truncate font-bold uppercase tracking-wide">{activeAsset.provider === 'gomera' ? 'GOMERA X' : activeAsset.provider === 'gemini' ? 'Gemini scene' : 'World Labs Marble'} · {activeAsset.name}</span>
                 <div className="flex shrink-0 items-center gap-2">
                   <a href={activeAsset.remoteUrl || activeAsset.url} target="_blank" rel="noreferrer" className="text-[#9bcaf0] hover:text-white hover:underline">Open externally</a>
-                  <button onClick={() => toggleOverlay('world')} className="px-1 text-[#aaa] hover:text-white cursor-pointer" title="Minimize Marble world">−</button>
+                  <button onClick={() => toggleOverlay('world')} className="px-1 text-[#aaa] hover:text-white cursor-pointer" title="Minimize connected model">−</button>
                 </div>
               </div>
               <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
                 <iframe
-                  src={activeAsset.url}
-                  title={`World Labs Marble world: ${activeAsset.name}`}
+                  src={toEmbeddedWebViewerUrl(activeAsset.remoteUrl || activeAsset.url)}
+                  title={`${activeAsset.provider || 'provider'} model: ${activeAsset.name}`}
                   className="block h-full w-full border-0 bg-black"
-                  allow="fullscreen; xr-spatial-tracking"
+                  allow="fullscreen; accelerometer; gyroscope; xr-spatial-tracking"
+                  sandbox="allow-scripts allow-forms allow-pointer-lock allow-popups allow-downloads allow-presentation"
                 />
-                <div className="pointer-events-none absolute bottom-2 left-2 rounded bg-black/70 px-2 py-1 text-[9px] text-[#bbb]">If the provider blocks embedding, use Open externally above.</div>
               </div>
             </>
           )}

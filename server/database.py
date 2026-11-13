@@ -63,9 +63,19 @@ CREATE TABLE IF NOT EXISTS user_ai_settings (
   marble_model TEXT NOT NULL DEFAULT 'marble-1.1',
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS provider_assets (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  name TEXT NOT NULL,
+  remote_url TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id, updated_at);
 CREATE INDEX IF NOT EXISTS idx_assets_project ON assets(project_id);
+CREATE INDEX IF NOT EXISTS idx_provider_assets_user ON provider_assets(user_id, provider, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_assets_url ON provider_assets(user_id, provider, remote_url);
 ''')
 
 for column, definition in [
@@ -120,6 +130,14 @@ def asset_payload(row, project_id=None):
         'type': row['asset_type'], 'kind': row['kind'], 'size': row['size'],
         'uploadedAt': row['uploaded_at'],
         'projectId': project_id or row['project_id'],
+    }
+
+def provider_asset_payload(row):
+    return {
+        'id': row['id'], 'name': row['name'], 'type': 'text/uri-list',
+        'kind': 'world', 'size': 0, 'uploadedAt': row['created_at'],
+        'url': row['remote_url'], 'remoteUrl': row['remote_url'],
+        'provider': row['provider'],
     }
 
 def project_payload(row):
@@ -218,6 +236,31 @@ try:
         ''', (user['id'], PAYLOAD.get('geminiApiKeyCiphertext') or None, PAYLOAD.get('marbleApiKeyCiphertext') or None, PAYLOAD.get('geminiModel') or 'gemini-3.8-flash', PAYLOAD.get('marbleModel') or 'marble-1.1', timestamp))
         db.commit()
         output = {'saved': True}
+    elif OPERATION == 'list_provider_assets':
+        user = require_user()
+        rows = db.execute('SELECT * FROM provider_assets WHERE user_id=? ORDER BY created_at DESC', (user['id'],)).fetchall()
+        output = {'assets': [provider_asset_payload(row) for row in rows]}
+    elif OPERATION == 'save_provider_asset':
+        user = require_user()
+        provider = str(PAYLOAD.get('provider') or '').strip().lower()
+        name = str(PAYLOAD.get('name') or '').strip()[:120]
+        remote_url = str(PAYLOAD.get('remoteUrl') or '').strip()[:4096]
+        if provider not in ('worldlabs', 'gemini', 'gomera'): raise ValueError('PROVIDER_INVALID')
+        if not name: raise ValueError('PROVIDER_ASSET_NAME_REQUIRED')
+        if not remote_url: raise ValueError('PROVIDER_ASSET_URL_REQUIRED')
+        timestamp = now()
+        existing = db.execute('SELECT id FROM provider_assets WHERE user_id=? AND provider=? AND remote_url=?', (user['id'], provider, remote_url)).fetchone()
+        asset_id = existing['id'] if existing else str(PAYLOAD.get('id') or ('provider_asset_' + secrets.token_hex(12)))
+        db.execute('''
+            INSERT INTO provider_assets(id,user_id,provider,name,remote_url,created_at)
+            VALUES(?,?,?,?,?,?)
+            ON CONFLICT(user_id,provider,remote_url) DO UPDATE SET
+              name=excluded.name,
+              created_at=excluded.created_at
+        ''', (asset_id, user['id'], provider, name, remote_url, timestamp))
+        db.commit()
+        row = db.execute('SELECT * FROM provider_assets WHERE user_id=? AND provider=? AND remote_url=?', (user['id'], provider, remote_url)).fetchone()
+        output = {'asset': provider_asset_payload(row)}
     elif OPERATION == 'list_projects':
         user = require_user()
         rows = db.execute('SELECT * FROM projects WHERE user_id=? ORDER BY updated_at DESC', (user['id'],)).fetchall()
