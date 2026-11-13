@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Camera,
   CheckCircle2,
@@ -36,6 +36,7 @@ import {
   ReconstructionMapSelection,
 } from '../../types/aiSurvey';
 import { ProjectAsset, ProjectProvider } from '../../types/project';
+import { createSingleImageMapDraft, SINGLE_IMAGE_RECONSTRUCTION_PROMPT } from '../../utils/singleImageReconstruction';
 
 interface AIGeologicalMapperPanelProps {
   reconstructionOpenToken?: number;
@@ -210,9 +211,24 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   const [partHeightMeters, setPartHeightMeters] = useState(4.6);
   const [partLengthMeters, setPartLengthMeters] = useState(8);
   const [briefSavedMessage, setBriefSavedMessage] = useState('');
-  const [reconstructPrompt, setReconstructPrompt] = useState<string>(
-    'Reconstruct only the underground geometry and support features visible in my references. Preserve measured width, height, length, bends, branches, narrowing, rock irregularity, and weak-zone supports. Do not invent rails, carts, lights, equipment, or debris unless they are visible or requested.'
-  );
+  const [reconstructPrompt, setReconstructPrompt] = useState<string>(SINGLE_IMAGE_RECONSTRUCTION_PROMPT);
+  const automaticMapDraftRef = useRef<{ image: string; key: string; text: string; geometry: ReconstructionMapGeometry } | null>(null);
+  useEffect(() => {
+    if (!reconstructImage) { automaticMapDraftRef.current = null; return; }
+    if (!focusedReconstruction || reconstructMapImage) return;
+    const previous = automaticMapDraftRef.current;
+    // Preserve an uploaded map, edited brief or manually changed geometry.
+    if (reconstructMapText && reconstructMapText !== previous?.text) return;
+    if (mapGeometry && mapGeometry !== previous?.geometry) return;
+    if (![partWidthMeters, partHeightMeters, partLengthMeters].every((value) => Number.isFinite(value) && value > 0)) return;
+    const key = JSON.stringify([reconstructImageName, partWidthMeters, partHeightMeters, partLengthMeters]);
+    if (previous?.image === reconstructImage && previous.key === key) return;
+    const draft = createSingleImageMapDraft(reconstructImageName, { width: partWidthMeters, height: partHeightMeters, length: partLengthMeters });
+    automaticMapDraftRef.current = { image: reconstructImage, key, ...draft };
+    setReconstructMapText(draft.text);
+    setReconstructMapName(draft.geometry.name);
+    onMapGeometryChange?.(draft.geometry);
+  }, [focusedReconstruction, reconstructImage, reconstructImageName, reconstructMapImage, reconstructMapText, mapGeometry, partWidthMeters, partHeightMeters, partLengthMeters, onMapGeometryChange]);
   const [isReconstructing, setIsReconstructing] = useState<boolean>(false);
   const [reconstructResult, setReconstructResult] = useState<any>(null);
   const [accountScenes, setAccountScenes] = useState<any[]>([]);
@@ -2368,8 +2384,8 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                 Choose images from this project’s files · {projectAssets.filter((asset) => asset.kind === 'image').length} available
               </button>
 
-              <div className="grid grid-cols-4 gap-1.5 text-[9px]">
-                <label className="text-[#999] col-span-1">Next part offset (m)
+              <div className={`grid ${focusedReconstruction ? 'grid-cols-3' : 'grid-cols-4'} gap-1.5 text-[9px]`}>
+                <label className={`text-[#999] col-span-1 ${focusedReconstruction ? 'hidden' : ''}`}>Next part offset (m)
                   <input type="number" min="0.01" step="0.1" value={nextPartDistanceMeters} onChange={(event) => setNextPartDistanceMeters(Number(event.target.value) || 0)} className="mt-0.5 w-full bg-[#1c1c1c] border border-[#e88724]/60 rounded px-1.5 py-1 text-[#eee] font-mono" />
                 </label>
                 <label className="text-[#999]">Width (m)
@@ -2383,13 +2399,14 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                 </label>
               </div>
 
-              <textarea value={reconstructMapText} onChange={(event) => setReconstructMapText(event.target.value)} rows={3} maxLength={120000} placeholder="Paste a readable map or section here: station IDs, chainages, distances, width/height, curve radius, heading, and the next part location…" className="w-full resize-y bg-[#1c1c1c] border border-[#414141] rounded px-1.5 py-1.5 text-[10px] text-[#ddd] leading-relaxed focus:outline-none focus:border-[#e88724]" />
+              {focusedReconstruction && <div className="text-[9px] leading-relaxed text-[#aaa]">{reconstructImage ? 'Editable single-image map brief. Working dimensions and a straight planning line are prefilled; confirm the actual geometry before reconstruction.' : 'Attach one tunnel image to prefill the editable map brief. No sample image or previous scene is inserted.'}</div>}
+              <textarea aria-label="Reference map and reconstruction details" value={reconstructMapText} onChange={(event) => setReconstructMapText(event.target.value)} rows={focusedReconstruction ? 8 : 3} maxLength={120000} placeholder="Paste a readable map or section here: station IDs, chainages, distances, width/height, curve radius, heading, and the next part location…" className="w-full resize-y bg-[#1c1c1c] border border-[#414141] rounded px-1.5 py-1.5 text-[10px] text-[#ddd] leading-relaxed focus:outline-none focus:border-[#e88724]" />
 
               <div className="flex flex-wrap items-center gap-1.5 rounded border border-[#3f3427] bg-[#211d18] px-2 py-1.5 text-[9px]">
                 <span className="mr-auto text-[#cbb79d]">{mapGeometry?.points.length ? `Map overlay ready · ${mapGeometry.points.length} points` : 'Empty map · add a file, describe it, or draw it manually.'}</span>
-                <button onClick={interpretReconstructionMap} disabled={mapInterpreting || isReconstructing || (!reconstructMapImage && !reconstructMapText.trim())} className="rounded border border-[#e88724] bg-[#e88724] px-2 py-1 font-bold text-black disabled:cursor-wait disabled:opacity-50 cursor-pointer">
+                {!focusedReconstruction && <button onClick={interpretReconstructionMap} disabled={mapInterpreting || isReconstructing || (!reconstructMapImage && !reconstructMapText.trim())} className="rounded border border-[#e88724] bg-[#e88724] px-2 py-1 font-bold text-black disabled:cursor-wait disabled:opacity-50 cursor-pointer">
                   {mapInterpreting ? <span className="inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" />Reading map…</span> : 'Interpret map with Gemini'}
-                </button>
+                </button>}
                 <button onClick={() => { onMapDrawingChange?.(false); onMapMarkingChange?.(!mapMarkingEnabled); }} disabled={!mapGeometry || mapInterpreting || mapDrawingMode} className={`rounded border px-2 py-1 font-semibold cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${mapMarkingEnabled && !mapDrawingMode ? 'border-[#55dd88] bg-[#214a31] text-[#a8f2bb]' : 'border-[#555] bg-[#303030] text-[#ddd]'}`}>
                   {mapMarkingEnabled ? 'Finish next-section pick' : 'Pick next section'}
                 </button>
@@ -2428,7 +2445,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                 <textarea
                   value={reconstructPrompt}
                   onChange={(e) => setReconstructPrompt(e.target.value)}
-                  rows={2}
+                  rows={focusedReconstruction ? 7 : 2}
                   className="w-full bg-[#1e1e1e] border border-[#3c3c3c] rounded p-1.5 text-[10.5px] text-[#ddd] focus:outline-none focus:border-[#e88724]"
                 />
               </div>
@@ -2447,7 +2464,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                     else if (job.data?.procedural3DParams) {
                       setReconstructionName(job.sceneName || job.data.procedural3DParams.name || 'Reconstructed Scene');
                       setReconstructBasePresetId(job.basePresetId === 'new_scene' ? 'new_scene' : job.basePresetId || 'ai_custom');
-                      setReconstructResult(job.data);
+                      setReconstructResult({ ...job.data, processingSource: job.provider === 'assisted' ? 'assisted' : 'gemini' });
                     }
                     else setJobMessage('Completed result has no supported model or parameters.');
                   }}>Load completed reconstruction</button>}
@@ -2465,7 +2482,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                   <span>{isReconstructing ? 'Generating compatible reconstruction...' : 'Generate MiningSight-Compatible Reconstruction'}</span>
                 </button>}
 
-                <button
+                {!focusedReconstruction && <button
                   onClick={() => {
                     if (onSelectPreset) {
                       onSelectPreset('rugged_timbered_photo');
@@ -2481,7 +2498,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                 >
                   <Check className="w-3.5 h-3.5 text-[#e88724]" />
                   <span>Load Photo Model</span>
-                </button>
+                </button>}
               </div>
             </div>
 
@@ -2490,7 +2507,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
               <div className="bg-[#1f2620] border border-[#2e4d35] p-2.5 rounded-[3px] space-y-2 text-[10.5px]">
                 <div className="font-bold text-[#4ade80] flex items-center justify-between">
                   <span>MiningSight-Compatible Reconstruction Plan</span>
-                  <span className="font-mono text-[9px] text-[#88bbdd]">AI Vision Extraction</span>
+                  <span className="font-mono text-[9px] text-[#88bbdd]">{reconstructResult.processingSource === 'assisted' ? 'Assisted reconstruction' : 'Reconstruction plan'}</span>
                 </div>
 
                 {reconstructResult.reconstructionPlan && <div className="rounded border border-[#2b4430] bg-[#181d19] px-2 py-1 text-[9.5px] leading-relaxed text-[#b8d9c0]">{reconstructResult.reconstructionPlan}</div>}
