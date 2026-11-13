@@ -214,7 +214,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   const mountRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const coveredByWorldRef = useRef(false);
-  coveredByWorldRef.current = activeAsset?.kind === 'world' && !showMap;
+  coveredByWorldRef.current = !showMap && (liveStreamOpen || ['world', 'image', 'video'].includes(activeAsset?.kind || ''));
   const [connectedViewerReload, setConnectedViewerReload] = useState(0);
 
   // Three.js internal references

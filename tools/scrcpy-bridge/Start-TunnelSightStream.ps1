@@ -1,4 +1,4 @@
-# TunnelSight Scrcpy Bridge 1.4 - Windows 10/11, PowerShell 5.1+.
+# TunnelSight Scrcpy Bridge 1.5 - Windows 10/11, PowerShell 5.1+.
 [CmdletBinding()]
 param(
     [string]$WindowTitle,
@@ -7,7 +7,7 @@ param(
     [string]$Serial,
     [string]$Email,
     [ValidateSet('Phone', 'Window')]
-    [string]$CaptureSource = 'Phone',
+    [string]$CaptureSource = 'Window',
     [ValidateSet('Landscape', 'Original')]
     [string]$StreamOrientation = 'Landscape',
     [ValidateSet('clock', 'cclock')]
@@ -18,7 +18,7 @@ $ffmpeg = (Get-Command ffmpeg -ErrorAction Stop).Source
 if ($WindowTitle -match '["\r\n]') { throw 'Window title cannot contain quotes or newlines.' }
 if ($Serial -and $Serial -notmatch '^[a-zA-Z0-9_.:\-]+$') { throw 'Invalid device serial.' }
 if ($UseExistingWindow -or $WindowTitle) { $CaptureSource = 'Window' }
-Write-Host 'TunnelSight Scrcpy Bridge v1.4'
+Write-Host 'TunnelSight Scrcpy Bridge v1.5 - low delay window capture'
 Write-Host 'Your laptop mirrors the phone and sends its screen to your TunnelSight account.'
 if (-not $Email) { $Email = Read-Host 'TunnelSight account email' }
 $Email = $Email.Trim().ToLowerInvariant()
@@ -172,8 +172,8 @@ try {
     Write-Host "Selected: $WindowTitle"
     # Use the actual window identity so changes to its title do not stop capture.
     $captureInput = 'hwnd=0x' + $windowHandle.ToInt64().ToString('X')
-    $inputArgs = @('-f', 'gdigrab', '-framerate', '30', '-draw_mouse', '0', '-i', $captureInput)
-    Write-Host 'Window capture depends on the computer window. Use the default Phone source for a stream independent of minimization.'
+    $inputArgs = @('-thread_queue_size', '8', '-f', 'gdigrab', '-framerate', '25', '-draw_mouse', '0', '-i', $captureInput)
+    Write-Host 'Capturing the selected window. Keep it visible and unminimized.'
     }
     # Rotate portrait captures before encoding so the website, recordings and
     # captured reconstruction frames all receive the same landscape picture.
@@ -185,9 +185,9 @@ try {
     }
     $streamArgs = @('-hide_banner', '-loglevel', 'warning', '-nostdin') + $inputArgs + @(
         '-an', '-vf', $videoFilter,
-        '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p',
-        '-b:v', '2000k', '-maxrate', '2500k', '-bufsize', '2000k', '-g', '30', '-keyint_min', '30', '-sc_threshold', '0',
-        '-r', '30', '-rw_timeout', '10000000', '-f', 'flv', '-flvflags', 'no_duration_filesize', $publishUrl)
+        '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p',
+        '-b:v', '1200k', '-maxrate', '1500k', '-bufsize', '300k', '-bf', '0', '-g', '12', '-keyint_min', '12', '-sc_threshold', '0',
+        '-r', '25', '-flush_packets', '1', '-rw_timeout', '10000000', '-f', 'flv', '-flvflags', 'no_duration_filesize', $publishUrl)
     Write-Host "Streaming to $Email. On TunnelSight, sign in with this email, open Live, and choose a project."
     Write-Host 'Press Ctrl+C to stop streaming. Your existing Scrcpy window stays open.'
     # Network failures restart FFmpeg while scrcpy remains open. Credentials are redacted.

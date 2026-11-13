@@ -23,6 +23,7 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
   const [isSavingRecording, setIsSavingRecording] = useState(false);
   const [unsavedRecording, setUnsavedRecording] = useState<File | null>(null);
   const hasRenderedFrameRef = useRef(false);
+  const userPausedRef = useRef(false);
   const [retryToken, setRetryToken] = useState(0);
   const [streamState, setStreamState] = useState<StreamState>('connecting');
   const [message, setVisibleMessage] = useState('Connecting to the live relay…');
@@ -70,6 +71,7 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
     setHasRenderedFrame(false);
     setIsRecovering(false);
     setIsPaused(false);
+    userPausedRef.current = false;
     video.muted = true;
     const onPlaying = () => {
       hasRenderedFrameRef.current = true;
@@ -106,13 +108,14 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
       hls = new Hls({
         enableWorker: true,
         lowLatencyMode: true,
-        liveSyncDurationCount: 2,
-        liveMaxLatencyDurationCount: 5,
-        maxLiveSyncPlaybackRate: 1.2,
-        maxBufferLength: 6,
-        maxMaxBufferLength: 10,
-        backBufferLength: 5,
-        maxBufferHole: 0.8,
+        liveSyncDuration: 1.2,
+        liveMaxLatencyDuration: 3.5,
+        liveSyncOnStallIncrease: 0.1,
+        maxLiveSyncPlaybackRate: 1.1,
+        maxBufferLength: 3,
+        maxMaxBufferLength: 5,
+        backBufferLength: 2,
+        maxBufferHole: 0.3,
       });
       hlsRef.current = hls;
       hls.attachMedia(video);
@@ -124,15 +127,17 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
         }
         void video.play().catch(() => setMessage('Tap Play when the live feed is available.'));
       });
-      hls.on(Hls.Events.LEVEL_UPDATED, () => {
+      const catchUp = () => {
+        if (userPausedRef.current || video.paused) return;
         const livePosition = hls?.liveSyncPosition;
         if (hasRenderedFrameRef.current && livePosition !== null && livePosition !== undefined
-            && Number.isFinite(livePosition) && livePosition - video.currentTime > 5) {
+            && Number.isFinite(livePosition) && livePosition - video.currentTime > 2.3) {
           video.currentTime = livePosition;
           setIsRecovering(false);
           if (!recorderRef.current) setMessage('Live feed');
         }
-      });
+      };
+      hls.on(Hls.Events.LEVEL_UPDATED, catchUp);
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (!data.fatal) return;
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
@@ -164,7 +169,18 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
       setMessage('This browser cannot play HLS live video. Open TunnelSight in a current browser.');
     }
 
+    const keepNearLive = () => {
+      if (userPausedRef.current || video.paused || !hasRenderedFrameRef.current || !video.seekable.length) return;
+      const edge = video.seekable.end(video.seekable.length - 1);
+      const target = hls?.liveSyncPosition ?? Math.max(video.seekable.start(video.seekable.length - 1), edge - 1.2);
+      if (Number.isFinite(target) && edge - video.currentTime > 3.5 && target - video.currentTime > 1) video.currentTime = target;
+    };
+    const liveTimer = window.setInterval(keepNearLive, 1000);
+    const onVisible = () => { if (!document.hidden) keepNearLive(); };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
+      window.clearInterval(liveTimer);
+      document.removeEventListener('visibilitychange', onVisible);
       video.removeEventListener('playing', onPlaying);
       video.removeEventListener('waiting', onWaiting);
       video.removeEventListener('error', onError);
@@ -179,11 +195,27 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
   const togglePlayback = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
-    if (video.paused) void video.play().then(() => setIsPaused(false)).catch(() => undefined);
+    if (video.paused) {
+      userPausedRef.current = false;
+      const edge = video.seekable.length ? video.seekable.end(video.seekable.length - 1) : null;
+      const target = hlsRef.current?.liveSyncPosition ?? (edge !== null ? Math.max(0, edge - 1.2) : null);
+      if (target !== null && Number.isFinite(target)) video.currentTime = target;
+      void video.play().then(() => setIsPaused(false)).catch(() => undefined);
+    }
     else {
+      userPausedRef.current = true;
       video.pause();
       setIsPaused(true);
     }
+  }, []);
+
+  const goLive = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    userPausedRef.current = false;
+    const target = hlsRef.current?.liveSyncPosition ?? (video.seekable.length ? Math.max(video.seekable.start(video.seekable.length - 1), video.seekable.end(video.seekable.length - 1) - 1.2) : null);
+    if (target !== null && Number.isFinite(target)) video.currentTime = target;
+    void video.play().then(() => setIsPaused(false)).catch(() => undefined);
   }, []);
 
   const captureFrame = useCallback(() => {
@@ -329,6 +361,7 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
           <span data-live-notice className="truncate text-[9px] text-[#999]">{message}</span>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          <button onClick={goLive} disabled={!hasRenderedFrame} title="Jump to the latest available live video" className="px-2 py-1 text-[9px] text-[#e88724] hover:text-white disabled:opacity-40">Go live</button>
           <button onClick={() => setRetryToken((value) => value + 1)} className="flex items-center gap-1 rounded-sm px-2 py-1 text-[9px] text-[#ccc] hover:bg-white/10">
             <RefreshCw className="h-3 w-3" />Retry
           </button>
