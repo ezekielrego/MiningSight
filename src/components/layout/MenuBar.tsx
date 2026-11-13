@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Video } from 'lucide-react';
+import { Video, Maximize2 } from 'lucide-react';
 
 interface MenuBarProps {
+  onMinimizePanels?: () => void;
   currentLayout: string;
   onSelectLayout: (layout: string) => void;
   onNewObject?: (type: string) => void;
@@ -29,6 +30,7 @@ interface MenuBarProps {
 }
 
 export const MenuBar: React.FC<MenuBarProps> = ({
+  onMinimizePanels,
   currentLayout,
   onSelectLayout,
   onNewObject,
@@ -303,6 +305,9 @@ export const MenuBar: React.FC<MenuBarProps> = ({
 
       {/* Right side: Layout Selector and Utility Buttons */}
       <div className="flex items-center space-x-2 flex-shrink-0 pl-2">
+        <button onClick={() => { setActiveMenu(null); onMinimizePanels?.(); }} title="Minimize all panels for a clear model view" className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-[#ddd] hover:text-[#e88724] cursor-pointer">
+          <Maximize2 className="h-3 w-3" /><span>Minimize panels</span>
+        </button>
         <div className="flex items-center space-x-1">
           <span className="text-[#a0a0a0] text-[11px]">Layout:</span>
           <select

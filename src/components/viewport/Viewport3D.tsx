@@ -1683,6 +1683,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
           while the media stage scales with the panel instead of opening a floating/full-screen player. */}
       {activeAsset?.kind === 'video' && (
         <div
+          data-media-stage
           className="absolute inset-x-0 top-7 bottom-0 z-[6] flex min-h-0 flex-col overflow-hidden border-t border-[#252525] bg-[#202020] pointer-events-auto"
           style={{
             backgroundImage: 'linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px)',
@@ -1697,7 +1698,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
             </div>
           ) : (
             <>
-              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 bg-black/55 px-2 py-1 text-[9px] text-[#ccc] backdrop-blur-md">
+              <div data-workspace-chrome className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 bg-black/55 px-2 py-1 text-[9px] text-[#ccc] backdrop-blur-md">
                 <span className="min-w-0 truncate font-bold uppercase tracking-wide">Video view · {activeAsset.name}</span>
                 <div className="flex shrink-0 items-center gap-2">
                   <button onClick={handleAddVideoMarker} className="rounded-[2px] bg-[#ffb347] px-1.5 py-0.5 font-bold text-black hover:bg-[#ffc46b] cursor-pointer">Mark {videoTime.toFixed(1)}s</button>
@@ -1742,6 +1743,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       )}
       {activeAsset?.kind === 'image' && (
         <div
+          data-media-stage
           className="absolute inset-x-0 top-7 bottom-0 z-[6] flex min-h-0 flex-col overflow-hidden border-t border-[#252525] bg-[#202020] pointer-events-auto"
           style={{
             backgroundImage: 'linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px)',
@@ -1756,7 +1758,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
             </div>
           ) : (
             <>
-              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 bg-black/55 px-2 py-1 text-[9px] text-[#ccc] backdrop-blur-md">
+              <div data-workspace-chrome className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 bg-black/55 px-2 py-1 text-[9px] text-[#ccc] backdrop-blur-md">
                 <span className="min-w-0 truncate font-bold uppercase tracking-wide">Image view · {activeAsset.name}</span>
                 <button onClick={() => toggleOverlay('image')} className="px-1 text-[#aaa] hover:text-white cursor-pointer" title="Minimize image view">−</button>
               </div>
@@ -1778,6 +1780,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       )}
       {activeAsset?.kind === 'world' && (
         <div
+          data-media-stage
           className="absolute inset-x-0 top-7 bottom-0 z-[6] flex min-h-0 flex-col overflow-hidden border-t border-[#252525] bg-[#202020] pointer-events-auto"
         >
           {minimizedOverlays.world ? (
@@ -1788,7 +1791,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
             </div>
           ) : (
             <>
-              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 bg-black/65 px-2 py-1 text-[9px] text-[#ccc] backdrop-blur-md">
+              <div data-workspace-chrome className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 bg-black/65 px-2 py-1 text-[9px] text-[#ccc] backdrop-blur-md">
                 <span className="min-w-0 truncate font-bold uppercase tracking-wide">{activeAsset.provider === 'gomera' ? 'GOMERA X' : activeAsset.provider === 'gemini' ? 'Gemini scene' : 'World Labs Marble'} · {activeAsset.name}</span>
                 <div className="flex shrink-0 items-center gap-2">
                   <button onClick={() => setConnectedViewerReload((value) => value + 1)} className="text-[#ccc] hover:text-white" title="Reload connected model">Reload</button>
@@ -1812,7 +1815,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       )}
 
       {/* Top Viewport Navigation and Mode Bar */}
-      <div data-onboarding-target="viewport-controls" aria-label="Viewport controls" className="absolute top-0 left-0 right-0 h-8 bg-[#383838]/95 border-b border-[#252525] flex items-center justify-start gap-2 px-2 text-[11px] text-[#cfcfcf] z-[80] backdrop-blur-sm overflow-x-auto overflow-y-hidden overscroll-x-contain touch-pan-x [scrollbar-width:thin] [scrollbar-color:#777_transparent]">
+      <div data-workspace-chrome data-onboarding-target="viewport-controls" aria-label="Viewport controls" className="absolute top-0 left-0 right-0 h-8 bg-[#383838]/95 border-b border-[#252525] flex items-center justify-start gap-2 px-2 text-[11px] text-[#cfcfcf] z-[80] backdrop-blur-sm overflow-x-auto overflow-y-hidden overscroll-x-contain touch-pan-x [scrollbar-width:thin] [scrollbar-color:#777_transparent]">
         {/* Left Controls: Preset Selector, Menus, Orbit vs Walk, Flashlight, Ruler, Hotspots */}
         <div className="flex items-center space-x-1 sm:space-x-1.5 min-w-max">
           {/* SCENE PRESET SELECTOR (Classic Diorama vs Rugged Timbered Photo vs AI Custom) */}

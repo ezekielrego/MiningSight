@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+.panels-minimized [data-workspace-chrome] {
+  display: none !important;
+}
+
+.panels-minimized [data-workspace-viewport-column] {
+  width: 100% !important;
+}
+
+.panels-minimized [data-media-stage] {
+  top: 0;
+}
+
 @layer base {
   html, body, #root {
     width: 100%;

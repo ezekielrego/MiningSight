@@ -4,6 +4,7 @@
  */
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { Minimize2 } from 'lucide-react';
 import { C4DMaterial, C4DSceneObject, TimelineState, ToolMode, Vector3D } from './types/c4d';
 import { createDefaultReconstructionMap, createEmptyReconstructionMap, ReconstructionBrief, ReconstructionMapFeature, ReconstructionMapGeometry, ReconstructionMapPoint, ReconstructionMapSelection, StatusAlert } from './types/aiSurvey';
 import { MenuBar } from './components/layout/MenuBar';
@@ -213,6 +214,15 @@ const restoreSceneVisibility = (object: C4DSceneObject, savedVisibility: Record<
 export default function App() {
   const [reconstructionOpenToken, setReconstructionOpenToken] = useState(0);
   const [layout, setLayout] = useState<string>('Startup');
+  const [panelsMinimized, setPanelsMinimized] = useState(false);
+  useEffect(() => {
+    if (!panelsMinimized) return;
+    const restoreOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPanelsMinimized(false);
+    };
+    window.addEventListener('keydown', restoreOnEscape);
+    return () => window.removeEventListener('keydown', restoreOnEscape);
+  }, [panelsMinimized]);
   const [activeUpperTab, setActiveUpperTab] = useState<UpperTabType>('Objects');
   const [activeTool, setActiveTool] = useState<ToolMode>('move');
   const [activeLeftMode, setActiveLeftMode] = useState<ToolMode>('model');
@@ -1999,7 +2009,8 @@ export default function App() {
   ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 
   return (
-    <div className="w-screen h-screen flex flex-col overflow-hidden bg-[#292929] text-[#e0e0e0] font-sans">
+    <div className={`w-screen h-screen flex flex-col overflow-hidden bg-[#292929] text-[#e0e0e0] font-sans ${panelsMinimized ? 'panels-minimized' : ''}`}>
+      {panelsMinimized && <button onClick={() => setPanelsMinimized(false)} aria-label="Restore panels" title="Restore panels" className="fixed right-3 top-3 z-[150] flex items-center gap-1.5 border border-white/20 bg-[#242424]/70 px-2 py-1.5 text-[10px] text-white opacity-60 shadow-lg backdrop-blur-sm hover:opacity-100 cursor-pointer"><Minimize2 className="h-3.5 w-3.5" />Restore panels</button>}
       {/* Hidden File Input for Opening Saved Projects */}
       <input
         ref={fileInputRef}
@@ -2010,7 +2021,9 @@ export default function App() {
       />
 
       {/* 1. Main Top Menu Bar */}
+      <div data-workspace-chrome className="shrink-0">
       <MenuBar
+        onMinimizePanels={() => setPanelsMinimized(true)}
         onOpenReconstruction={() => { setActiveUpperTab('AI Survey'); setReconstructionOpenToken(value => value + 1); }}
         currentLayout={layout}
         onSelectLayout={handleSelectLayout}
@@ -2050,8 +2063,10 @@ export default function App() {
         onOpenTerms={() => openAboutSection('terms')}
         onOpenPrivacy={() => openAboutSection('privacy')}
       />
+      </div>
 
       {/* 2. Main Horizontal Toolbar */}
+      <div data-workspace-chrome className="shrink-0">
       <MainToolbar
         activeTool={activeTool}
         onSelectTool={setActiveTool}
@@ -2082,6 +2097,7 @@ export default function App() {
         isLiveStreamOpen={isLiveStreamOpen}
         liveStreamAvailable={liveStreamAvailable}
       />
+      </div>
 
       {/* 3. Docking Layout: Central Viewport, Object Manager / Camera Tours / AI Survey, Attribute Manager, Timeline, Materials, Coordinates */}
       <DockLayout
@@ -2334,6 +2350,7 @@ export default function App() {
       />
 
       {/* 4. Attention-Grabbing Bottom Status Bar */}
+      <div data-workspace-chrome className="shrink-0">
       <StatusBar
         status={statusAlert}
         projectName={projectName}
@@ -2345,6 +2362,7 @@ export default function App() {
           })
         }
       />
+      </div>
 
       <HelpGuideModal
         isOpen={showHelpGuide}

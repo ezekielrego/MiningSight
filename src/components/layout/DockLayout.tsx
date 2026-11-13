@@ -135,10 +135,11 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
   return (
     <div ref={containerRef} className="flex-1 w-full flex overflow-hidden select-none bg-[#292929]">
       {/* 1. Far Left Tool Palette */}
-      {leftPalette}
+      <div data-workspace-chrome className="contents">{leftPalette}</div>
 
       {/* 2. Central Area: Viewport, Timeline, and Bottom Workspaces */}
       <div
+        data-workspace-viewport-column
         className="flex flex-col h-full overflow-hidden transition-all duration-150"
         style={{ width: isRightCollapsed ? 'calc(100% - 64px)' : `calc(${100 - currentRightWidth}% - 36px)` }}
       >
@@ -151,24 +152,26 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
         </div>
 
         {/* Timeline Bar (Fixed 64px height) */}
-        <div className="h-6 shrink-0 flex items-center justify-between border-y border-[#181818] bg-[#242424] px-1.5 text-[#999]">
+        <div data-workspace-chrome className="h-6 shrink-0 flex items-center justify-between border-y border-[#181818] bg-[#242424] px-1.5 text-[#999]">
           <div className="flex items-center gap-2">
             {[{ Icon: Film, label: 'Timeline' }, { Icon: Palette, label: 'Materials' }, { Icon: Move3D, label: 'Coordinates' }].map(({ Icon, label }) => <button key={label} onClick={restoreBottomPanels} aria-label={`Show ${label}`} title={`Show ${label}`} className="flex items-center gap-1 hover:text-white cursor-pointer"><Icon className="h-3.5 w-3.5" />{!isBottomCollapsed && <span className="text-[9px]">{label}</span>}</button>)}
           </div>
           <button onClick={toggleBottomPanels} aria-expanded={!isBottomCollapsed} aria-label={isBottomCollapsed ? 'Expand bottom panels' : 'Collapse bottom panels'} title={isBottomCollapsed ? 'Expand bottom panels' : 'Collapse bottom panels'} className="p-0.5 text-[#e88724] hover:text-white cursor-pointer">{isBottomCollapsed ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</button>
         </div>
-        <div data-onboarding-target="timeline" className={`w-full h-[64px] flex-shrink-0 ${isBottomCollapsed ? 'hidden' : ''}`}>
+        <div data-workspace-chrome data-onboarding-target="timeline" className={`w-full h-[64px] flex-shrink-0 ${isBottomCollapsed ? 'hidden' : ''}`}>
           {timeline}
         </div>
 
         {/* Resizer Splitter between Viewport/Timeline and Bottom Workspaces */}
         <div
+          data-workspace-chrome
           onMouseDown={(e) => startDrag('horizontal-bottom', e)}
           className={`h-[4px] w-full bg-[#202020] hover:bg-[#e88724] cursor-row-resize transition-colors z-20 flex-shrink-0 border-y border-[#181818] ${isBottomCollapsed ? 'hidden' : ''}`}
         />
 
         {/* Bottom Workspaces: Material Manager and Coordinate Manager */}
         <div
+          data-workspace-chrome
           className={`w-full overflow-hidden flex-shrink-0 ${isBottomCollapsed ? 'hidden' : 'flex'}`}
           style={{ height: `${bottomPanelHeightPercent}%` }}
         >
@@ -208,6 +211,7 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
 
       {/* Main Vertical Splitter between Viewport column and Right panel column */}
       <div
+        data-workspace-chrome
         onMouseDown={(e) => !isRightCollapsed && startDrag('vertical-right', e)}
         className={`w-[4px] h-full bg-[#202020] transition-colors z-20 flex-shrink-0 border-x border-[#181818] ${
           isRightCollapsed ? 'cursor-default' : 'hover:bg-[#e88724] cursor-col-resize'
@@ -216,6 +220,7 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
 
       {/* 3. Right Management Column: Object Manager, Camera Tours & Attribute Manager */}
       <div
+        data-workspace-chrome
         data-onboarding-target="right-panel"
         className="relative z-[70] h-full flex overflow-hidden flex-shrink-0 transition-all duration-150"
         style={{ width: isRightCollapsed ? '28px' : `${currentRightWidth}%` }}

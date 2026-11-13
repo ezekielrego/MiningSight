@@ -707,8 +707,8 @@ export const ObjectManager: React.FC<ObjectManagerProps> = ({
                 {folderAssets.map((asset) => {
                   const Icon = assetIcon(asset);
                   return <div key={asset.id} className={`flex items-center gap-1 rounded-[2px] ${activeAssetId === asset.id ? 'bg-[#e88724] text-black' : 'bg-[#373737] text-[#ccc]'}`}>
-                    <button onClick={() => onSelectAsset?.(asset)} className="min-w-0 flex-1 flex items-center gap-1.5 px-1.5 py-1 text-left cursor-pointer hover:opacity-90" title={`Click to open ${asset.name} in the viewport`}>
-                      <Icon className="w-3 h-3 flex-shrink-0" /><span className="truncate flex-1">{asset.name}</span><span className="text-[8px] opacity-70 uppercase">{asset.kind}</span>
+                    <button onClick={() => onSelectAsset?.(asset)} className="min-w-0 flex-1 flex items-center gap-1.5 px-1.5 py-1 text-left text-[10px] leading-[14px] font-normal cursor-pointer hover:opacity-90" title={`Click to open ${asset.name} in the viewport`}>
+                      <Icon className="w-3 h-3 flex-shrink-0" /><span className="truncate flex-1 text-[10px]">{asset.name}</span><span className="text-[8px] opacity-70 uppercase">{asset.kind}</span>
                     </button>
                     {asset.remoteUrl && <a href={asset.remoteUrl} target="_blank" rel="noreferrer" className="shrink-0 px-1.5 hover:text-white" title="Open provider page in a new tab"><ExternalLink className="w-3 h-3" /></a>}
                   </div>;
