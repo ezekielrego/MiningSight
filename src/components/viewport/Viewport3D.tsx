@@ -1405,6 +1405,15 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
 
     if (navMode === 'walk') {
       dragModeRef.current = 'look';
+      if (e.button === 0 && cameraRef.current && interactiveRoot) {
+        const rect = canvas.getBoundingClientRect();
+        const ray = new THREE.Raycaster();
+        ray.setFromCamera(new THREE.Vector2(((e.clientX-rect.left)/rect.width)*2-1, -((e.clientY-rect.top)/rect.height)*2+1), cameraRef.current);
+        if (!ray.intersectObject(interactiveRoot, true).length) {
+          setHighlightedSelectionId(null);
+          onSelectObject(null);
+        }
+      }
     } else {
       // Any direct pointer navigation takes ownership from a paused tour path.
       manualNavigationRef.current = true;
@@ -1466,6 +1475,9 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
             const pickedId = resolveSelectableObjectId(hit, getPresetRootId(currentPresetId));
             setHighlightedSelectionId(pickedId);
             onSelectObject(pickedId);
+          } else {
+            setHighlightedSelectionId(null);
+            onSelectObject(null);
           }
         }
       }

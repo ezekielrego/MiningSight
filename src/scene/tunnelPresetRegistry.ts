@@ -469,7 +469,7 @@ export function createTunnelRigByPreset(
   presetId: TunnelPresetId,
   customParams?: Partial<ProceduralTunnelParams>
 ): MiningTunnelRig {
-  if (presetId === 'branching_drift') return createBranchingDrift();
+  if (presetId === 'branching_drift') return createBranchingDrift(customParams);
   if (presetId === 'classic_diorama') {
     return createMiningTunnel();
   }

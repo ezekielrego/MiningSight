@@ -7,7 +7,7 @@ import { calculateCartZ, calculateWheelRotation } from '../utils/math3d';
  * Creates procedural texture for the rugged ochre quartzite rock strata
  * derived from the rugged timbered mine reference photo.
  */
-function createPhotoRockTexture(): THREE.CanvasTexture {
+export function createPhotoRockTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 1024;
   canvas.height = 1024;
@@ -78,7 +78,7 @@ function createPhotoRockTexture(): THREE.CanvasTexture {
 /**
  * Creates normal map for the rugged rock face with sharp fractures
  */
-function createPhotoRockNormalMap(): THREE.CanvasTexture {
+export function createPhotoRockNormalMap(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
   canvas.height = 512;
@@ -112,7 +112,7 @@ function createPhotoRockNormalMap(): THREE.CanvasTexture {
 /**
  * Creates rough-sawn weathered mining timber texture matching the square posts and lagging in the photo
  */
-function createPhotoTimberTexture(): THREE.CanvasTexture {
+export function createPhotoTimberTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
   canvas.height = 512;

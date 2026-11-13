@@ -1066,7 +1066,7 @@ export default function App() {
 
   const handleUpdateProceduralParams = useCallback((newParams: ProceduralTunnelParams) => {
     setProceduralParams(newParams);
-    setCurrentPresetId('ai_custom');
+    setCurrentPresetId(previous => previous === 'branching_drift' ? previous : 'ai_custom');
     setStatusAlert({
       type: 'success',
       message: `Updated 3D Procedural Tunnel Parameters (${newParams.timberSetCount} timber sets, ${newParams.laggingPlankTiers} lagging tiers).`,

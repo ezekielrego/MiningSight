@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Sliders, RotateCcw, Check, Sparkles, Layers, Box } from 'lucide-react';
 import { ProceduralTunnelParams } from '../../types/tunnelScene';
 import { TUNNEL_PRESETS } from '../../scene/tunnelPresetRegistry';
@@ -17,6 +17,7 @@ export const SceneParametersModal: React.FC<SceneParametersModalProps> = ({
   onApplyParams,
 }) => {
   const [localParams, setLocalParams] = useState<ProceduralTunnelParams>({ ...params });
+  useEffect(() => { if (isOpen) setLocalParams({ ...params }); }, [isOpen, params]);
 
   if (!isOpen) return null;
 
@@ -209,7 +210,7 @@ export const SceneParametersModal: React.FC<SceneParametersModalProps> = ({
                 <input
                   type="range"
                   min="0"
-                  max="60"
+                  max="240"
                   step="5"
                   value={localParams.rubbleCount}
                   onChange={(e) => handleChange('rubbleCount', parseInt(e.target.value, 10))}

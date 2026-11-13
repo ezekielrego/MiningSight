@@ -418,6 +418,10 @@ export const ObjectManager: React.FC<ObjectManagerProps> = ({
                 <div className="px-3 py-1 text-[9.5px] uppercase tracking-wider text-[#888] font-bold">
                   Select Active Model to View:
                 </div>
+                <button onClick={() => { onSelectPreset?.('branching_drift'); setOpenMenu(null); }} className="w-full text-left px-3 py-1 hover:bg-[#3b516b] text-[#ddd] flex items-center justify-between">
+                  <span>View: Deep Branching Timber Drift</span>
+                  {currentPresetId === 'branching_drift' && <Check className="w-3.5 h-3.5 text-[#e88724]" />}
+                </button>
                 <button
                   onClick={() => {
                     onSelectPreset?.('rugged_timbered_photo');
@@ -474,6 +478,10 @@ export const ObjectManager: React.FC<ObjectManagerProps> = ({
                 <div className="px-3 py-1 text-[9.5px] uppercase tracking-wider text-[#e88724] font-bold">
                   Active 3D Model in Viewport:
                 </div>
+                <button onClick={() => { onSelectPreset?.('branching_drift'); setOpenMenu(null); }} className="w-full text-left px-3 py-1.5 hover:bg-[#3b516b] text-[#eee] flex items-center justify-between">
+                  <div><div className="font-medium">Deep Branching Timber Drift</div><div className="text-[9.5px] text-[#888]">Irregular rock, narrowing branches, intermittent timber</div></div>
+                  {currentPresetId === 'branching_drift' && <span className="text-[#e88724] text-[10px]">ACTIVE</span>}
+                </button>
                 <button
                   onClick={() => {
                     onSelectPreset?.('rugged_timbered_photo');

@@ -1,16 +1,27 @@
 import * as THREE from 'three';
 import { MiningTunnelRig, ShadingDisplayMode } from './miningTunnelGenerator';
+import { createPhotoRockTexture, createPhotoRockNormalMap, createPhotoTimberTexture } from './ruggedTimberedTunnelGenerator';
+import { ProceduralTunnelParams } from '../types/tunnelScene';
 
 export const BRANCH_ROOT = 'Branching_Deep_Mine_Drift';
 export const BRANCH_PARTS = ['Branch_Rock', 'Branch_Weak_Zone_Timbers', 'Branch_Entrance_Rail'];
 
 // Illustrative mine geometry in metres, not a surveyed excavation or support design.
-export function createBranchingDrift(): MiningTunnelRig {
+export function createBranchingDrift(params?: Partial<ProceduralTunnelParams>): MiningTunnelRig {
   const root = new THREE.Group();
   root.name = BRANCH_ROOT;
   root.userData.selectionId = BRANCH_ROOT;
   const rock = new THREE.MeshStandardMaterial({ color: '#776451', roughness: 0.98, side: THREE.DoubleSide, vertexColors: true });
   const timber = new THREE.MeshStandardMaterial({ color: '#59402c', roughness: 0.95 });
+  if (typeof document !== 'undefined') {
+    rock.map = createPhotoRockTexture();
+    rock.normalMap = createPhotoRockNormalMap();
+    rock.normalScale.set(0.45, 0.45);
+    rock.color.set('#b6a58f');
+    timber.map = createPhotoTimberTexture();
+    timber.color.set('#b7a38a');
+  }
+  rock.roughness = params?.rockRoughness ?? 0.94;
   const iron = new THREE.MeshStandardMaterial({ color: '#504038', roughness: 0.9, metalness: 0.45 });
   const gold = new THREE.MeshStandardMaterial({ color: '#a18c66', roughness: 1 });
   const paths = [
@@ -29,13 +40,14 @@ export function createBranchingDrift(): MiningTunnelRig {
       const arch = Math.hypot(lateral / radius, (y - 1.35) / (radius * 0.91)) - 1;
       d = Math.min(d, Math.max(arch * radius, -y + 0.04));
     }
-    const fracture = Math.sin(x * 3.7 + z * 1.3) * Math.sin(y * 4.1 - z * 2.7) * 0.09
-      + Math.sin(z * 0.8 + x * 1.7 + y * 2.3) * 0.10;
+    const fracture = Math.sin(x * 3.7 + z * 1.3) * Math.sin(y * 4.1 - z * 2.7) * 0.10
+      + Math.sin(z * 0.8 + x * 1.7 + y * 2.3) * 0.19
+      + Math.sin(z * 0.23 + y * 1.9) * Math.cos(x * 1.4 - z * 0.37) * 0.24;
     return d + (y > 0.35 ? fracture : 0);
   };
   // A single union surface keeps the junction open: no overlapping tube end walls.
-  const positions: number[] = [], colors: number[] = [];
-  const step = 0.8, nx = 68, ny = 10, nz = 164;
+  const positions: number[] = [], colors: number[] = [], normals: number[] = [], uvs: number[] = [];
+  const step = 0.5, nx = 110, ny = 16, nz = 264;
   const corners = [[0,0,0],[1,0,0],[1,1,0],[0,1,0],[0,0,1],[1,0,1],[1,1,1],[0,1,1]];
   const tetra = [[0,5,1,6],[0,1,2,6],[0,2,3,6],[0,3,7,6],[0,7,4,6],[0,4,5,6]];
   const edges = [[0,1],[0,2],[0,3],[1,2],[1,3],[2,3]];
@@ -45,12 +57,30 @@ export function createBranchingDrift(): MiningTunnelRig {
   for (let z=0;z<=nz;z++) for(let y=0;y<=ny;y++) for(let x=0;x<=nx;x++) {
     const p=point(x,y,z); samples[index(x,y,z)]=field(p.x,p.y,p.z);
   }
+  // Reuse the sampled volume for shading; evaluating every tunnel segment
+  // for every normal would block scene switching unnecessarily.
+  const sampledField = (x: number,y: number,z: number) => {
+    const gx=THREE.MathUtils.clamp((x+23.2)/step,0,nx-0.001), gy=THREE.MathUtils.clamp((y+0.8)/step,0,ny-0.001), gz=THREE.MathUtils.clamp((z+106)/step,0,nz-0.001);
+    const ix=Math.floor(gx), iy=Math.floor(gy), iz=Math.floor(gz), tx=gx-ix, ty=gy-iy, tz=gz-iz;
+    let value=0;
+    for(let dz=0;dz<=1;dz++) for(let dy=0;dy<=1;dy++) for(let dx=0;dx<=1;dx++)
+      value+=samples[index(ix+dx,iy+dy,iz+dz)]*(dx?tx:1-tx)*(dy?ty:1-ty)*(dz?tz:1-tz);
+    return value;
+  };
   const addTriangle = (a: THREE.Vector3,b: THREE.Vector3,c: THREE.Vector3) => {
     if ((a.z+b.z+c.z)/3 > 19.6) return; // Open portal, with closed advancing headings.
+    const mid=a.clone().add(b).add(c).multiplyScalar(1/3);
+    const face=b.clone().sub(a).cross(c.clone().sub(a)).normalize().multiplyScalar(0.04);
+    if (sampledField(mid.x+face.x,mid.y+face.y,mid.z+face.z)>sampledField(mid.x-face.x,mid.y-face.y,mid.z-face.z)) [b,c]=[c,b];
     for (const p of [a,b,c]) {
       positions.push(p.x,p.y,p.z);
-      const strata = 0.76 + 0.14 * Math.sin(p.y * 9 + p.z * 0.32) + 0.08 * Math.sin(p.x * 17 + p.z * 21);
-      colors.push(strata, strata * 0.94, strata * 0.85);
+      const n = new THREE.Vector3(sampledField(p.x+0.2,p.y,p.z)-sampledField(p.x-0.2,p.y,p.z), sampledField(p.x,p.y+0.2,p.z)-sampledField(p.x,p.y-0.2,p.z), sampledField(p.x,p.y,p.z+0.2)-sampledField(p.x,p.y,p.z-0.2)).normalize().negate();
+      normals.push(n.x,n.y,n.z);
+      const floor = p.y < 0.3;
+      uvs.push((floor ? p.x : p.z) * 0.55, (floor ? p.z : p.y + p.x * 0.17) * 0.55);
+      const strata = 0.86 + 0.08 * Math.sin(p.y * 2.5 + p.z * 0.12);
+      const damp = 1 - 0.22 * Math.max(0, Math.sin(p.z * 0.19 + p.x * 0.6)) * Math.max(0, 1 - p.y / 2);
+      colors.push(strata*damp*(floor?0.76:1), strata*damp*(floor?0.70:0.97), strata*damp*(floor?0.61:0.92));
     }
   };
   for(let z=0;z<nz;z++) for(let y=0;y<ny;y++) for(let x=0;x<nx;x++) {
@@ -77,12 +107,14 @@ export function createBranchingDrift(): MiningTunnelRig {
   const geometry=new THREE.BufferGeometry();
   geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
   geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
-  geometry.computeVertexNormals();
+  geometry.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
+  geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));
   const tunnelMesh=new THREE.Mesh(geometry,rock);
   tunnelMesh.name=BRANCH_PARTS[0]; tunnelMesh.userData.selectionId=BRANCH_PARTS[0];
   root.add(tunnelMesh);
   const supports=new THREE.Group(); supports.name=BRANCH_PARTS[1]; supports.userData.selectionId=BRANCH_PARTS[1]; root.add(supports);
   const beam=(parent: THREE.Group,a: THREE.Vector3,b: THREE.Vector3,width: number,mat: THREE.Material) => {
+    if (mat === timber) width *= (params?.timberWidth ?? 0.38)/0.38;
     const mesh=new THREE.Mesh(new THREE.BoxGeometry(width,a.distanceTo(b),width),mat);
     mesh.userData.selectionId=parent.userData.selectionId;
     mesh.position.copy(a).add(b).multiplyScalar(0.5);
@@ -92,7 +124,9 @@ export function createBranchingDrift(): MiningTunnelRig {
   segments.forEach(({a,b},i)=> {
     if(![0,2,3,5,8,10].includes(i)) return;
     const length=Math.hypot(b[0]-a[0],b[1]-a[1]);
-    for(let s=2;s<length-1;s+=3.4) {
+    let frames = 0;
+    for(let s=2;s<length-1 && frames<Math.max(1,Math.ceil((params?.timberSetCount ?? 12)/6));s+=params?.timberSpacing ?? 3.4) {
+      frames++;
       const t=s/length, cx=THREE.MathUtils.lerp(a[0],b[0],t), cz=THREE.MathUtils.lerp(a[1],b[1],t);
       const r=THREE.MathUtils.lerp(a[2],b[2],t), h=1.35+r*0.78, w=r*0.78;
       const side=new THREE.Vector3(-(b[1]-a[1])/length,0,(b[0]-a[0])/length);
@@ -101,12 +135,29 @@ export function createBranchingDrift(): MiningTunnelRig {
       beam(supports,p(w,0.1),p(w*0.9,h),0.22,timber);
       beam(supports,p(-w,h),p(w,h),0.28,timber);
       for(const sign of [-1,1]) beam(supports,p(sign*w*0.92,h-0.65),p(sign*(w-0.6),h-0.05),0.14,timber);
+      // Short irregular lagging at the supported roof, leaving raw rock between weak zones.
+      if (params?.includeRoofLagging !== false) for(let k=-2;k<=2;k++) {
+        const start=p(k*w/3,h+0.15);
+        const along=new THREE.Vector3((b[0]-a[0])/length,0,(b[1]-a[1])/length);
+        beam(supports,start.clone().addScaledVector(along,-1.8),start.clone().addScaledVector(along,1.8),0.13,timber);
+      }
     }
   });
   const rail=new THREE.Group(); rail.name=BRANCH_PARTS[2]; rail.userData.selectionId=BRANCH_PARTS[2]; rail.visible=false;
   for(const x of [-0.55,0.55]) beam(rail,new THREE.Vector3(x,0.15,13),new THREE.Vector3(x,0.15,20),0.08,iron);
   for(let z=13;z<=20;z+=0.85) beam(rail,new THREE.Vector3(-0.9,0.07,z),new THREE.Vector3(0.9,0.07,z),0.12,timber);
   root.add(rail);
+  const lengthScale = THREE.MathUtils.clamp((params?.tunnelLength ?? 120)/120, 0.25, 2);
+  const widthScale = THREE.MathUtils.clamp((params?.spanWidth ?? 4.6)/4.6, 0.5, 2);
+  const heightScale = THREE.MathUtils.clamp((params?.timberHeight ?? 4.6)/4.6, 0.5, 2);
+  root.updateMatrixWorld(true);
+  // Bake dimensional changes into each mesh so ordinary object transforms remain available.
+  root.traverse(node => {
+    if (!(node instanceof THREE.Mesh)) return;
+    node.geometry.applyMatrix4(node.matrixWorld);
+    node.geometry.scale(widthScale,heightScale,lengthScale);
+    node.position.set(0,0,0); node.quaternion.identity(); node.scale.set(1,1,1);
+  });
   const wire=new THREE.LineSegments(new THREE.WireframeGeometry(geometry),new THREE.LineBasicMaterial({color:0x222a31,transparent:true,opacity:0.25})); wire.visible=false; tunnelMesh.add(wire);
   const dots=new THREE.Points(geometry,new THREE.PointsMaterial({color:0xbba88e,size:0.035})); dots.visible=false; tunnelMesh.add(dots);
   const setDisplayMode=(mode: ShadingDisplayMode)=> {
