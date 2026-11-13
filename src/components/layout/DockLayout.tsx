@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Box, Video, Radio, FileText, Folder, MapPin, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Box, Video, Radio, FileText, Folder, MapPin, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Film, Palette, Move3D } from 'lucide-react';
 
 export type UpperTabType = 'Objects' | 'AI Survey' | 'Camera Tours' | 'Mark History' | 'Takes' | 'Content Browser' | 'Structure';
 
@@ -46,6 +46,15 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
 
   // Sidebar collapse toggle for mobile or wide viewport viewing
   const [isRightCollapsed, setIsRightCollapsed] = useState<boolean>(false);
+  const [isBottomCollapsed, setIsBottomCollapsed] = useState(() => localStorage.getItem('miningsight_bottom_collapsed') === 'true');
+  const toggleBottomPanels = () => setIsBottomCollapsed((current) => {
+    localStorage.setItem('miningsight_bottom_collapsed', String(!current));
+    return !current;
+  });
+  const restoreBottomPanels = () => {
+    localStorage.setItem('miningsight_bottom_collapsed', 'false');
+    setIsBottomCollapsed(false);
+  };
 
   // Active right tabs
   const [internalUpperTab, setInternalUpperTab] = useState<UpperTabType>('Objects');
@@ -136,26 +145,31 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
         {/* Upper Viewport */}
         <div
           data-onboarding-target="viewport-area"
-          className="w-full relative overflow-hidden"
-          style={{ height: `calc(${100 - bottomPanelHeightPercent}% - 64px)` }}
+          className="w-full relative overflow-hidden flex-1 min-h-0"
         >
           {viewport}
         </div>
 
         {/* Timeline Bar (Fixed 64px height) */}
-        <div data-onboarding-target="timeline" className="w-full h-[64px] flex-shrink-0">
+        <div className="h-6 shrink-0 flex items-center justify-between border-y border-[#181818] bg-[#242424] px-1.5 text-[#999]">
+          <div className="flex items-center gap-2">
+            {[{ Icon: Film, label: 'Timeline' }, { Icon: Palette, label: 'Materials' }, { Icon: Move3D, label: 'Coordinates' }].map(({ Icon, label }) => <button key={label} onClick={restoreBottomPanels} aria-label={`Show ${label}`} title={`Show ${label}`} className="flex items-center gap-1 hover:text-white cursor-pointer"><Icon className="h-3.5 w-3.5" />{!isBottomCollapsed && <span className="text-[9px]">{label}</span>}</button>)}
+          </div>
+          <button onClick={toggleBottomPanels} aria-expanded={!isBottomCollapsed} aria-label={isBottomCollapsed ? 'Expand bottom panels' : 'Collapse bottom panels'} title={isBottomCollapsed ? 'Expand bottom panels' : 'Collapse bottom panels'} className="p-0.5 text-[#e88724] hover:text-white cursor-pointer">{isBottomCollapsed ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</button>
+        </div>
+        <div data-onboarding-target="timeline" className={`w-full h-[64px] flex-shrink-0 ${isBottomCollapsed ? 'hidden' : ''}`}>
           {timeline}
         </div>
 
         {/* Resizer Splitter between Viewport/Timeline and Bottom Workspaces */}
         <div
           onMouseDown={(e) => startDrag('horizontal-bottom', e)}
-          className="h-[4px] w-full bg-[#202020] hover:bg-[#e88724] cursor-row-resize transition-colors z-20 flex-shrink-0 border-y border-[#181818]"
+          className={`h-[4px] w-full bg-[#202020] hover:bg-[#e88724] cursor-row-resize transition-colors z-20 flex-shrink-0 border-y border-[#181818] ${isBottomCollapsed ? 'hidden' : ''}`}
         />
 
         {/* Bottom Workspaces: Material Manager and Coordinate Manager */}
         <div
-          className="w-full flex overflow-hidden flex-shrink-0"
+          className={`w-full overflow-hidden flex-shrink-0 ${isBottomCollapsed ? 'hidden' : 'flex'}`}
           style={{ height: `${bottomPanelHeightPercent}%` }}
         >
           {/* Vertical Maxon Cinema 4D Ribbon along bottom left edge */}

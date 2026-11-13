@@ -47,6 +47,9 @@ const bridgeLogAdminEmails = new Set((process.env.MININGSIGHT_BRIDGE_LOG_ADMIN_E
 const bridgeLogRetentionMs = 48 * 60 * 60 * 1000;
 const bridgeLogMaxBytes = 256 * 1024;
 const bridgeLinksFile = path.join(bridgeLogsRoot, 'links.json');
+const mediaRelayConfigFile = '/home/ezekiel/miningsight-mediamtx/miningsight.yml';
+let laptopLinkQueue: Promise<void> = Promise.resolve();
+const laptopLinkRates = new Map<string, { count: number; expires: number }>();
 const bridgeRtmpPassword = process.env.MININGSIGHT_RTMP_PUBLISH_PASSWORD || (() => {
   try {
     const config = readFileSync('/home/ezekiel/miningsight-mediamtx/miningsight.yml', 'utf8');
@@ -415,6 +418,53 @@ async function readBridgeLinks(): Promise<Record<string, any>> {
     return {};
   }
 }
+
+app.post('/api/bridge/scrcpy/link', async (req, res) => {
+  const email = normalizeBridgeEmail(req.body?.email);
+  const deviceId = req.body?.deviceId;
+  if (!validBridgeEmail(email) || !validBridgeDeviceId(deviceId)) {
+    return res.status(400).json({ success: false, message: 'Enter a valid TunnelSight email and laptop identifier.' });
+  }
+  const caller = req.socket.remoteAddress || 'unknown';
+  const rate = laptopLinkRates.get(caller);
+  if (rate && rate.expires > Date.now() && rate.count >= 30) {
+    return res.status(429).json({ success: false, message: 'Please wait a few minutes before reconnecting.' });
+  }
+  if (!rate || rate.expires <= Date.now()) laptopLinkRates.set(caller, { count: 1, expires: Date.now() + 5 * 60 * 1000 });
+  else rate.count++;
+  if (!bridgeRtmpPassword) return res.status(503).json({ success: false, message: 'The stream relay is not configured.' });
+  const streamId = createHash('sha256').update(`scrcpy:${email}:${deviceId}:${bridgeRtmpPassword}`).digest('hex').slice(0, 24);
+  const streamPath = `dji/${streamId}`;
+  const username = `laptop_${streamId}`;
+  const password = createHash('sha256').update(`scrcpy-publish:${streamId}:${bridgeRtmpPassword}`).digest('hex');
+  const record = {
+    email, deviceId, streamId, streamPath, source: 'scrcpy',
+    publishUrl: `rtmp://5.189.146.229:1935/${streamPath}?user=${username}&pass=${password}`,
+    playbackUrl: `https://tunnelsight.applications.co.zw/${streamPath}/index.m3u8`,
+    updatedAt: new Date().toISOString(),
+  };
+  const save = laptopLinkQueue.then(async () => {
+    const config = await readFile(mediaRelayConfigFile, 'utf8');
+    if (!config.includes(`user: ${username}\n`)) {
+      if (!config.includes('authInternalUsers:\n')) throw new Error('The relay user configuration could not be updated.');
+      const entry = `  - user: ${username}\n    pass: ${password}\n    ips: []\n    permissions:\n      - action: publish\n        path: ${streamPath}\n`;
+      await writeFile(`${mediaRelayConfigFile}.pending`, config.replace('authInternalUsers:\n', `authInternalUsers:\n${entry}`), { mode: 0o600 });
+      await rename(`${mediaRelayConfigFile}.pending`, mediaRelayConfigFile);
+    }
+    await mkdir(bridgeLogsRoot, { recursive: true, mode: 0o700 });
+    const links = await readBridgeLinks();
+    links[email] = record;
+    await writeFile(bridgeLinksFile, JSON.stringify(links), { mode: 0o600 });
+  });
+  laptopLinkQueue = save.catch(() => {});
+  try {
+    await save;
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ success: true, ...record });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: 'Could not prepare the laptop stream. Please try again.' });
+  }
+});
 
 app.post('/api/bridge/link', async (req, res) => {
   if (!bridgeLogUploadToken || req.header('x-bridge-log-token') !== bridgeLogUploadToken) {

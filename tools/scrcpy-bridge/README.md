@@ -15,7 +15,7 @@ ffmpeg -version
 
 Connect the phone by USB, enable USB debugging, and accept the phone's authorization prompt. The laptop needs internet independently of the phone's DJI Wi-Fi.
 
-Link the Android bridge app to your TunnelSight account email. In its DJI settings, copy the RTMP publish URL. Stop the Android stream before starting the laptop publisher: both use the same account's stream slot. Keep that URL private.
+The bridge asks only for your TunnelSight account email. It automatically contacts the server, prepares your laptop stream, and retrieves the connection settings. No Android bridge app or copied RTMP URL is required. Your laptop needs internet access.
 
 Run the downloaded script:
 
@@ -23,7 +23,15 @@ Run the downloaded script:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Start-TunnelSightStream.ps1
 ```
 
-Paste the RTMP URL at its hidden prompt. It launches scrcpy, waits for its window, then sends a 720p/30fps H.264 stream with one-second keyframes. Sign in to TunnelSight with the linked email, open the live radio button, choose a project, and use the existing capture/record controls. Closing scrcpy or pressing Ctrl+C stops the bridge. Network failures retry in the background.
+Enter your email when prompted. It launches scrcpy, waits for its window, then sends a 720p/30fps H.264 stream with one-second keyframes. Sign in to TunnelSight with the same email, open the live radio button, choose a project, and use the existing capture/record controls. Closing scrcpy or pressing Ctrl+C stops the bridge. Network failures retry in the background. The email is a destination label, not proof of account ownership.
+
+To provide the email directly:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Start-TunnelSightStream.ps1 -Email "you@example.com"
+```
+
+The phone remains interactive in the Scrcpy desktop window. The website provides video playback, frame capture, and recording; remote control from a browser is not provided by this script.
 
 To use a scrcpy window already running, provide its exact title:
 
