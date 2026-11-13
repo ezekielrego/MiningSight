@@ -423,6 +423,11 @@ export default function App() {
   // Scene Hierarchy Objects for Mining Tunnel - BOTH models always listed in side nav panel
   const [objects, setObjects] = useState<C4DSceneObject[]>(getCombinedSceneObjects('rugged_timbered_photo'));
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>('Rugged_Timbered_Mine_Tunnel_Photo');
+  const [walkPosition, setWalkPosition] = useState<Vector3D | null>(null);
+  const [cameraPositionRequest, setCameraPositionRequest] = useState<{ id: number; position: Vector3D } | null>(null);
+  const handleWalkPositionChange = useCallback((position: Vector3D | null) => {
+    setWalkPosition((previous) => previous?.x === position?.x && previous?.y === position?.y && previous?.z === position?.z ? previous : position);
+  }, []);
 
   // Timeline State
   const [timeline, setTimeline] = useState<TimelineState>({
@@ -2206,6 +2211,9 @@ export default function App() {
         }
         viewport={
           <Viewport3D
+            walkPosition={walkPosition}
+            onWalkPositionChange={handleWalkPositionChange}
+            cameraPositionRequest={cameraPositionRequest}
             selectedObject={selectedObject}
             onSelectObject={setSelectedObjectId}
             activeTool={activeTool}
@@ -2300,6 +2308,8 @@ export default function App() {
         }
         coordinateManager={
           <CoordinateManager
+            walkPosition={walkPosition}
+            onGoToPosition={(position) => setCameraPositionRequest((previous) => ({ id: (previous?.id || 0) + 1, position }))}
             selectedObject={selectedObject}
             onApplyCoordinates={handleUpdateTransform}
           />

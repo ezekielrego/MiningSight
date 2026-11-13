@@ -159,6 +159,9 @@ interface Viewport3DProps {
   liveStreamOpen?: boolean;
   onCloseLiveStream?: () => void;
   liveStreamSourceUrl?: string | null;
+  walkPosition?: Vector3D | null;
+  onWalkPositionChange?: (position: Vector3D | null) => void;
+  cameraPositionRequest?: { id: number; position: Vector3D } | null;
 }
 
 export const Viewport3D: React.FC<Viewport3DProps> = ({
@@ -209,6 +212,9 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   liveStreamOpen = false,
   onCloseLiveStream,
   liveStreamSourceUrl = null,
+  walkPosition = null,
+  onWalkPositionChange,
+  cameraPositionRequest = null,
 }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -349,6 +355,21 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   const walkVelocityRef = useRef<THREE.Vector3>(new THREE.Vector3());
   const walkYawRef = useRef<number>(Math.PI); // Facing inward toward -Z
   const walkPitchRef = useRef<number>(-0.05);
+  const walkPositionCallbackRef = useRef(onWalkPositionChange);
+  walkPositionCallbackRef.current = onWalkPositionChange;
+  useEffect(() => {
+    if (navMode !== 'walk' || showMap || coveredByWorldRef.current) {
+      walkPositionCallbackRef.current?.(null);
+      return;
+    }
+    const reportPosition = () => {
+      const { x, y, z } = walkPosRef.current;
+      walkPositionCallbackRef.current?.({ x: Number(x.toFixed(2)), y: Number(y.toFixed(2)), z: Number(z.toFixed(2)) });
+    };
+    reportPosition();
+    const timer = setInterval(reportPosition, 250);
+    return () => clearInterval(timer);
+  }, [navMode, showMap, activeAsset?.kind, liveStreamOpen]);
   const isWalkingRef = useRef<{ w: boolean; s: boolean; a: boolean; d: boolean; shift: boolean }>({
     w: false,
     s: false,
@@ -387,6 +408,31 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     restoreOverlay('walkBanner');
     restoreOverlay('walkControls');
   }, [restoreOverlay]);
+
+  useEffect(() => {
+    if (!cameraPositionRequest || navModeRef.current !== 'walk' || coveredByWorldRef.current || showMap) return;
+    const { position } = cameraPositionRequest;
+    if (![position.x, position.y, position.z].every(Number.isFinite)) return;
+    manualNavigationRef.current = true;
+    onSetPlayback?.(false);
+    const destination = clampWalkPosition(new THREE.Vector3(position.x, position.y, position.z));
+    walkPosRef.current.set(destination.x, destination.y, destination.z);
+    walkVelocityRef.current.set(0, 0, 0);
+    isWalkingRef.current.w = isWalkingRef.current.a = isWalkingRef.current.s = isWalkingRef.current.d = false;
+    walkPositionCallbackRef.current?.(destination);
+  }, [cameraPositionRequest]);
+
+  // Internal scenes may extend far beyond the original sample's walk limits.
+  useEffect(() => {
+    if (activeAsset?.kind === 'model' || rigLoad.state !== 'ready' || !miningTunnelRigRef.current) return;
+    const bounds = new THREE.Box3().setFromObject(miningTunnelRigRef.current.root);
+    if (bounds.isEmpty()) return;
+    walkBoundsRef.current = {
+      minX: bounds.min.x, maxX: bounds.max.x,
+      minY: bounds.min.y, maxY: bounds.max.y,
+      minZ: bounds.min.z, maxZ: bounds.max.z,
+    };
+  }, [rigLoad, activeAsset, selectedObject]);
 
   const setOrbitView = useCallback((radius: number, phi: number, theta: number, target: { x: number; y: number; z: number }) => {
     manualNavigationRef.current = true;
@@ -584,7 +630,6 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       });
       externalModelGroupRef.current = null;
     }
-    walkBoundsRef.current = { minX: -4.2, maxX: 2.4, minY: 1.2, maxY: 4.8, minZ: -23.0, maxZ: 23.0 };
     if (!activeAsset || activeAsset.kind !== 'model') {
       setAssetLoadId(activeAsset?.id || null);
       setAssetLoadState(activeAsset && ['world', 'image', 'video'].includes(activeAsset.kind) ? 'loading' : activeAsset ? 'ready' : 'idle');
@@ -2534,8 +2579,9 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       )}
 
       {/* Top Left Projection Name */}
-      <div className="absolute top-9 left-3 text-[11px] text-[#d0d0d0] font-sans tracking-wide pointer-events-none drop-shadow">
-        {navMode === 'walk' ? 'Perspective (First-Person Walkthrough)' : 'Perspective (Orbit)'}
+      <div className="absolute top-9 left-3 right-3 flex min-w-0 flex-wrap items-center gap-x-2 text-[11px] text-[#d0d0d0] font-sans tracking-wide pointer-events-none drop-shadow">
+        <span className="min-w-0 truncate">{navMode === 'walk' ? 'Perspective (First-Person Walkthrough)' : 'Perspective (Orbit)'}</span>
+        {navMode === 'walk' && walkPosition && <span data-walk-position className="min-w-0 truncate text-[10px] font-mono tabular-nums text-[#bbb]" title="Camera location in model metres (not survey coordinates)">X {walkPosition.x.toFixed(2)} · Y {walkPosition.y.toFixed(2)} · Z {walkPosition.z.toFixed(2)} m</span>}
         {navMode === 'orbit' && <span className="ml-2 text-[9px] text-[#999]">Drag to orbit · Shift-drag to edit object · double-click to focus · wheel / +/- to zoom</span>}
       </div>
 
