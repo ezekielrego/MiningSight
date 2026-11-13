@@ -1540,7 +1540,34 @@ Output a comprehensive, rigorous JSON object with EXACTLY the following structur
 
 // Private, exact reconstruction inputs retained for assisted server work.
 const reconstructionJobsRoot = path.join(path.dirname(projectsRoot), 'reconstruction-jobs');
+const reconstructedScenesRoot = path.join(path.dirname(projectsRoot), 'reconstructed-scenes');
 const jobOwner = (user: any) => createHash('sha256').update(String(user.id || user.email)).digest('hex');
+const sceneNamePattern = /^[\p{L}\p{N}][\p{L}\p{N} _.'()\-]{1,79}$/u;
+app.get('/api/reconstructed-scenes', async (req, res) => {
+  const user = await requireAuthenticated(req, res); if (!user) return;
+  const dir = path.join(reconstructedScenesRoot, jobOwner(user));
+  const scenes = await Promise.all((await readdir(dir).catch(() => [])).filter((name) => name.endsWith('.json')).map(async file => {
+    try { return JSON.parse(await readFile(path.join(dir, file), 'utf8')); } catch { return null; }
+  }));
+  return res.json({ success: true, scenes: scenes.filter(Boolean).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) });
+});
+app.post('/api/reconstructed-scenes', async (req, res) => {
+  const user = await requireAuthenticated(req, res); if (!user) return;
+  const name = String(req.body?.name || '').trim();
+  const params = req.body?.params;
+  if (!sceneNamePattern.test(name)) return res.status(400).json({ success: false, message: 'Scene name must be 2–80 characters using letters, numbers, spaces, and basic punctuation.' });
+  if (!params || typeof params !== 'object' || Array.isArray(params)) return res.status(400).json({ success: false, message: 'Generated scene parameters are required.' });
+  const dir = path.join(reconstructedScenesRoot, jobOwner(user));
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  const files = (await readdir(dir)).filter((file) => file.endsWith('.json'));
+  if (files.length >= 100) return res.status(409).json({ success: false, message: 'This account already has 100 reconstructed scenes.' });
+  const id = randomUUID();
+  const scene = { id, name, params: { ...params, id, name }, reconstructionPlan: String(req.body?.reconstructionPlan || '').slice(0, 20000), sourceJobId: String(req.body?.sourceJobId || ''), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  const encoded = JSON.stringify(scene, null, 2);
+  if (Buffer.byteLength(encoded) > 256 * 1024) return res.status(413).json({ success: false, message: 'Generated scene data is too large.' });
+  await writeFile(path.join(dir, `${id}.json`), encoded, { mode: 0o600 });
+  return res.status(201).json({ success: true, scene });
+});
 app.post('/api/reconstruction-jobs', async (req, res) => {
   const user = await requireAuthenticated(req, res); if (!user) return;
   const input = req.body?.input;
@@ -1554,7 +1581,7 @@ app.post('/api/reconstruction-jobs', async (req, res) => {
   if (used + Buffer.byteLength(encoded) > 100 * 1024 * 1024) return res.status(413).json({ success: false, message: 'Reconstruction archive is full (100 MB). Archive old requests before continuing.' });
   const id = randomUUID(), dir = path.join(ownerDir, id);
   await mkdir(dir, { mode: 0o700 });
-  const job = { id, createdAt: new Date().toISOString(), provider: req.body.assisted ? 'assisted' : 'gemini', status: req.body.assisted ? 'pending' : 'submitted', projectTitle: String(req.body.projectTitle || ''), input };
+  const job = { id, createdAt: new Date().toISOString(), provider: req.body.assisted ? 'assisted' : 'gemini', status: req.body.assisted ? 'pending' : 'submitted', projectTitle: String(req.body.projectTitle || ''), sceneName: String(input.reconstructionName || ''), basePresetId: String(input.basePresetId || ''), input };
   await writeFile(path.join(dir, 'request.json'), JSON.stringify(job, null, 2), { mode: 0o600 });
   return res.json({ success: true, job: { ...job, input: undefined } });
 });
@@ -1605,6 +1632,7 @@ app.post('/api/ai/reconstruct-scene-from-image', async (req, res) => {
       mapSelection,
       nextPartDistanceMeters,
       dimensions,
+      reconstructionName,
     } = req.body;
 
     const safeMapText = typeof referenceMapText === 'string' ? referenceMapText.slice(0, 120000) : '';
@@ -1689,6 +1717,8 @@ Analyze the attached underground reference screenshot and the readable map/secti
 
 Reconstruction operation: ${safeTargetMode}
 Base scene/preset: ${basePresetId}
+Requested standalone scene name: ${String(reconstructionName || 'not supplied')}
+${basePresetId === 'new_scene' ? 'Create a standalone scene from the supplied references and measurements. Do not inherit geometry, props, or layout from a MiningSight sample scene.' : 'Use the selected base scene as the reconstruction starting point.'}
 Currently selected scene object: ${selectedObjectName || selectedObjectId || 'none'}
 Currently opened project asset: ${activeAssetName || 'none'}
 Reference image: ${imageName || 'Rugged Timbered Mine Tunnel'}

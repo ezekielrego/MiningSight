@@ -74,6 +74,7 @@ export interface StatusAlert {
 }
 
 export interface ReconstructionBrief {
+  reconstructionName?: string;
   targetMode: 'new-part' | 'extend-current' | 'rebuild-scene';
   basePresetId: string;
   selectedObjectId?: string | null;

@@ -1053,7 +1053,12 @@ export default function App() {
       setProceduralParams(preset.defaultParams);
     }
     // Keep BOTH models in hierarchy while marking the active model visible with green dots
-    setObjects(getCombinedSceneObjects(presetId));
+    const nextObjects = getCombinedSceneObjects(presetId);
+    if (presetId === 'ai_custom' && customParams?.name) {
+      const accountRoot = nextObjects.find((object) => object.id === 'Rugged_Timbered_Mine_Tunnel_Photo');
+      if (accountRoot) accountRoot.name = `${customParams.name} (Account Reconstruction)`;
+    }
+    setObjects(nextObjects);
     setMaterials(getAllCombinedMaterials());
     const rootId = getPresetRootId(presetId);
     setSelectedObjectId(rootId);
@@ -2113,7 +2118,7 @@ export default function App() {
                   timestamp: new Date().toLocaleTimeString(),
                 });
               } else {
-                handleSelectPreset('ai_custom', p);
+                handleSelectPreset('ai_custom', { ...p, name: context?.reconstructionName || p.name });
               }
             }}
             authToken={authToken}

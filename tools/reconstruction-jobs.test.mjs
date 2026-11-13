@@ -30,5 +30,13 @@ try {
   execFileSync(process.execPath, ['tools/complete-reconstruction.mjs', archive, job.id, result]);
   const completed = (await (await call(a.token)).json()).jobs[0];
   assert.equal(completed.provider, 'assisted'); assert.equal(completed.status, 'completed'); assert.equal(completed.presetId, 'branching_drift');
-  console.log('PASS: authentication, account isolation, exact inputs, failed request retention, assisted completion.');
+  const sceneCall = (token, body) => fetch(`http://127.0.0.1:${port}/api/reconstructed-scenes`, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  const savedSceneResponse = await sceneCall(a.token, { name: 'Level 4 East Branch', params: { tunnelLength: 88, spanWidth: 4.2 }, reconstructionPlan: 'Standalone scene from account references.', sourceJobId: job.id });
+  assert.equal(savedSceneResponse.status, 201);
+  const savedScene = (await savedSceneResponse.json()).scene;
+  assert.equal(savedScene.params.name, 'Level 4 East Branch');
+  assert.equal((await (await sceneCall(a.token)).json()).scenes[0].id, savedScene.id);
+  assert.equal((await (await sceneCall(b.token)).json()).scenes.length, 0);
+  assert.equal((await sceneCall(a.token, { name: '../invalid', params: {} })).status, 400);
+  console.log('PASS: authentication, account isolation, exact inputs, failed request retention, assisted completion, private scene library.');
 } finally { server.kill(); }

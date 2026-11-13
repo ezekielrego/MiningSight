@@ -44,7 +44,7 @@ interface AIGeologicalMapperPanelProps {
   projectTitle?: string;
   currentPresetId?: string;
   onSelectPreset?: (presetId: any) => void;
-  onApplyCustomScene?: (params: any, context?: { targetMode: ReconstructionBrief['targetMode']; nextPartDistanceMeters: number; basePresetId: string }) => void;
+  onApplyCustomScene?: (params: any, context?: { targetMode: ReconstructionBrief['targetMode']; nextPartDistanceMeters: number; basePresetId: string; reconstructionName?: string }) => void;
   authToken?: string | null;
   onOpenAuth?: () => void;
   selectedObjectId?: string | null;
@@ -180,6 +180,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   const [projectFileBusy, setProjectFileBusy] = useState(false);
   const [reconstructTargetMode, setReconstructTargetMode] = useState<ReconstructionBrief['targetMode']>('extend-current');
   const [reconstructBasePresetId, setReconstructBasePresetId] = useState(currentPresetId || 'rugged_timbered_photo');
+  const [reconstructionName, setReconstructionName] = useState('');
   const [reconstructMapName, setReconstructMapName] = useState('');
   const [reconstructMapText, setReconstructMapText] = useState('');
   const [reconstructMapImage, setReconstructMapImage] = useState('');
@@ -197,6 +198,31 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   );
   const [isReconstructing, setIsReconstructing] = useState<boolean>(false);
   const [reconstructResult, setReconstructResult] = useState<any>(null);
+  const [accountScenes, setAccountScenes] = useState<any[]>([]);
+
+  const refreshAccountScenes = async () => {
+    if (!authToken) return;
+    try {
+      const response = await fetch('/api/reconstructed-scenes', { headers: { Authorization: `Bearer ${authToken}` } });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.message || 'Could not load account scenes.');
+      setAccountScenes(json.scenes || []);
+    } catch (error: any) { setWorldError(error.message); }
+  };
+
+  const saveAccountScene = async (data: any, name: string, sourceJobId = '') => {
+    const response = await fetch('/api/reconstructed-scenes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ name, params: data.procedural3DParams, reconstructionPlan: data.reconstructionPlan, sourceJobId }),
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok || !json.success) throw new Error(json.message || 'Could not save the reconstructed scene to this account.');
+    setAccountScenes((current) => [json.scene, ...current.filter((scene) => scene.id !== json.scene.id)]);
+    return json.scene;
+  };
+
+  useEffect(() => { if (activeTab === 'reconstruct' && authToken) void refreshAccountScenes(); }, [activeTab, authToken]);
 
   // AI World Studio providers. The API keys remain server-side; this state only drives the UI.
   const [worldProvider, setWorldProvider] = useState<WorldProvider>('marble');
@@ -681,6 +707,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   };
 
   const buildReconstructionBrief = (): ReconstructionBrief => ({
+    reconstructionName: reconstructionName.trim() || undefined,
     targetMode: reconstructTargetMode,
     basePresetId: reconstructBasePresetId,
     selectedObjectId,
@@ -738,6 +765,10 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
       setWorldError('Describe the geometry, materials, curve, tunnel behaviour, and what must not be generated.');
       return;
     }
+    if (reconstructBasePresetId === 'new_scene' && reconstructionName.trim().length < 2) {
+      setWorldError('Enter a name for the new scene before starting reconstruction.');
+      return;
+    }
     setIsReconstructing(true);
     setWorldError('');
     let referenceImage = '';
@@ -776,6 +807,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
             heightMeters: partHeightMeters,
             lengthMeters: partLengthMeters,
           },
+          reconstructionName: reconstructionName.trim(),
         };
       const archive = await fetch('/api/reconstruction-jobs', {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
@@ -801,10 +833,15 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
         throw new Error(json.message || 'Scene reconstruction failed');
       }
 
-      setReconstructResult(json.data);
-      await fetch(`/api/reconstruction-jobs/${archivedJobId}/outcome`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` }, body: JSON.stringify({ status: 'completed', data: json.data }) });
+      let generatedData = json.data;
+      if (reconstructBasePresetId === 'new_scene') {
+        const accountScene = await saveAccountScene(json.data, reconstructionName.trim(), archivedJobId || '');
+        generatedData = { ...json.data, accountScene, procedural3DParams: { ...json.data.procedural3DParams, id: accountScene.id, name: accountScene.name } };
+      }
+      setReconstructResult(generatedData);
+      await fetch(`/api/reconstruction-jobs/${archivedJobId}/outcome`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` }, body: JSON.stringify({ status: 'completed', data: generatedData }) });
       keepGeneratingAfterRequest = false;
-      setSavedJobs((current) => current.map((job) => job.id === archivedJobId ? { ...job, status: 'completed', data: json.data } : job));
+      setSavedJobs((current) => current.map((job) => job.id === archivedJobId ? { ...job, status: 'completed', data: generatedData } : job));
       onStatusChange({
         type: 'success',
         message: 'MiningSight-compatible reconstruction plan generated.',
@@ -2236,15 +2273,19 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                   ['new-part', 'Build next part'],
                   ['rebuild-scene', 'Rebuild scene'],
                 ] as Array<[ReconstructionBrief['targetMode'], string]>).map(([mode, label]) => (
-                  <button key={mode} onClick={() => setReconstructTargetMode(mode)} className={`rounded border px-1.5 py-1.5 text-[9.5px] font-semibold cursor-pointer ${reconstructTargetMode === mode ? 'border-[#e88724] bg-[#513317] text-[#ffb35d]' : 'border-[#414141] bg-[#303030] text-[#aaa] hover:text-white'}`}>
+                  <button key={mode} disabled={reconstructBasePresetId === 'new_scene' && mode !== 'rebuild-scene'} onClick={() => setReconstructTargetMode(mode)} className={`rounded border px-1.5 py-1.5 text-[9.5px] font-semibold cursor-pointer disabled:cursor-not-allowed disabled:opacity-35 ${reconstructTargetMode === mode ? 'border-[#e88724] bg-[#513317] text-[#ffb35d]' : 'border-[#414141] bg-[#303030] text-[#aaa] hover:text-white'}`}>
                     {label}
                   </button>
                 ))}
               </div>
 
               <div className="grid grid-cols-2 gap-2 text-[9.5px]">
-                <label className="text-[#999]">Base scene / model
-                  <select value={reconstructBasePresetId} onChange={(event) => setReconstructBasePresetId(event.target.value)} className="mt-0.5 w-full bg-[#1c1c1c] border border-[#414141] rounded px-1.5 py-1 text-[#eee] text-[10px]">
+                <label className="text-[#999]">Starting scene / model
+                  <select value={reconstructBasePresetId} onChange={(event) => {
+                    setReconstructBasePresetId(event.target.value);
+                    if (event.target.value === 'new_scene') setReconstructTargetMode('rebuild-scene');
+                  }} className="mt-0.5 w-full bg-[#1c1c1c] border border-[#414141] rounded px-1.5 py-1 text-[#eee] text-[10px]">
+                    <option value="new_scene">New standalone scene — no base</option>
                     <option value="rugged_timbered_photo">Rugged Timbered Mine Tunnel</option>
                     <option value="classic_diorama">Classic Diorama Mining Tunnel</option>
                     <option value="ai_custom">Current AI custom scene</option>
@@ -2255,6 +2296,23 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                   <span className="mt-0.5 block truncate text-[#e88724]" title={selectedObjectName || activeAssetName || 'Nothing selected'}>{selectedObjectName || activeAssetName || 'Nothing selected'}</span>
                 </div>
               </div>
+
+              {reconstructBasePresetId === 'new_scene' && <label className="block text-[9.5px] text-[#999]">New scene name
+                <input value={reconstructionName} onChange={(event) => setReconstructionName(event.target.value)} maxLength={80} placeholder="e.g. Level 4 East Branch Reconstruction" className="mt-0.5 w-full bg-[#1c1c1c] border border-[#414141] rounded px-1.5 py-1.5 text-[#eee] text-[10px] focus:outline-none focus:border-[#e88724]" />
+                <span className="mt-0.5 block text-[8.5px] text-[#777]">Saved privately to the signed-in account and available on future visits.</span>
+              </label>}
+
+              {accountScenes.length > 0 && <div className="border border-[#414141] bg-[#1c1c1c] p-1.5 text-[9.5px]">
+                <div className="mb-1 flex items-center justify-between text-[#aaa]"><span>My reconstructed scenes</span><button onClick={() => void refreshAccountScenes()} className="text-[#e88724]">Refresh</button></div>
+                <div className="max-h-28 overflow-y-auto">{accountScenes.map((scene) => <button key={scene.id} onClick={() => {
+                  setReconstructBasePresetId('new_scene');
+                  setReconstructTargetMode('rebuild-scene');
+                  setReconstructionName(scene.name);
+                  setReconstructResult({ reconstructionPlan: scene.reconstructionPlan, procedural3DParams: scene.params, accountScene: scene, detectedFeatures: [] });
+                  onApplyCustomScene?.(scene.params, { targetMode: 'rebuild-scene', nextPartDistanceMeters: 0, basePresetId: 'new_scene', reconstructionName: scene.name });
+                  onStatusChange({ type: 'success', message: `Loaded “${scene.name}”.`, details: 'This account reconstruction is now active in the 3D viewer.', timestamp: new Date().toLocaleTimeString() });
+                }} className="flex w-full items-center justify-between border-t border-[#333] px-1 py-1 text-left text-[#ddd] hover:bg-[#303030]"><span className="truncate">{scene.name}</span><span className="ml-2 shrink-0 text-[#e88724]">Load</span></button>)}</div>
+              </div>}
 
               <div className="grid grid-cols-2 gap-2">
                 <label
@@ -2357,7 +2415,11 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                   {job.message && <p>{job.message}</p>}
                   {job.status === 'completed' && <button className="text-[#e88724]" onClick={() => {
                     if (job.presetId && ['branching_drift','rugged_timbered_photo','classic_diorama'].includes(job.presetId)) onSelectPreset?.(job.presetId);
-                    else if (job.data?.procedural3DParams) setReconstructResult(job.data);
+                    else if (job.data?.procedural3DParams) {
+                      setReconstructionName(job.sceneName || job.data.procedural3DParams.name || 'Reconstructed Scene');
+                      setReconstructBasePresetId(job.basePresetId === 'new_scene' ? 'new_scene' : job.basePresetId || 'ai_custom');
+                      setReconstructResult(job.data);
+                    }
                     else setJobMessage('Completed result has no supported model or parameters.');
                   }}>Load completed reconstruction</button>}
                 </div>)}</div>
@@ -2431,15 +2493,27 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
 
                 {onApplyCustomScene && (
                   <button
-                    onClick={() => {
-                      onApplyCustomScene(reconstructResult.procedural3DParams, { targetMode: reconstructTargetMode, nextPartDistanceMeters, basePresetId: reconstructBasePresetId });
+                    onClick={async () => {
+                      try {
+                        let resultToApply = reconstructResult;
+                        if (reconstructBasePresetId === 'new_scene' && !reconstructResult.accountScene) {
+                          if (reconstructionName.trim().length < 2) throw new Error('Enter a name for this new scene first.');
+                          const accountScene = await saveAccountScene(reconstructResult, reconstructionName.trim(), visibleQueuedJobId || '');
+                          resultToApply = { ...reconstructResult, accountScene, procedural3DParams: { ...reconstructResult.procedural3DParams, id: accountScene.id, name: accountScene.name } };
+                          setReconstructResult(resultToApply);
+                        }
+                        onApplyCustomScene(resultToApply.procedural3DParams, { targetMode: reconstructTargetMode, nextPartDistanceMeters, basePresetId: reconstructBasePresetId, reconstructionName: reconstructionName.trim() || undefined });
                       saveReconstructionBrief();
                       onStatusChange({
                         type: 'success',
-                        message: 'Applied MiningSight-compatible mesh parameters to the active 3D viewport.',
-                        details: 'The generated part plan was also saved with the reconstruction brief.',
+                        message: reconstructBasePresetId === 'new_scene' ? `Loaded account scene “${reconstructionName.trim()}”.` : 'Applied MiningSight-compatible mesh parameters to the active 3D viewport.',
+                        details: reconstructBasePresetId === 'new_scene' ? 'The named reconstruction is private to this account and is available under My reconstructed scenes.' : 'The generated part plan was also saved with the reconstruction brief.',
                         timestamp: new Date().toLocaleTimeString(),
                       });
+                      } catch (error: any) {
+                        setWorldError(error.message || 'Could not save or apply this scene.');
+                        onStatusChange({ type: 'error', message: 'Could not apply reconstructed scene.', details: error.message, timestamp: new Date().toLocaleTimeString() });
+                      }
                     }}
                     className="w-full py-1.5 bg-[#4ade80] hover:bg-[#6ee7b7] text-black font-bold rounded-[2px] flex items-center justify-center space-x-1 cursor-pointer transition-colors shadow"
                   >
