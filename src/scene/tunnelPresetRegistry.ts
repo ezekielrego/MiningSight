@@ -1,5 +1,6 @@
 import { MiningTunnelRig, createMiningTunnel } from './miningTunnelGenerator';
 import { createRuggedTimberedTunnel } from './ruggedTimberedTunnelGenerator';
+import { BRANCH_ROOT, BRANCH_PARTS, createBranchingDrift } from './branchingDriftGenerator';
 import { TunnelPresetId, TunnelPresetMetadata, ProceduralTunnelParams } from '../types/tunnelScene';
 import { C4DSceneObject, C4DMaterial } from '../types/c4d';
 
@@ -397,6 +398,25 @@ export const TUNNEL_PRESETS: Record<TunnelPresetId, TunnelPresetMetadata> = {
     ],
   },
 
+  branching_drift: {
+    id: 'branching_drift', name: 'Deep Branching Timber Drift',
+    subtitle: 'Long underground drift with two narrowing branches',
+    description: 'Illustrative 120 m entrance-to-heading mine with an open widened Y junction, uneven rock, tapering branches and intermittent timber supports. No installed lights or carts; optional entrance rail hidden by default. Dimensions and support placement are illustrative, not surveyed.',
+    thumbnailIcon: 'Layers',
+    keyFeatures: ['Continuous open branching junction', 'Narrowing irregular headings', 'Intermittent weathered timber sets', 'Hidden optional entrance rail', 'Illustrative geometry'],
+    get defaultParams() { return { ...TUNNEL_PRESETS.rugged_timbered_photo.defaultParams, tunnelLength: 120, includeRailwayTracks: false, headlampIntensity: 0 }; },
+    getSceneObjects: () => [{
+      id: BRANCH_ROOT, name: 'Deep_Branching_Timber_Drift (Public Sample)', type: 'group',
+      position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 },
+      visibleInEditor: true, visibleInRenderer: true, locked: false, expanded: true,
+      materialIds: ['mat_photo_rock', 'mat_photo_timber', 'mat_iron'],
+      children: BRANCH_PARTS.map((id, i) => ({ id, name: ['Rock_Shell_And_Branching_Headings', 'Intermittent_Weak_Zone_Timbers', 'Entrance_Rail (Hidden By Default)'][i], type: 'group',
+        position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 },
+        visibleInEditor: i !== 2, visibleInRenderer: i !== 2, locked: false, expanded: false,
+        materialIds: [i === 0 ? 'mat_photo_rock' : i === 1 ? 'mat_photo_timber' : 'mat_iron'] })),
+    }],
+    getMaterials: () => TUNNEL_PRESETS.rugged_timbered_photo.getMaterials(),
+  },
   ai_custom: {
     id: 'ai_custom',
     name: 'AI Parametric Drift',
@@ -449,6 +469,7 @@ export function createTunnelRigByPreset(
   presetId: TunnelPresetId,
   customParams?: Partial<ProceduralTunnelParams>
 ): MiningTunnelRig {
+  if (presetId === 'branching_drift') return createBranchingDrift();
   if (presetId === 'classic_diorama') {
     return createMiningTunnel();
   }
@@ -702,8 +723,12 @@ export function getCombinedSceneObjects(activePresetId: TunnelPresetId): C4DScen
     ],
   };
 
-  return [photoObjects, classicObjects];
+  const branching = TUNNEL_PRESETS.branching_drift.getSceneObjects()[0];
+  branching.visibleInEditor = branching.visibleInRenderer = activePresetId === 'branching_drift';
+  return [photoObjects, classicObjects, branching];
 }
+
+export const getPresetRootId = (presetId: TunnelPresetId): string => presetId === 'branching_drift' ? BRANCH_ROOT : presetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo';
 
 /**
  * Returns all materials combined across both presets.

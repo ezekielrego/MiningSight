@@ -98,6 +98,7 @@ export const ObjectManager: React.FC<ObjectManagerProps> = ({
   }, [openMenu]);
 
   const isModelActive = (objId: string): boolean => {
+    if (objId === 'Branching_Deep_Mine_Drift') return currentPresetId === 'branching_drift';
     if (objId === 'Rugged_Timbered_Mine_Tunnel_Photo') {
       return currentPresetId === 'rugged_timbered_photo' || currentPresetId === 'ai_custom';
     }
@@ -134,7 +135,7 @@ export const ObjectManager: React.FC<ObjectManagerProps> = ({
   const renderObjectRow = (obj: C4DSceneObject, depth: number = 0) => {
     const isSelected = selectedObjectId === obj.id;
     const hasChildren = obj.children && obj.children.length > 0;
-    const isRootModel = depth === 0 && (obj.id === 'Rugged_Timbered_Mine_Tunnel_Photo' || obj.id === 'Mining_Tunnel_Complex');
+    const isRootModel = depth === 0 && (obj.id === 'Rugged_Timbered_Mine_Tunnel_Photo' || obj.id === 'Mining_Tunnel_Complex' || obj.id === 'Branching_Deep_Mine_Drift');
     const activeIn3D = isModelActive(obj.id);
 
     return (
@@ -143,6 +144,7 @@ export const ObjectManager: React.FC<ObjectManagerProps> = ({
           onClick={() => {
             onSelectObject(obj.id);
             if (isRootModel && onSelectPreset) {
+              if (obj.id === 'Branching_Deep_Mine_Drift') onSelectPreset('branching_drift');
               if (obj.id === 'Rugged_Timbered_Mine_Tunnel_Photo') {
                 onSelectPreset('rugged_timbered_photo');
               } else if (obj.id === 'Mining_Tunnel_Complex') {
@@ -231,7 +233,7 @@ export const ObjectManager: React.FC<ObjectManagerProps> = ({
                 e.stopPropagation();
                 onToggleVisibility(obj.id, 'editor');
                 if (isRootModel && !activeIn3D && onSelectPreset) {
-                  onSelectPreset(obj.id === 'Rugged_Timbered_Mine_Tunnel_Photo' ? 'rugged_timbered_photo' : 'classic_diorama');
+                  onSelectPreset(obj.id === 'Branching_Deep_Mine_Drift' ? 'branching_drift' : obj.id === 'Rugged_Timbered_Mine_Tunnel_Photo' ? 'rugged_timbered_photo' : 'classic_diorama');
                 }
               }}
             >

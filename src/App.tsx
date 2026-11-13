@@ -29,7 +29,7 @@ import { calculateCartZ, stepFrame } from './utils/math3d';
 import { CameraKeyframe, CameraTour, KeyframeAnnotation } from './types/cameraTour';
 import { getDefaultCameraTours } from './utils/cameraAnimation';
 import { TunnelPresetId, ProceduralTunnelParams } from './types/tunnelScene';
-import { TUNNEL_PRESETS, getCombinedSceneObjects, getAllCombinedMaterials } from './scene/tunnelPresetRegistry';
+import { TUNNEL_PRESETS, getCombinedSceneObjects, getAllCombinedMaterials, getPresetRootId } from './scene/tunnelPresetRegistry';
 import { AuthUser, GasMark, MediaMarker, ProjectAsset, ProjectProvider, ProjectSummary, StorageQuota } from './types/project';
 
 declare global {
@@ -1053,7 +1053,7 @@ export default function App() {
     // Keep BOTH models in hierarchy while marking the active model visible with green dots
     setObjects(getCombinedSceneObjects(presetId));
     setMaterials(getAllCombinedMaterials());
-    const rootId = presetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo';
+    const rootId = getPresetRootId(presetId);
     setSelectedObjectId(rootId);
 
     setStatusAlert({
@@ -1509,14 +1509,17 @@ export default function App() {
       'Workstation_Lantern_Brackets'
     ];
 
-    if (classicIds.includes(id) && currentPresetId !== 'classic_diorama') {
+    if ((id === 'Branching_Deep_Mine_Drift' || id.startsWith('Branch_')) && currentPresetId !== 'branching_drift') {
+      handleSelectPreset('branching_drift');
+      setSelectedObjectId(id);
+    } else if (classicIds.includes(id) && currentPresetId !== 'classic_diorama') {
       handleSelectPreset('classic_diorama');
       setStatusAlert({
         type: 'success',
         message: '3D Viewport switched to Classic Diorama Mining Tunnel.',
         details: 'Selected object: ' + id,
       });
-    } else if (photoIds.includes(id) && currentPresetId === 'classic_diorama') {
+    } else if (photoIds.includes(id) && currentPresetId !== 'rugged_timbered_photo' && currentPresetId !== 'ai_custom') {
       handleSelectPreset('rugged_timbered_photo');
       setStatusAlert({
         type: 'success',
@@ -1575,6 +1578,10 @@ export default function App() {
 
   // Toggle editor / renderer visibility
   const handleToggleVisibility = (id: string, target: 'editor' | 'renderer') => {
+    if (id === 'Branching_Deep_Mine_Drift' && target === 'editor' && currentPresetId !== 'branching_drift') {
+      handleSelectPreset('branching_drift');
+      return;
+    }
     // If user clicked editor visibility on a root tunnel, switch active preset if currently inactive
     if (id === 'Mining_Tunnel_Complex' && target === 'editor') {
       if (currentPresetId !== 'classic_diorama') {
@@ -1582,7 +1589,7 @@ export default function App() {
         return;
       }
     } else if (id === 'Rugged_Timbered_Mine_Tunnel_Photo' && target === 'editor') {
-      if (currentPresetId === 'classic_diorama') {
+      if (currentPresetId !== 'rugged_timbered_photo' && currentPresetId !== 'ai_custom') {
         handleSelectPreset('rugged_timbered_photo');
         return;
       }

@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { MiningTunnelRig, ShadingDisplayMode } from '../../scene/miningTunnelGenerator';
 import { TunnelPresetId, ProceduralTunnelParams } from '../../types/tunnelScene';
-import { TUNNEL_PRESETS, createTunnelRigByPreset } from '../../scene/tunnelPresetRegistry';
+import { TUNNEL_PRESETS, createTunnelRigByPreset, getPresetRootId } from '../../scene/tunnelPresetRegistry';
 import { ReferencePhotoModal } from '../modals/ReferencePhotoModal';
 import { LiveStreamViewer } from './LiveStreamViewer';
 import { SceneParametersModal } from '../modals/SceneParametersModal';
@@ -508,7 +508,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     if (!miningTunnelRigRef.current || !selectedObject) return;
     const tunnel = miningTunnelRigRef.current.root;
 
-    const rootId = currentPresetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo';
+    const rootId = getPresetRootId(currentPresetId);
     // Only the model root owns the scene transform. Selecting a child should
     // select that part without snapping or transforming the entire tunnel.
     if (selectedObject.id === rootId) {
@@ -532,7 +532,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   }, [currentPresetId]);
 
   useEffect(() => {
-    const rootId = currentPresetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo';
+    const rootId = getPresetRootId(currentPresetId);
     if (!selectedObject) {
       setHighlightedSelectionId(null);
     } else if (selectedObject.id !== rootId) {
@@ -545,7 +545,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     const rig = miningTunnelRigRef.current;
     if (!rig) return;
     const visibility = flattenSceneObjects(sceneObjects);
-    const rootId = currentPresetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo';
+    const rootId = getPresetRootId(currentPresetId);
     rig.root.visible = !activeProjectId && !clearView && (visibility.get(rootId)?.visibleInEditor ?? false);
 
     rig.root.traverse((node) => {
@@ -1246,7 +1246,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     const newRig = createTunnelRigByPreset(currentPresetId, proceduralParams);
     miningTunnelRigRef.current = newRig;
     scene.add(newRig.root);
-    const rootId = currentPresetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo';
+    const rootId = getPresetRootId(currentPresetId);
     const visibility = flattenSceneObjects(sceneObjects);
     newRig.root.visible = !activeProjectId && !clearView && (visibility.get(rootId)?.visibleInEditor ?? false);
     newRig.root.traverse((node) => {
@@ -1415,7 +1415,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), cameraRef.current);
         const hit = raycaster.intersectObject(interactiveRoot, true)[0]?.object;
-        const pickedId = hit ? resolveSelectableObjectId(hit, currentPresetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo') : null;
+        const pickedId = hit ? resolveSelectableObjectId(hit, getPresetRootId(currentPresetId)) : null;
         setHighlightedSelectionId(pickedId);
         onSelectObject(pickedId);
         // Selection is a click action, but the same gesture can still become
@@ -1435,7 +1435,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         const intersects = raycaster.intersectObject(miningTunnelRigRef.current.root, true);
         if (intersects.length > 0) {
           const hit = intersects[0].object;
-          const rootId = currentPresetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo';
+          const rootId = getPresetRootId(currentPresetId);
           const hitId = resolveSelectableObjectId(hit, rootId);
           if (selectedObject.id === hitId) {
             transformDragRef.current = {
@@ -1463,7 +1463,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
           const intersects = raycaster.intersectObject(interactiveRoot, true);
           if (intersects.length > 0) {
             const hit = intersects[0].object;
-            const pickedId = resolveSelectableObjectId(hit, currentPresetId === 'classic_diorama' ? 'Mining_Tunnel_Complex' : 'Rugged_Timbered_Mine_Tunnel_Photo');
+            const pickedId = resolveSelectableObjectId(hit, getPresetRootId(currentPresetId));
             setHighlightedSelectionId(pickedId);
             onSelectObject(pickedId);
           }

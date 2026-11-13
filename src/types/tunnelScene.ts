@@ -1,7 +1,7 @@
 import { MiningTunnelRig, ShadingDisplayMode } from '../scene/miningTunnelGenerator';
 import { C4DSceneObject, C4DMaterial } from './c4d';
 
-export type TunnelPresetId = 'classic_diorama' | 'rugged_timbered_photo' | 'ai_custom';
+export type TunnelPresetId = 'classic_diorama' | 'rugged_timbered_photo' | 'branching_drift' | 'ai_custom';
 
 export interface ProceduralTunnelParams {
   id?: string;
