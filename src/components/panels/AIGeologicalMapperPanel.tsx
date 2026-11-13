@@ -130,19 +130,37 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   const [activeTab, setActiveTab] = useState<'input' | 'preview' | 'analysis' | 'records' | 'reconstruct'>('input');
   const [savedJobs, setSavedJobs] = useState<any[]>([]);
   const [jobMessage, setJobMessage] = useState('');
+  const [visibleQueuedJobId, setVisibleQueuedJobId] = useState<string | null>(null);
   useEffect(() => {
     if (!reconstructionOpenToken) return;
     setActiveTab('reconstruct');
     const timer = window.setTimeout(() => document.getElementById('internal-reconstruction-builder')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 100);
     return () => window.clearTimeout(timer);
   }, [reconstructionOpenToken]);
-  const refreshJobs = async () => {
+  const refreshJobs = async (revealOutcome = false) => {
     if (!authToken) return;
     try {
       const response = await fetch('/api/reconstruction-jobs', { headers: { Authorization: `Bearer ${authToken}` } });
       const json = await response.json();
       if (!response.ok) throw new Error(json.message || 'Could not load saved requests.');
-      setSavedJobs(json.jobs || []);
+      const jobs = json.jobs || [];
+      setSavedJobs(jobs);
+      if (revealOutcome) {
+        const tracked = jobs.find((job: any) => job.id === visibleQueuedJobId) || jobs[0];
+        if (tracked?.status === 'completed') {
+          setIsReconstructing(false);
+          setJobMessage(`Reconstruction ${tracked.id} completed. Load the result below.`);
+          onStatusChange({ type: 'success', message: 'Reconstruction completed.', details: `Request ${tracked.id} is ready to load.`, timestamp: new Date().toLocaleTimeString() });
+        } else if (tracked?.status === 'failed') {
+          setIsReconstructing(false);
+          setJobMessage(`Reconstruction ${tracked.id} failed: ${tracked.message || 'No failure details were supplied.'}`);
+          onStatusChange({ type: 'error', message: 'Reconstruction failed.', details: tracked.message || `Request ${tracked.id} did not complete.`, timestamp: new Date().toLocaleTimeString() });
+        } else if (tracked) {
+          setIsReconstructing(true);
+          setJobMessage(`Reconstruction ${tracked.id} is generating.`);
+          onStatusChange({ type: 'loading', message: 'Reconstruction generating…', details: `Request ${tracked.id} remains queued or in progress.`, timestamp: new Date().toLocaleTimeString() });
+        }
+      }
     } catch (error: any) { setJobMessage(error.message); }
   };
   useEffect(() => { if (activeTab === 'reconstruct' && authToken) void refreshJobs(); }, [activeTab, authToken]);
@@ -703,11 +721,10 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   const handleReconstructScene = async (assisted = false) => {
     if (!authToken) {
       setActiveTab('reconstruct');
-      openProviderSettings();
       onStatusChange({
         type: 'warning',
-        message: 'Gemini API key required for MiningSight Compatible Reconstruction.',
-        details: authToken ? 'Open Provider API keys & model preferences and save a Gemini key.' : 'Sign in with Google, then save a Gemini key in Provider API keys & model preferences.',
+        message: 'Sign in required for reconstruction.',
+        details: 'Sign in with Google so the reference files and instructions can be saved privately.',
         timestamp: new Date().toLocaleTimeString(),
       });
       if (!authToken) onOpenAuth?.();
@@ -725,6 +742,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
     setWorldError('');
     let referenceImage = '';
     let archivedJobId: string | null = null;
+    let keepGeneratingAfterRequest = false;
     try {
       referenceImage = reconstructImage.startsWith('data:')
         ? reconstructImage
@@ -766,8 +784,10 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
       const saved = await archive.json();
       if (!archive.ok || !saved.success) throw new Error(saved.message || 'Could not save reconstruction inputs.');
       archivedJobId = saved.job.id;
-      setJobMessage(`Saved request ${archivedJobId}`);
-      void refreshJobs();
+      keepGeneratingAfterRequest = true;
+      setVisibleQueuedJobId(archivedJobId);
+      setSavedJobs((current) => [saved.job, ...current.filter((job) => job.id !== saved.job.id)]);
+      setJobMessage(`Reconstruction ${archivedJobId} is generating.`);
       if (assisted) {
         onStatusChange({ type: 'loading', message: 'Assisted reconstruction queued.', details: `Request ${archivedJobId} is saved for server-side work.`, timestamp: new Date().toLocaleTimeString() });
         return;
@@ -778,15 +798,13 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
 
       const json = await resp.json();
       if (!resp.ok || !json.success) {
-        if (resp.status === 428 && json.provider === 'gemini') {
-          openProviderSettings();
-          if (!authToken) onOpenAuth?.();
-        }
         throw new Error(json.message || 'Scene reconstruction failed');
       }
 
       setReconstructResult(json.data);
       await fetch(`/api/reconstruction-jobs/${archivedJobId}/outcome`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` }, body: JSON.stringify({ status: 'completed', data: json.data }) });
+      keepGeneratingAfterRequest = false;
+      setSavedJobs((current) => current.map((job) => job.id === archivedJobId ? { ...job, status: 'completed', data: json.data } : job));
       onStatusChange({
         type: 'success',
         message: 'MiningSight-compatible reconstruction plan generated.',
@@ -795,14 +813,14 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
       });
     } catch (err: any) {
       if (archivedJobId) await fetch(`/api/reconstruction-jobs/${archivedJobId}/outcome`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` }, body: JSON.stringify({ status: 'failed', message: err.message }) }).catch(() => undefined);
-      onStatusChange({
-        type: 'error',
-        message: `MiningSight-compatible reconstruction failed: ${err.message}`,
-        timestamp: new Date().toLocaleTimeString(),
-      });
+      if (archivedJobId) {
+        keepGeneratingAfterRequest = true;
+        onStatusChange({ type: 'loading', message: 'Reconstruction generating…', details: `Request ${archivedJobId} was saved. Use Refresh results to check its outcome.`, timestamp: new Date().toLocaleTimeString() });
+      } else {
+        onStatusChange({ type: 'error', message: `Reconstruction could not be saved: ${err.message}`, timestamp: new Date().toLocaleTimeString() });
+      }
     } finally {
-      setIsReconstructing(false);
-      void refreshJobs();
+      if (!keepGeneratingAfterRequest) setIsReconstructing(false);
     }
   };
 
@@ -2329,12 +2347,12 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
               </div>
 
               <div className="border border-[#444] p-2 text-[10px] space-y-1">
-                <div className="flex justify-between"><span>Saved reconstruction requests</span><button onClick={() => void refreshJobs()} className="text-[#e88724]">Refresh results</button></div>
+                <div className="flex justify-between"><span>Saved reconstruction requests</span><button onClick={() => void refreshJobs(true)} className="text-[#e88724]">Refresh results</button></div>
                 <button onClick={() => void handleReconstructScene(true)} disabled={isReconstructing} className="text-[#e88724] disabled:opacity-50">Save & queue assisted reconstruction</button>
                 <p className="text-[#999]">Inputs are saved privately on the server. Assisted requests wait for an operator; no Gemini key is needed.</p>
                 {jobMessage && <p className="break-all">{jobMessage}</p>}
                 <div className="max-h-40 overflow-y-auto">{savedJobs.map(job => <div key={job.id} className="border-t border-[#444] py-1">
-                  <div>{job.provider === 'assisted' ? 'Assisted' : 'Gemini'} · {job.status} · {job.createdAt}</div>
+                  <div>{job.provider === 'assisted' ? 'Assisted' : 'Gemini'} · {job.status === 'pending' || job.status === 'submitted' ? 'Generating' : job.status} · {job.createdAt}</div>
                   <div className="text-[#999] break-all">{job.id}</div>
                   {job.message && <p>{job.message}</p>}
                   {job.status === 'completed' && <button className="text-[#e88724]" onClick={() => {
