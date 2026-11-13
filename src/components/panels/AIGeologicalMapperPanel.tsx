@@ -128,12 +128,29 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   onProviderAssetReady,
 }) => {
   const [activeTab, setActiveTab] = useState<'input' | 'preview' | 'analysis' | 'records' | 'reconstruct'>('input');
+  const [focusedReconstruction, setFocusedReconstruction] = useState(false);
   const [savedJobs, setSavedJobs] = useState<any[]>([]);
   const [jobMessage, setJobMessage] = useState('');
   const [visibleQueuedJobId, setVisibleQueuedJobId] = useState<string | null>(null);
   useEffect(() => {
     if (!reconstructionOpenToken) return;
+    setFocusedReconstruction(true);
     setActiveTab('reconstruct');
+    setReconstructTargetMode('rebuild-scene');
+    setReconstructBasePresetId('new_scene');
+    setReconstructionName('');
+    setReconstructImage('');
+    setReconstructImageName('');
+    setReconstructMapImage('');
+    setReconstructMapImageName('');
+    setReconstructMapName('');
+    setReconstructMapText('');
+    setReconstructResult(null);
+    setVisibleQueuedJobId(null);
+    setJobMessage('');
+    setIsReconstructing(false);
+    setWorldError('');
+    onMapGeometryChange?.(null);
     const timer = window.setTimeout(() => document.getElementById('internal-reconstruction-builder')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 100);
     return () => window.clearTimeout(timer);
   }, [reconstructionOpenToken]);
@@ -171,8 +188,8 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   );
 
   // AI 3D Scene Reconstruction state
-  const [reconstructImage, setReconstructImage] = useState<string>('/assets/reference/rugged_timbered_mine_reference.png');
-  const [reconstructImageName, setReconstructImageName] = useState('rugged_timbered_mine_reference.png');
+  const [reconstructImage, setReconstructImage] = useState<string>('');
+  const [reconstructImageName, setReconstructImageName] = useState('');
   const [reconstructReferenceLoading, setReconstructReferenceLoading] = useState(false);
   const [showProjectFilePicker, setShowProjectFilePicker] = useState(false);
   const [selectedProjectFileIds, setSelectedProjectFileIds] = useState<string[]>([]);
@@ -194,7 +211,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   const [partLengthMeters, setPartLengthMeters] = useState(8);
   const [briefSavedMessage, setBriefSavedMessage] = useState('');
   const [reconstructPrompt, setReconstructPrompt] = useState<string>(
-    'Synthesize square timber sets with 4-tier side lagging, inward batter angle, a clear packed earthen wheel-cart path, and unlined rock cavern adit bore. Do not add rails, carts, or loose stones.'
+    'Reconstruct only the underground geometry and support features visible in my references. Preserve measured width, height, length, bends, branches, narrowing, rock irregularity, and weak-zone supports. Do not invent rails, carts, lights, equipment, or debris unless they are visible or requested.'
   );
   const [isReconstructing, setIsReconstructing] = useState<boolean>(false);
   const [reconstructResult, setReconstructResult] = useState<any>(null);
@@ -286,10 +303,11 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
   }, []);
 
   useEffect(() => {
+    if (focusedReconstruction) return;
     if (savedReconstructionBrief) {
       setReconstructTargetMode(savedReconstructionBrief.targetMode);
       setReconstructBasePresetId(savedReconstructionBrief.basePresetId || currentPresetId || 'rugged_timbered_photo');
-      setReconstructImageName(savedReconstructionBrief.referenceImageName || 'rugged_timbered_mine_reference.png');
+      setReconstructionName(savedReconstructionBrief.reconstructionName || '');
       setReconstructMapName(savedReconstructionBrief.mapName || '');
       setReconstructMapText(savedReconstructionBrief.mapText || '');
       onMapGeometryChange?.(savedReconstructionBrief.mapGeometry || null);
@@ -307,7 +325,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
       if (localBrief) {
         setReconstructTargetMode(localBrief.targetMode);
         setReconstructBasePresetId(localBrief.basePresetId || currentPresetId || 'rugged_timbered_photo');
-        setReconstructImageName(localBrief.referenceImageName || 'rugged_timbered_mine_reference.png');
+        setReconstructionName(localBrief.reconstructionName || '');
         setReconstructMapName(localBrief.mapName || '');
         setReconstructMapText(localBrief.mapText || '');
         onMapGeometryChange?.(localBrief.mapGeometry || null);
@@ -320,7 +338,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
         setReconstructBasePresetId(currentPresetId);
       }
     }
-  }, [currentPresetId, savedReconstructionBrief, onMapGeometryChange]);
+  }, [currentPresetId, savedReconstructionBrief, onMapGeometryChange, focusedReconstruction]);
 
   useEffect(() => {
     if (!capturedReferenceImage) return;
@@ -567,16 +585,8 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
         const first = loaded[0];
         setReconstructImage(first.dataUrl);
         setReconstructImageName(first.asset.name);
-        setImages((previous) => {
-          const existing = new Set(previous.map((image) => image.name));
-          const additions = loaded.filter(({ asset }) => !existing.has(asset.name)).map(({ asset, dataUrl }, index) => {
-            const sequence = previous.length + index + 1;
-            return { id: `project_${asset.id}`, name: asset.name, dataUrl, distanceFromLast: 2.5, stationId: `ST-${String(sequence).padStart(2, '0')}`, depthBelowSurface: 140 + sequence * 2.5, headingAzimuth: 115, pitchAngle: -4, rockStrata: 'Unspecified', rqdPercent: 75, fractureSpacingCm: 25 };
-          });
-          return [...previous, ...additions];
-        });
         setWorldError('');
-        onStatusChange({ type: 'success', message: `Attached ${loaded.length} project image${loaded.length === 1 ? '' : 's'} to reconstruction and survey inputs.`, details: 'The first selected image is the primary reference; all selected images are available in the survey set.', timestamp: new Date().toLocaleTimeString() });
+        onStatusChange({ type: 'success', message: `Attached ${first.asset.name} to this reconstruction.`, details: 'The selected project image is now the primary reference for this request only.', timestamp: new Date().toLocaleTimeString() });
       }
       setShowProjectFilePicker(false);
       setSelectedProjectFileIds([]);
@@ -717,7 +727,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
     mapName: reconstructMapName || undefined,
     mapText: reconstructMapText || undefined,
     mapGeometry,
-    mapSelection,
+    mapSelection: mapGeometry ? mapSelection : null,
     nextPartDistanceMeters,
     dimensions: {
       widthMeters: partWidthMeters,
@@ -765,6 +775,10 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
       setWorldError('Describe the geometry, materials, curve, tunnel behaviour, and what must not be generated.');
       return;
     }
+    if (!reconstructImage) {
+      setWorldError('Add a reference image from your computer, project files, or a captured keyframe before starting reconstruction.');
+      return;
+    }
     if (reconstructBasePresetId === 'new_scene' && reconstructionName.trim().length < 2) {
       setWorldError('Enter a name for the new scene before starting reconstruction.');
       return;
@@ -775,12 +789,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
     let archivedJobId: string | null = null;
     let keepGeneratingAfterRequest = false;
     try {
-      referenceImage = reconstructImage.startsWith('data:')
-        ? reconstructImage
-        : await fetch(reconstructImage).then((response) => {
-          if (!response.ok) throw new Error('Could not load the default reference image.');
-          return response.blob();
-        }).then(readFileAsDataUrl);
+      referenceImage = reconstructImage;
       onStatusChange({
         type: 'loading',
         message: assisted ? 'Saving assisted reconstruction inputs...' : 'Saving inputs before Gemini reconstruction...',
@@ -800,7 +809,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
           referenceMapText: reconstructMapText,
           referenceMapImage: reconstructMapImage,
           mapGeometry,
-          mapSelection,
+          mapSelection: mapGeometry ? mapSelection : null,
           nextPartDistanceMeters,
           dimensions: {
             widthMeters: partWidthMeters,
@@ -1236,7 +1245,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
       <div className="h-7 bg-[#383838] border-b border-[#222] px-2 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center space-x-1.5">
           <span className="w-2 h-2 rounded-full bg-[#e88724] animate-pulse"></span>
-          <span className="font-bold text-[#f0f0f0] tracking-tight">AI Photogrammetry & Subsurface Mapping</span>
+          <span className="font-bold text-[#f0f0f0] tracking-tight">{focusedReconstruction ? 'Internal Scene Reconstruction' : 'AI Photogrammetry & Subsurface Mapping'}</span>
         </div>
         <div className="flex items-center gap-1.5">
           <button onClick={openProviderSettings} className="px-1.5 py-0.5 rounded-[2px] border border-[#76552b] bg-[#2b2118] text-[9px] font-bold text-[#ffb35d] hover:bg-[#e88724] hover:text-black active:scale-[0.98] cursor-pointer" title="Open Gemini and World Labs API key settings">API Keys</button>
@@ -1247,7 +1256,11 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
       </div>
 
       {/* Sub Tabs - Responsive flex-wrap / horizontal scroll */}
-      <div className="min-h-7 bg-[#292929] border-b border-[#222] flex items-center px-1 py-1 gap-1 flex-wrap flex-shrink-0">
+      {focusedReconstruction && <div className="min-h-7 bg-[#292929] border-b border-[#222] flex items-center justify-between px-2 py-1 flex-shrink-0">
+        <span className="text-[10px] font-semibold text-[#e88724]">New reconstruction · user references only</span>
+        <button onClick={() => setFocusedReconstruction(false)} className="text-[9px] text-[#aaa] hover:text-white">Show all AI tools</button>
+      </div>}
+      <div className={`${focusedReconstruction ? 'hidden' : 'flex'} min-h-7 bg-[#292929] border-b border-[#222] items-center px-1 py-1 gap-1 flex-wrap flex-shrink-0`}>
         <button
           onClick={() => setActiveTab('input')}
           className={`px-2 py-0.5 text-[10.5px] rounded-[2px] font-medium transition-colors cursor-pointer flex items-center space-x-1 ${
@@ -1307,7 +1320,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
           </span>
         </button>
         <button
-          onClick={() => setActiveTab('reconstruct')}
+          onClick={() => { setFocusedReconstruction(false); setActiveTab('reconstruct'); }}
           className={`px-2 py-0.5 text-[10.5px] rounded-[2px] font-medium transition-colors cursor-pointer flex items-center space-x-1 ${
             activeTab === 'reconstruct' ? 'bg-[#e88724] text-black font-bold shadow-sm' : 'text-[#bbb] hover:bg-[#3d3d3d] hover:text-white'
           }`}
@@ -1998,6 +2011,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
         {/* TAB 5: AI 3D SCENE RECONSTRUCTION FROM PHOTO REFERENCE */}
         {activeTab === 'reconstruct' && (
           <div className="space-y-3">
+            {!focusedReconstruction && <>
             {/* AI World Studio: provider selection, guarded inputs, and async result handling */}
             <div className="bg-[#242424] border border-[#4b3825] rounded-[3px] overflow-hidden shadow-lg">
               <div className="px-2.5 py-2 bg-gradient-to-r from-[#3a2b1d] to-[#292929] border-b border-[#5d4227] flex items-center justify-between gap-2">
@@ -2241,8 +2255,26 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
             })()}
 
             {worldResult?.provider === 'gomera' && <div className="bg-[#1f2620] border border-[#2e4d35] p-2.5 rounded-[3px] space-y-2 text-[10px]"><div className="flex items-center justify-between text-[#4ade80] font-bold"><span>GOMERA model ready</span><span className="font-mono text-[9px] text-[#88bbdd]">Job {worldResult.jobId}</span></div><a href={worldResult.modelUrl} className="w-full px-2 py-1.5 bg-[#315438] hover:bg-[#3d6847] text-[#b7f7c4] rounded flex items-center justify-center gap-1 font-semibold"><Download className="w-3 h-3" /> Download reconstructed GLB</a></div>}
+            </>}
 
-            <div className="bg-[#242424] border border-[#383838] p-2.5 rounded-[3px] space-y-2">
+            {focusedReconstruction && settingsOpen && <div id="provider-api-settings" className="border border-[#454545] bg-[#1d1d1d] p-2 text-[9.5px] space-y-2">
+              <div className="flex items-center justify-between"><span className="font-bold text-[#f0c18b]">Gemini settings for this reconstruction</span><button onClick={() => setSettingsOpen(false)} className="text-[#999] hover:text-white"><X className="h-3 w-3" /></button></div>
+              {!authToken ? <button onClick={onOpenAuth} className="bg-[#e88724] px-2 py-1 font-bold text-black">Sign in with Google</button> : <>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-[#999]">Gemini API key<input type="password" value={settingsGeminiKey} onChange={(event) => setSettingsGeminiKey(event.target.value)} placeholder={aiSettings?.geminiConfigured ? 'Saved key · leave blank to keep' : 'Paste Gemini API key'} autoComplete="off" className="mt-0.5 w-full border border-[#414141] bg-[#171717] px-1.5 py-1 text-[#eee]" /></label>
+                  <label className="text-[#999]">Gemini model<select value={settingsGeminiModel} onChange={(event) => setSettingsGeminiModel(event.target.value)} className="mt-0.5 w-full border border-[#414141] bg-[#171717] px-1.5 py-1 text-[#eee]">{geminiModelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                </div>
+                <div className="flex items-center justify-between"><a href="https://ai.google.dev/gemini-api/docs" target="_blank" rel="noreferrer" className="text-[#9bcaf0] hover:underline">Gemini API documentation</a><button onClick={() => void saveAISettings()} disabled={settingsSaving || settingsLoading} className="bg-[#e88724] px-2 py-1 font-bold text-black disabled:opacity-50">{settingsSaving ? 'Saving…' : 'Save Gemini settings'}</button></div>
+                {settingsMessage && <div className="text-[#8ee5a0]">{settingsMessage}</div>}
+              </>}
+            </div>}
+
+            {focusedReconstruction && worldError && <div className="flex items-start justify-between gap-2 border border-[#713333] bg-[#321d1d] p-2 text-[9.5px] text-[#ffb0b0]">
+              <div className="flex min-w-0 items-start gap-1.5"><AlertTriangle className="mt-0.5 h-3 w-3 flex-shrink-0" /><span>{worldError}</span></div>
+              {/key|sign in/i.test(worldError) && <button onClick={() => /sign in/i.test(worldError) && !authToken ? onOpenAuth?.() : openProviderSettings()} className="shrink-0 bg-[#e88724] px-1.5 py-1 text-[8.5px] font-bold text-black hover:bg-[#ff9933] active:scale-[0.98]">{/sign in/i.test(worldError) && !authToken ? 'Sign in' : 'Open API keys'}</button>}
+            </div>}
+
+            {!focusedReconstruction && <div className="bg-[#242424] border border-[#383838] p-2.5 rounded-[3px] space-y-2">
               <div className="flex items-center justify-between border-b border-[#333] pb-1.5">
                 <span className="font-bold text-[#e88724] flex items-center space-x-1.5">
                   <Sparkles className="w-3.5 h-3.5" />
@@ -2255,19 +2287,19 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
               <p className="text-[#aaa] text-[10.5px] leading-relaxed">
                 Transform real underground survey photographs into interactive, physically-scaled 3D procedural scenes with structural shoring sets, lagging retention planks, and geological adit headings.
               </p>
-            </div>
+            </div>}
 
             {/* MiningSight-compatible reconstruction brief: preserved alongside the archived survey milestone. */}
             <div className="bg-[#252525] border border-[#4b3825] p-2.5 rounded-[3px] space-y-2.5">
               <div className="flex items-start justify-between gap-2 border-b border-[#3d3d3d] pb-1.5">
                 <div>
                   <div id="internal-reconstruction-builder" className="font-bold text-[#f6d2a7] text-[11.5px]">MiningSight Compatible Reconstruction</div>
-                  <div className="text-[9.5px] text-[#999] mt-0.5">Make a new mesh part, extend the current scene, or rebuild a complete selectable procedural model.</div>
+                  <div className="text-[9.5px] text-[#999] mt-0.5">{focusedReconstruction ? 'Build one private, named scene from the references and measurements supplied below.' : 'Make a new mesh part, extend the current scene, or rebuild a complete selectable procedural model.'}</div>
                 </div>
                 <span className="shrink-0 rounded border border-[#315438] bg-[#1a2e1f] px-1.5 py-0.5 text-[8.5px] font-mono text-[#72e28e]">GEMINI / ASSISTED</span>
               </div>
 
-              <div className="grid grid-cols-3 gap-1">
+              {!focusedReconstruction && <div className="grid grid-cols-3 gap-1">
                 {([
                   ['extend-current', 'Extend current'],
                   ['new-part', 'Build next part'],
@@ -2277,9 +2309,9 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                     {label}
                   </button>
                 ))}
-              </div>
+              </div>}
 
-              <div className="grid grid-cols-2 gap-2 text-[9.5px]">
+              {!focusedReconstruction && <div className="grid grid-cols-2 gap-2 text-[9.5px]">
                 <label className="text-[#999]">Starting scene / model
                   <select value={reconstructBasePresetId} onChange={(event) => {
                     setReconstructBasePresetId(event.target.value);
@@ -2295,14 +2327,14 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                   <span className="block">Current selection</span>
                   <span className="mt-0.5 block truncate text-[#e88724]" title={selectedObjectName || activeAssetName || 'Nothing selected'}>{selectedObjectName || activeAssetName || 'Nothing selected'}</span>
                 </div>
-              </div>
+              </div>}
 
               {reconstructBasePresetId === 'new_scene' && <label className="block text-[9.5px] text-[#999]">New scene name
                 <input value={reconstructionName} onChange={(event) => setReconstructionName(event.target.value)} maxLength={80} placeholder="e.g. Level 4 East Branch Reconstruction" className="mt-0.5 w-full bg-[#1c1c1c] border border-[#414141] rounded px-1.5 py-1.5 text-[#eee] text-[10px] focus:outline-none focus:border-[#e88724]" />
                 <span className="mt-0.5 block text-[8.5px] text-[#777]">Saved privately to the signed-in account and available on future visits.</span>
               </label>}
 
-              {accountScenes.length > 0 && <div className="border border-[#414141] bg-[#1c1c1c] p-1.5 text-[9.5px]">
+              {!focusedReconstruction && accountScenes.length > 0 && <div className="border border-[#414141] bg-[#1c1c1c] p-1.5 text-[9.5px]">
                 <div className="mb-1 flex items-center justify-between text-[#aaa]"><span>My reconstructed scenes</span><button onClick={() => void refreshAccountScenes()} className="text-[#e88724]">Refresh</button></div>
                 <div className="max-h-28 overflow-y-auto">{accountScenes.map((scene) => <button key={scene.id} onClick={() => {
                   setReconstructBasePresetId('new_scene');
@@ -2316,17 +2348,16 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
 
               <div className="grid grid-cols-2 gap-2">
                 <label
-                  onDragOver={(event) => { event.preventDefault(); setMapDropActive(true); }}
-                  onDragLeave={() => setMapDropActive(false)}
-                  onDrop={handleMapDrop}
-                  className={`rounded border border-dashed p-2 text-center cursor-pointer transition-colors ${mapDropActive ? 'border-[#e88724] bg-[#3b2918]' : 'border-[#505050] bg-[#1c1c1c] hover:border-[#e88724]'}`}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => { event.preventDefault(); void handleReconstructionReference(event.dataTransfer.files?.[0]); }}
+                  className="rounded border border-dashed p-2 text-center cursor-pointer transition-colors border-[#505050] bg-[#1c1c1c] hover:border-[#e88724]"
                 >
                   <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={reconstructReferenceLoading || isReconstructing} onChange={(event) => { void handleReconstructionReference(event.target.files?.[0]); event.currentTarget.value = ''; }} />
                   <ImagePlus className="mx-auto mb-1 h-4 w-4 text-[#e88724]" />
-                  <span className="block truncate text-[9.5px] text-[#ddd]">{reconstructReferenceLoading ? 'Reading screenshot…' : reconstructImageName}</span>
-                  <span className="mt-0.5 block text-[8.5px] text-[#888]">Replace reference screenshot</span>
+                  <span className="block truncate text-[9.5px] text-[#ddd]">{reconstructReferenceLoading ? 'Reading image…' : reconstructImageName || 'Add reference image'}</span>
+                  <span className="mt-0.5 block text-[8.5px] text-[#888]">Upload or drop JPG, PNG, or WebP</span>
                 </label>
-                <label className="rounded border border-dashed border-[#505050] bg-[#1c1c1c] p-2 text-center cursor-pointer hover:border-[#e88724]">
+                <label onDragOver={(event) => { event.preventDefault(); setMapDropActive(true); }} onDragLeave={() => setMapDropActive(false)} onDrop={handleMapDrop} className={`rounded border border-dashed p-2 text-center cursor-pointer transition-colors ${mapDropActive ? 'border-[#e88724] bg-[#3b2918]' : 'border-[#505050] bg-[#1c1c1c] hover:border-[#e88724]'}`}>
                   <input type="file" accept="image/jpeg,image/png,image/webp,.json,.geojson,.csv,.txt,.md,.yaml,.yml,text/plain,application/json" className="hidden" disabled={reconstructMapLoading || isReconstructing || mapInterpreting} onChange={(event) => { void handleReconstructionMap(event.target.files?.[0]); event.currentTarget.value = ''; }} />
                   <Upload className="mx-auto mb-1 h-4 w-4 text-[#e88724]" />
                   <span className="block truncate text-[9.5px] text-[#ddd]">{mapDropActive ? 'Drop map here' : reconstructMapName || 'Attach map image or data'}</span>
@@ -2365,9 +2396,9 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                 <button onClick={() => { const next = !mapDrawingMode; onMapDrawingChange?.(next); onMapMarkingChange?.(next); }} disabled={!mapGeometry || mapInterpreting} className={`rounded border px-2 py-1 font-semibold cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${mapDrawingMode ? 'border-[#4ea3e8] bg-[#203b53] text-[#a7d8ff]' : 'border-[#555] bg-[#303030] text-[#ddd]'}`}>
                   {mapDrawingMode ? 'Finish manual drawing' : 'Draw map manually'}
                 </button>
-                {mapSelection?.start && <span className="text-[#8ee8a5]">Start set</span>}
-                {mapSelection?.end && <span className="text-[#ff9d9d]">End set</span>}
-                {mapSelection?.featureLabel && <span className="w-full basis-full truncate text-[#ffb35d]">Next section: {mapSelection.featureLabel}</span>}
+                {mapGeometry && mapSelection?.start && <span className="text-[#8ee8a5]">Start set</span>}
+                {mapGeometry && mapSelection?.end && <span className="text-[#ff9d9d]">End set</span>}
+                {mapGeometry && mapSelection?.featureLabel && <span className="w-full basis-full truncate text-[#ffb35d]">Next section: {mapSelection.featureLabel}</span>}
               </div>
 
               <div className="flex items-center justify-between gap-2 text-[9px]">
@@ -2379,17 +2410,15 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
 
             {/* Reference Image Card */}
             <div className="bg-[#252525] border border-[#3a3a3a] p-2.5 rounded-[3px] space-y-2">
-              <div className="font-semibold text-white flex items-center justify-between">
+              {reconstructImage && <><div className="font-semibold text-white flex items-center justify-between">
                 <span>Reference Photograph</span>
                 <span className="text-[9.5px] text-[#888] font-mono truncate max-w-[55%]" title={reconstructImageName}>{reconstructImageName}</span>
               </div>
 
               <div className="relative rounded overflow-hidden border border-[#444] bg-[#181818] flex items-center justify-center max-h-[160px]">
                 <button onClick={() => setProjectFilePreview({ name: reconstructImageName, url: reconstructImage })} title="View full-size reference" className="max-h-[160px] cursor-zoom-in"><img src={reconstructImage} alt="Reference image" className="max-h-[160px] object-contain select-none" /></button>
-                <div className="absolute top-1.5 left-1.5 bg-black/80 text-[#e88724] font-mono text-[9px] px-1.5 py-0.5 rounded border border-[#444]">
-                  4-Tier Side Lagging • Inward Batter • Adit Bore
-                </div>
               </div>
+              </>}
 
               {/* Field Notes / AI Prompt */}
               <div>
@@ -2409,7 +2438,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                 <button onClick={() => void handleReconstructScene(true)} disabled={isReconstructing} className="text-[#e88724] disabled:opacity-50">Save & queue assisted reconstruction</button>
                 <p className="text-[#999]">Inputs are saved privately on the server. Assisted requests wait for an operator; no Gemini key is needed.</p>
                 {jobMessage && <p className="break-all">{jobMessage}</p>}
-                <div className="max-h-40 overflow-y-auto">{savedJobs.map(job => <div key={job.id} className="border-t border-[#444] py-1">
+                <div className="max-h-40 overflow-y-auto">{savedJobs.filter((job) => !focusedReconstruction || job.id === visibleQueuedJobId).map(job => <div key={job.id} className="border-t border-[#444] py-1">
                   <div>{job.provider === 'assisted' ? 'Assisted' : 'Gemini'} · {job.status === 'pending' || job.status === 'submitted' ? 'Generating' : job.status} · {job.createdAt}</div>
                   <div className="text-[#999] break-all">{job.id}</div>
                   {job.message && <p>{job.message}</p>}
@@ -2426,7 +2455,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
               </div>
               {/* Action Buttons */}
               <div className="flex items-center space-x-2 pt-1">
-                <button
+                {!focusedReconstruction && <button
                   onClick={() => void handleReconstructScene()}
                   disabled={isReconstructing}
                   aria-busy={isReconstructing}
@@ -2434,7 +2463,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
                 >
                   <Sparkles className="w-3.5 h-3.5" />
                   <span>{isReconstructing ? 'Generating compatible reconstruction...' : 'Generate MiningSight-Compatible Reconstruction'}</span>
-                </button>
+                </button>}
 
                 <button
                   onClick={() => {
