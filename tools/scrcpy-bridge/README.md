@@ -4,6 +4,10 @@ Windows script for publishing a scrcpy phone window to TunnelSight's existing RT
 
 ## Setup
 
+Version 1.3 sends landscape video by default. Portrait window captures rotate 90 degrees clockwise before encoding; already-landscape windows are preserved. The web viewer, recordings and captured frames all receive the same orientation. The local Scrcpy window is unchanged. This rotates the captured picture; the phone app's layout does not reflow.
+
+To rotate a portrait capture the other way, add `-PortraitRotation cclock`. To keep the original picture orientation, add `-StreamOrientation Original`. Output remains 1280x720 with its aspect ratio preserved; portrait mode may therefore have side padding.
+
 Install current scrcpy and an FFmpeg Windows build with `gdigrab` and `libx264`. For example, in a new PowerShell terminal after installation:
 
 ```powershell

@@ -1,17 +1,21 @@
-# TunnelSight Scrcpy Bridge 1.2 - Windows 10/11, PowerShell 5.1+.
+# TunnelSight Scrcpy Bridge 1.3 - Windows 10/11, PowerShell 5.1+.
 [CmdletBinding()]
 param(
     [string]$WindowTitle,
     [switch]$UseExistingWindow,
     [switch]$StartScrcpy,
     [string]$Serial,
-    [string]$Email
+    [string]$Email,
+    [ValidateSet('Landscape', 'Original')]
+    [string]$StreamOrientation = 'Landscape',
+    [ValidateSet('clock', 'cclock')]
+    [string]$PortraitRotation = 'clock'
 )
 $ErrorActionPreference = 'Stop'
 $ffmpeg = (Get-Command ffmpeg -ErrorAction Stop).Source
 if ($WindowTitle -match '["\r\n]') { throw 'Window title cannot contain quotes or newlines.' }
 if ($Serial -and $Serial -notmatch '^[a-zA-Z0-9_.:\-]+$') { throw 'Invalid device serial.' }
-Write-Host 'TunnelSight Scrcpy Bridge v1.2'
+Write-Host 'TunnelSight Scrcpy Bridge v1.3'
 Write-Host 'Your laptop mirrors the phone and sends its screen to your TunnelSight account.'
 if (-not $Email) { $Email = Read-Host 'TunnelSight account email' }
 $Email = $Email.Trim().ToLowerInvariant()
@@ -109,9 +113,17 @@ try {
     Write-Host "Selected: $WindowTitle"
     # Use the actual window identity so changes to its title do not stop capture.
     $captureInput = 'hwnd=0x' + $windowHandle.ToInt64().ToString('X')
+    # Rotate portrait captures before encoding so the website, recordings and
+    # captured reconstruction frames all receive the same landscape picture.
+    # Already-landscape windows pass through without being rotated.
+    $videoFilter = 'scale=1280:720:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1'
+    if ($StreamOrientation -eq 'Landscape') {
+        $videoFilter = "transpose=dir=${PortraitRotation}:passthrough=landscape,$videoFilter"
+        Write-Host 'Web feed: landscape 1280x720. Portrait windows rotate sideways; existing landscape windows remain upright.'
+    }
     $streamArgs = @('-hide_banner', '-loglevel', 'warning', '-nostdin',
         '-f', 'gdigrab', '-framerate', '30', '-draw_mouse', '0', '-i', $captureInput,
-        '-an', '-vf', 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1',
+        '-an', '-vf', $videoFilter,
         '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p',
         '-b:v', '2000k', '-maxrate', '2500k', '-bufsize', '2000k', '-g', '30', '-keyint_min', '30', '-sc_threshold', '0',
         '-rw_timeout', '10000000', '-f', 'flv', '-flvflags', 'no_duration_filesize', $publishUrl)
