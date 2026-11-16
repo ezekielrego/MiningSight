@@ -31,7 +31,7 @@ import { MiningTunnelRig, ShadingDisplayMode } from '../../scene/miningTunnelGen
 import { TunnelPresetId, ProceduralTunnelParams } from '../../types/tunnelScene';
 import { TUNNEL_PRESETS, createTunnelRigByPreset, getPresetRootId } from '../../scene/tunnelPresetRegistry';
 import { ReferencePhotoModal } from '../modals/ReferencePhotoModal';
-import { LiveStreamViewer } from './LiveStreamViewer';
+import { captureMediaFrame, FrameCaptureKind, LiveFrameCapture, LiveStreamViewer } from './LiveStreamViewer';
 import { DraggableViewerItem, ViewerDragProvider } from './DraggableViewerItem';
 import { SceneParametersModal } from '../modals/SceneParametersModal';
 import { UndergroundMapEditor } from '../panels/UndergroundMapEditor';
@@ -46,6 +46,20 @@ import {
   calculateDistanceMeters,
   getDefaultTunnelHotspots,
 } from '../../utils/cameraAnimation';
+
+type ViewportCameraState = {
+  position: { x: number; y: number; z: number };
+  target: { x: number; y: number; z: number };
+  fov: number;
+};
+export interface ViewportCaptureRequest {
+  kind: FrameCaptureKind | 'camera';
+  onCameraState?: (state: ViewportCameraState) => void;
+}
+const VIEWPORT_CAPTURE_EVENT = 'miningsight:viewport-capture';
+export const requestViewportCapture = (request: ViewportCaptureRequest) => {
+  window.dispatchEvent(new CustomEvent(VIEWPORT_CAPTURE_EVENT, { detail: request }));
+};
 
 const flattenSceneObjects = (objects: C4DSceneObject[], result = new Map<string, C4DSceneObject>()) => {
   objects.forEach((object) => {
@@ -239,6 +253,9 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   const gridHelperRef = useRef<THREE.GridHelper | null>(null);
   const externalModelGroupRef = useRef<THREE.Group | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const liveCaptureRef = useRef<LiveFrameCapture | null>(null);
+  const [captureError, setCaptureError] = useState('');
   const videoTimeRef = useRef(0);
   const walkBoundsRef = useRef({ minX: -4.2, maxX: 2.4, minY: 1.2, maxY: 4.8, minZ: -23.0, maxZ: 23.0 });
   const [videoDuration, setVideoDuration] = useState(0);
@@ -490,12 +507,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     };
   }, [navMode]);
 
-  const handleRecordViewClick = () => {
-    const state = captureCurrentCameraState();
-    if (state && onRecordCurrentView) {
-      onRecordCurrentView(state);
-    }
-  };
+  const handleRecordViewClick = () => handleViewportCapture({ kind: 'keyframe' });
 
   // Jump camera to keyframe
   const jumpCameraToKeyframe = useCallback((kf: CameraKeyframe) => {
@@ -1664,15 +1676,70 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     }
   };
 
-  const handleCaptureScreenshot = () => {
-    if (!rendererRef.current) return;
-    const dataUrl = rendererRef.current.domElement.toDataURL('image/png');
-    onCaptureReferenceImage?.(dataUrl, `MiningSight_Keyframe_${Date.now()}.png`);
-    const a = document.createElement('a');
-    a.href = dataUrl;
-    a.download = `MiningSight_3D_${Date.now()}.png`;
-    a.click();
-  };
+  // All entry points resolve the visible surface before considering a 3D camera.
+  const handleViewportCapture = useCallback((request: ViewportCaptureRequest) => {
+    setCaptureError('');
+    try {
+      if (showMap && mapGeometry) throw new Error('Close the map to capture the model or media view.');
+      if (liveStreamOpen) {
+        if (request.kind === 'camera') throw new Error('Open a 3D view to update a camera waypoint.');
+        if (!liveCaptureRef.current) throw new Error('Live view is still opening. Try capture again.');
+        liveCaptureRef.current(request.kind);
+        return;
+      }
+      if (activeAsset?.kind === 'video' || activeAsset?.kind === 'image') {
+        if (request.kind === 'camera') throw new Error('Open a 3D view to update a camera waypoint.');
+        const dataUrl = captureMediaFrame(activeAsset.kind === 'video' ? videoRef.current : imageRef.current);
+        const name = `MiningSight_Keyframe_${Date.now()}.png`;
+        onCaptureReferenceImage?.(dataUrl, name);
+        if (request.kind === 'snapshot') {
+          const a = document.createElement('a');
+          a.href = dataUrl;
+          a.download = name;
+          a.click();
+        }
+        if (onSaveLiveFile) {
+          // Keep the same authenticated project upload path used by live captures.
+          void fetch(dataUrl).then((response) => response.blob())
+            .then((blob) => onSaveLiveFile(new File([blob], name, { type: 'image/png' })))
+            .catch((error) => setCaptureError(`Frame could not be saved: ${error.message}`));
+        }
+        return;
+      }
+      if (activeAsset && activeAsset.kind !== 'model') throw new Error('This view does not support picture capture.');
+      if (activeProjectId && !activeAsset) throw new Error('Open a model, video, image, or live feed before capturing.');
+      if (request.kind !== 'snapshot') {
+        const state = captureCurrentCameraState();
+        if (!state) throw new Error('The 3D camera is still opening. Try capture again.');
+        if (!activeTour) throw new Error('Create or choose a camera tour before recording a 3D waypoint.');
+        (request.onCameraState || onRecordCurrentView)?.(state);
+        return;
+      }
+      const renderer = rendererRef.current;
+      if (!renderer || !sceneRef.current || !cameraRef.current || renderer.getContext().isContextLost()) {
+        throw new Error('The 3D view is not ready for capture.');
+      }
+      // WebGL's default drawing buffer may have been cleared since the last paint.
+      renderer.render(sceneRef.current, cameraRef.current);
+      const dataUrl = renderer.domElement.toDataURL('image/png');
+      if (dataUrl === 'data:,') throw new Error('The browser could not encode the viewport.');
+      onCaptureReferenceImage?.(dataUrl, `MiningSight_Keyframe_${Date.now()}.png`);
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `MiningSight_3D_${Date.now()}.png`;
+      a.click();
+    } catch (error) {
+      setCaptureError(error instanceof Error ? `Capture failed: ${error.message}` : 'Capture failed.');
+    }
+  }, [showMap, mapGeometry, liveStreamOpen, activeAsset, activeProjectId, activeTour, captureCurrentCameraState, onRecordCurrentView, onCaptureReferenceImage, onSaveLiveFile]);
+
+  useEffect(() => {
+    const capture = (event: Event) => handleViewportCapture((event as CustomEvent<ViewportCaptureRequest>).detail);
+    window.addEventListener(VIEWPORT_CAPTURE_EVENT, capture);
+    return () => window.removeEventListener(VIEWPORT_CAPTURE_EVENT, capture);
+  }, [handleViewportCapture]);
+
+  const handleCaptureScreenshot = () => handleViewportCapture({ kind: 'snapshot' });
 
   const handleMapOverlayClick = (event: React.MouseEvent<SVGSVGElement>) => {
     if (!mapMarkingEnabled || !onMapPointPicked) return;
@@ -1712,6 +1779,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         <span title={viewerLoadName}>{viewerLoadError}</span>
         <button onClick={() => setConnectedViewerReload((value) => value + 1)} className="shrink-0 text-white hover:text-[#e88724]">Retry</button>
       </div></DraggableViewerItem>}
+      {captureError && <DraggableViewerItem id="Capture error" wholeSurface className="absolute top-10 left-3 z-[90] max-w-[90%]"><div role="alert" className="border border-[#713333] bg-[#321d1d]/90 px-3 py-2 text-[10px] text-[#ffb0b0]">{captureError}<button onClick={() => setCaptureError('')} className="ml-2 text-white" title="Dismiss capture error">×</button></div></DraggableViewerItem>}
       {/* 3D WebGL Canvas */}
       <canvas
         ref={canvasRef}
@@ -1853,7 +1921,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
                 onPointerUp={handleGasMediaPointerUp}
                 onPointerCancel={handleGasMediaPointerUp}
               >
-                <img key={connectedViewerReload} src={activeAsset.url} alt={activeAsset.name} onLoad={() => setAssetLoadState('ready')} onError={() => { setAssetLoadState('error'); setAssetLoadMessage(`Could not open ${activeAsset.name}.`); }} className="block h-full w-full object-cover" />
+                <img ref={imageRef} key={connectedViewerReload} src={activeAsset.url} alt={activeAsset.name} onLoad={() => setAssetLoadState('ready')} onError={() => { setAssetLoadState('error'); setAssetLoadMessage(`Could not open ${activeAsset.name}.`); }} className="block h-full w-full object-cover" />
                 {gasMarks.filter((mark) => mark.space === 'media' && mark.assetId === activeAsset.id && mark.frame === currentFrame && mark.screen).map((mark) => (
                   <span key={mark.id} className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full" style={{ left: `${(mark.screen?.x || 0) * 100}%`, top: `${(mark.screen?.y || 0) * 100}%`, width: `${Math.max(28, Math.min(320, mark.radius * 64))}px`, height: `${Math.max(28, Math.min(320, mark.radius * 64))}px`, opacity: Math.max(0.08, Math.min(0.7, 0.08 + mark.concentration * 0.62)), background: `radial-gradient(circle, ${mark.color} 0%, ${mark.color}99 28%, ${mark.color}22 62%, transparent 76%)`, filter: 'blur(1px)', mixBlendMode: 'screen' }} />
                 ))}
@@ -2323,7 +2391,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
           <button
             onClick={handleRecordViewClick}
             className="px-2 py-0.5 bg-[#e88724] hover:bg-[#ff9933] text-black font-bold rounded-[2px] text-[10px] cursor-pointer transition-colors flex items-center space-x-1 shadow-sm"
-            title="Record current camera position and angle into active animation path (Hotkey: K)"
+            title="Capture the displayed media frame or record the current 3D camera waypoint (Hotkey: K)"
           >
             <Camera className="w-3 h-3" />
             <span>+ Keyframe (K)</span>
@@ -2633,6 +2701,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       />
       {liveStreamOpen && (
         <LiveStreamViewer
+          captureRef={liveCaptureRef}
           onClose={() => onCloseLiveStream?.()}
           onCapture={(dataUrl, name) => onCaptureReferenceImage?.(dataUrl, name)}
           onSaveFile={onSaveLiveFile}

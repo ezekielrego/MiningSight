@@ -1,20 +1,43 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { Camera, Circle, LoaderCircle, Pause, Play, Radio, RefreshCw, Square, Volume2, VolumeX, X } from 'lucide-react';
 import { DraggableViewerItem } from './DraggableViewerItem';
 
 type StreamState = 'connecting' | 'waiting' | 'live' | 'error';
 
+export type FrameCaptureKind = 'keyframe' | 'snapshot';
+export type LiveFrameCapture = (kind: FrameCaptureKind) => void;
+
+// Read the displayed media element, never a camera waypoint or a hidden renderer.
+export const captureMediaFrame = (source: HTMLVideoElement | HTMLImageElement | null, mimeType = 'image/png') => {
+  const isVideo = source instanceof HTMLVideoElement;
+  const width = isVideo ? source.videoWidth : source?.naturalWidth;
+  const height = isVideo ? source.videoHeight : source?.naturalHeight;
+  if (!source || !width || !height || (isVideo ? source.readyState < HTMLMediaElement.HAVE_CURRENT_DATA : !source.complete)) {
+    throw new Error('No decoded picture is available yet. Wait for a picture, then capture again.');
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Could not prepare the frame for capture.');
+  context.drawImage(source, 0, 0, width, height);
+  const dataUrl = canvas.toDataURL(mimeType, 0.92);
+  if (dataUrl === 'data:,') throw new Error('The browser could not encode the captured picture.');
+  return dataUrl;
+};
+
 interface LiveStreamViewerProps {
   onClose: () => void;
   onCapture: (dataUrl: string, name: string) => void;
   onSaveFile?: (file: File) => void | Promise<void>;
   sourceUrl?: string;
+  captureRef?: React.Ref<LiveFrameCapture>;
 }
 
 const DEFAULT_SOURCE = '/dji/live/index.m3u8';
 
-export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onCapture, onSaveFile, sourceUrl = DEFAULT_SOURCE }) => {
+export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onCapture, onSaveFile, sourceUrl = DEFAULT_SOURCE, captureRef }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -24,13 +47,23 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
   const [isSavingRecording, setIsSavingRecording] = useState(false);
   const [unsavedRecording, setUnsavedRecording] = useState<File | null>(null);
   const hasRenderedFrameRef = useRef(false);
+  const lastDecodedFrameRef = useRef<{ canvas: HTMLCanvasElement; capturedAt: number; mediaTime: number } | null>(null);
   const userPausedRef = useRef(false);
   const [retryToken, setRetryToken] = useState(0);
   const [streamState, setStreamState] = useState<StreamState>('connecting');
   const [message, setVisibleMessage] = useState('Connecting to the live relay…');
   const noticeRef = useRef({ current: 'Connecting to the live relay…', pending: '', shownAt: 0, timer: null as ReturnType<typeof setTimeout> | null });
-  const setMessage = useCallback((text: string) => {
+  const setMessage = useCallback((text: string, immediate = false) => {
     const notice = noticeRef.current;
+    if (immediate) {
+      if (notice.timer) clearTimeout(notice.timer);
+      notice.timer = null;
+      notice.pending = '';
+      notice.current = text;
+      notice.shownAt = Date.now();
+      setVisibleMessage(text);
+      return;
+    }
     notice.pending = text === notice.current ? '' : text;
     if (!notice.pending || notice.timer) return;
     const showLatest = () => {
@@ -69,14 +102,41 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
     setStreamState('connecting');
     setMessage('Connecting to the live relay…');
     hasRenderedFrameRef.current = false;
+    lastDecodedFrameRef.current = null;
     setHasRenderedFrame(false);
     setIsRecovering(false);
     setIsPaused(false);
     userPausedRef.current = false;
     video.muted = true;
-    const onPlaying = () => {
+    const retainDecodedFrame = (mediaTime = video.currentTime) => {
+      if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth || !video.videoHeight) return;
+      try {
+        const previous = lastDecodedFrameRef.current;
+        // Full-resolution copies are limited to 4 Hz; capture still reads current
+        // video directly whenever it has data. This cache only covers stalls.
+        if (previous && Date.now() - previous.capturedAt < 250) return;
+        if (previous?.mediaTime === mediaTime && previous.canvas.width === video.videoWidth && previous.canvas.height === video.videoHeight) return;
+        const canvas = previous && previous.canvas.width === video.videoWidth && previous.canvas.height === video.videoHeight
+          ? previous.canvas : document.createElement('canvas');
+        if (canvas.width !== video.videoWidth) canvas.width = video.videoWidth;
+        if (canvas.height !== video.videoHeight) canvas.height = video.videoHeight;
+        const context = canvas.getContext('2d');
+        if (!context) return;
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        lastDecodedFrameRef.current = { canvas, capturedAt: Date.now(), mediaTime };
+      } catch {
+        // Keep the last genuine picture when HLS temporarily loses current data.
+      }
+    };
+    const onDecodedFrame = () => {
+      retainDecodedFrame();
+      if (!lastDecodedFrameRef.current) return;
       hasRenderedFrameRef.current = true;
       setHasRenderedFrame(true);
+    };
+    const onPlaying = () => {
+      onDecodedFrame();
+      if (!hasRenderedFrameRef.current) return;
       setIsRecovering(false);
       setStreamState('live');
       if (!recorderRef.current) setMessage('Live feed');
@@ -100,7 +160,23 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
       setStreamState('waiting');
       setMessage('Waiting for the bridge to publish video…');
     };
+    let frameCallback: number | null = null;
+    let frameTimer: number | null = null;
+    if (typeof video.requestVideoFrameCallback === 'function') {
+      const onFrame: VideoFrameRequestCallback = (_now, metadata) => {
+        retainDecodedFrame(metadata.mediaTime);
+        frameCallback = video.requestVideoFrameCallback(onFrame);
+      };
+      frameCallback = video.requestVideoFrameCallback(onFrame);
+    } else {
+      frameTimer = window.setInterval(() => {
+        // Do not replace the timestamp of an unchanged paused/stalled picture.
+        if (lastDecodedFrameRef.current?.mediaTime !== video.currentTime) retainDecodedFrame();
+      }, 1000 / 30);
+    }
+    video.addEventListener('timeupdate', onDecodedFrame);
     video.addEventListener('playing', onPlaying);
+    video.addEventListener('loadeddata', onDecodedFrame);
     video.addEventListener('waiting', onWaiting);
     video.addEventListener('error', onError);
 
@@ -182,7 +258,12 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
     return () => {
       window.clearInterval(liveTimer);
       document.removeEventListener('visibilitychange', onVisible);
+      if (frameCallback !== null) video.cancelVideoFrameCallback(frameCallback);
+      if (frameTimer !== null) window.clearInterval(frameTimer);
+      video.removeEventListener('timeupdate', onDecodedFrame);
+      lastDecodedFrameRef.current = null;
       video.removeEventListener('playing', onPlaying);
+      video.removeEventListener('loadeddata', onDecodedFrame);
       video.removeEventListener('waiting', onWaiting);
       video.removeEventListener('error', onError);
       hls?.destroy();
@@ -219,31 +300,36 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
     void video.play().then(() => setIsPaused(false)).catch(() => undefined);
   }, []);
 
-  const captureFrame = useCallback(() => {
-    const video = videoRef.current;
-    if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth || !video.videoHeight) {
-      setMessage('A camera frame is not available yet. Wait for the live picture, then capture again.');
-      return;
+  const captureFrame = useCallback<LiveFrameCapture>((kind) => {
+    try {
+      const mimeType = kind === 'snapshot' ? 'image/png' : 'image/jpeg';
+      const video = videoRef.current;
+      const retained = !video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth || !video.videoHeight;
+      const lastFrame = lastDecodedFrameRef.current;
+      if (retained && !lastFrame) throw new Error('No decoded picture is available yet. Wait for a picture, then capture again.');
+      const dataUrl = retained ? lastFrame!.canvas.toDataURL(mimeType, 0.92) : captureMediaFrame(video, mimeType);
+      if (dataUrl === 'data:,') throw new Error('The browser could not encode the captured picture.');
+      const capturedAt = retained ? lastFrame!.capturedAt : Date.now();
+      const timestamp = new Date(capturedAt).toISOString().replace(/[:.]/g, '-');
+      const filename = `DJI-live-frame-${timestamp}${retained ? '-last-decoded' : ''}.${kind === 'snapshot' ? 'png' : 'jpg'}`;
+      const frameDescription = retained ? `Last decoded frame (${new Date(capturedAt).toISOString()})` : 'Frame';
+      onCapture(dataUrl, filename);
+      if (kind === 'snapshot') {
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = filename;
+        a.click();
+      }
+      void fetch(dataUrl).then((response) => response.blob()).then(async (blob) => {
+        if (!onSaveFile) throw new Error('Choose a project before saving captures.');
+        await onSaveFile(new File([blob], filename, { type: mimeType }));
+        setMessage(`${frameDescription} saved to this project.`, true);
+      }).catch((error) => setMessage(`Frame could not be saved: ${error.message}`, true));
+    } catch (error) {
+      setMessage(error instanceof Error ? `Capture failed: ${error.message}` : 'Capture failed.', true);
     }
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const context = canvas.getContext('2d');
-    if (!context) {
-      setMessage('Could not prepare the frame for capture.');
-      return;
-    }
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
-    const filename = `DJI-live-frame-${timestamp}.jpg`;
-    onCapture(dataUrl, filename);
-    void fetch(dataUrl).then((response) => response.blob()).then(async (blob) => {
-      if (!onSaveFile) throw new Error('Choose a project before saving captures.');
-      await onSaveFile(new File([blob], filename, { type: 'image/jpeg' }));
-      setMessage('Frame saved to this project.');
-    }).catch((error) => setMessage(`Frame could not be saved: ${error.message}`));
-  }, [onCapture, onSaveFile]);
+  }, [onCapture, onSaveFile, setMessage]);
+  useImperativeHandle(captureRef, () => captureFrame, [captureFrame]);
 
   const toggleRecording = useCallback(() => {
     const video = videoRef.current;
@@ -370,7 +456,7 @@ export const LiveStreamViewer: React.FC<LiveStreamViewerProps> = ({ onClose, onC
           <button onClick={toggleRecording} disabled={isSavingRecording || (!hasRenderedFrame && !isRecording)} className={`flex items-center gap-1 rounded-sm px-2 py-1 text-[9px] font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${isRecording ? 'bg-red-700 text-white' : 'border border-white/15 text-[#ddd] hover:bg-white/10'}`}>
             {isRecording ? <Square className="h-3 w-3 fill-current" /> : <Circle className="h-3 w-3 text-red-400" />}{isSavingRecording ? 'Saving…' : isRecording ? 'Stop & save' : 'Record'}
           </button>
-          <button onClick={captureFrame} disabled={!hasRenderedFrame} className="flex items-center gap-1 rounded-sm bg-[#e88724] px-2 py-1 text-[9px] font-bold text-black hover:bg-[#f0a44e] disabled:cursor-not-allowed disabled:opacity-40">
+          <button onClick={() => captureFrame('keyframe')} disabled={!hasRenderedFrame} className="flex items-center gap-1 rounded-sm bg-[#e88724] px-2 py-1 text-[9px] font-bold text-black hover:bg-[#f0a44e] disabled:cursor-not-allowed disabled:opacity-40">
             <Camera className="h-3 w-3" />Capture frame
           </button>
         </div>

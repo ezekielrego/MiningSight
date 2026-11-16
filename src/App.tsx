@@ -10,7 +10,7 @@ import { createDefaultReconstructionMap, createEmptyReconstructionMap, Reconstru
 import { MenuBar } from './components/layout/MenuBar';
 import { MainToolbar } from './components/layout/MainToolbar';
 import { LeftToolPalette } from './components/layout/LeftToolPalette';
-import { Viewport3D } from './components/viewport/Viewport3D';
+import { requestViewportCapture, Viewport3D } from './components/viewport/Viewport3D';
 import { ObjectManager } from './components/panels/ObjectManager';
 import { AttributeManager } from './components/panels/AttributeManager';
 import { Timeline } from './components/panels/Timeline';
@@ -1230,17 +1230,21 @@ export default function App() {
     target: { x: number; y: number; z: number };
     fov: number;
   }, name?: string, frame?: number) => {
+    if (!camState) {
+      requestViewportCapture({ kind: 'keyframe', onCameraState: (state) => handleAddKeyframeFromCurrent(state, name, frame) });
+      return;
+    }
     if (!activeTour) return;
     const targetFrame = frame !== undefined ? frame : timeline.currentFrame;
-    const defaultPos = camState?.position || { x: 14, y: 8, z: 18 };
-    const defaultTgt = camState?.target || { x: -0.5, y: 2.0, z: 0 };
+    const defaultPos = camState.position;
+    const defaultTgt = camState.target;
     const newKf: CameraKeyframe = {
       id: `kf_${Date.now()}`,
       name: name || `Waypoint @ ${targetFrame}F`,
       frame: targetFrame,
       position: defaultPos,
       target: defaultTgt,
-      fov: camState?.fov || 42,
+      fov: camState.fov,
     };
     const nextKfs = [...activeTour.keyframes, newKf].sort((a, b) => a.frame - b.frame);
     handleUpdateTour({ ...activeTour, keyframes: nextKfs });
@@ -1256,11 +1260,15 @@ export default function App() {
     target: { x: number; y: number; z: number };
     fov: number;
   }) => {
+    if (!camState) {
+      requestViewportCapture({ kind: 'camera', onCameraState: (state) => handleUpdateKeyframeFromCurrent(keyframeId, state) });
+      return;
+    }
     if (!activeTour) return;
-    const pos = camState?.position || { x: 14, y: 8, z: 18 };
-    const tgt = camState?.target || { x: -0.5, y: 2.0, z: 0 };
+    const pos = camState.position;
+    const tgt = camState.target;
     const nextKfs = activeTour.keyframes.map((k) =>
-      k.id === keyframeId ? { ...k, position: pos, target: tgt, fov: camState?.fov || k.fov } : k
+      k.id === keyframeId ? { ...k, position: pos, target: tgt, fov: camState.fov } : k
     );
     handleUpdateTour({ ...activeTour, keyframes: nextKfs });
     setStatusAlert({
@@ -1436,8 +1444,6 @@ export default function App() {
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
         e.preventDefault();
         setShowNewProjectDialog(true);
-      } else if (e.key === 'k' || e.key === 'K') {
-        handleAddKeyframeFromCurrent();
       } else if (e.key === 'e' || e.key === 'E') {
         setActiveTool('move');
         setStatusAlert({
