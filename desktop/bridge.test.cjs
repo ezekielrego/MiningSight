@@ -64,7 +64,7 @@ function harness(t, options = {}) {
   const kills = [];
   const requests = [];
   const control = { adbOutput: 'List of devices attached\r\nphone-1\tdevice product:test model:Pixel_8 transport_id:1\r\n',
-    hangAdb: false, throwTool: null, errorTool: null, killFails: false, rootKillFails: false };
+    wirelessOutput: null, wirelessExit: 0, stdinFails: false, hangAdb: false, throwTool: null, errorTool: null, killFails: false, rootKillFails: false };
   let pid = 4000;
   const childProcess = {
     spawn(executable, args, spawnOptions) {
@@ -72,7 +72,8 @@ function harness(t, options = {}) {
       if (control.throwTool === tool) throw new Error(`private native error ${LINK.publishUrl}`);
       const child = new EventEmitter();
       Object.assign(child, { executable, args, options: spawnOptions, tool,
-        pid: control.errorTool === tool ? undefined : ++pid, stdout: new PassThrough(), stderr: new PassThrough(), exited: false });
+        pid: control.errorTool === tool ? undefined : ++pid,
+        stdin: spawnOptions.stdio[0] === 'pipe' ? new PassThrough() : null, stdout: new PassThrough(), stderr: new PassThrough(), exited: false });
       child.finish = (code = 0) => {
         if (child.exited) return;
         child.exited = true;
@@ -94,8 +95,12 @@ function harness(t, options = {}) {
         }
         child.emit('spawn');
         if (tool === 'adb.exe' && !control.hangAdb) {
-          child.stdout.write(control.adbOutput);
-          child.finish();
+          if (args[0] === 'devices') child.stdout.write(control.adbOutput);
+          else child.stdout.write(control.wirelessOutput ?? (args[0] === 'pair' ?
+            `Enter pairing code: Successfully paired to ${args[1]} [guid=phone]\n` :
+            args[0] === 'connect' ? `connected to ${args[1]}\n` : `disconnected ${args[1]}\n`));
+          if (control.stdinFails && child.stdin) child.stdin.emit('error', new Error('private stdin error'));
+          child.finish(args[0] === 'devices' ? 0 : control.wirelessExit);
         }
       });
       return child;
@@ -160,7 +165,7 @@ function secretFree(h) {
 
 test('public CommonJS API, safe status shape, saved email only, and tools checks', async (t) => {
   const h = harness(t, { settings: { email: 'Saved@Example.com', publishUrl: 'discard', password: 'discard' } });
-  assert.deepEqual(Object.keys(h.bridge).sort(), ['devices', 'dispose', 'mirror', 'startStream', 'status', 'stopMirror', 'stopStream']);
+  assert.deepEqual(Object.keys(h.bridge).sort(), ['connectPhone', 'devices', 'disconnectPhone', 'dispose', 'mirror', 'pairPhone', 'startStream', 'status', 'stopMirror', 'stopStream']);
   assert.deepEqual(plain(h.bridge.status()), { state: 'idle', streaming: false, email: 'saved@example.com', playbackUrl: '',
     mirrorRunning: false, toolsReady: true, cleanupPending: false, error: null, status: 'Ready.', retryAttempt: 0 });
   const copy = h.bridge.status();
@@ -650,4 +655,177 @@ test('desktop shell quality aliases balanced/low normalize to balanced720/low480
     assert.equal((await starting).state, 'streaming');
     await h.bridge.stopStream();
   }
+});
+
+
+test('wireless pair, connect and endpoint-only disconnect return { devices } without affecting a USB mirror', async (t) => {
+  const h = harness(t);
+  await h.bridge.mirror('phone-1');
+  const mirror = h.latest('scrcpy');
+  const pairing = await h.bridge.pairPhone({ address: '192.168.1.7:37123', code: '012345' });
+  assert.deepEqual(plain(pairing), { devices: plain(await h.bridge.devices()) });
+  const pair = h.ofTool('adb').find((child) => child.args[0] === 'pair');
+  assert.deepEqual(plain(pair.args), ['pair', '192.168.1.7:37123']);
+  assert.equal(pair.stdin.read().toString(), '012345\n');
+  assert.deepEqual(plain(pair.options.stdio), ['pipe', 'pipe', 'pipe']);
+  h.control.adbOutput += '192.168.1.7:40123 device model:Wireless_Pixel\n';
+  const connected = await h.bridge.connectPhone({ address: '192.168.1.7:40123' });
+  assert.equal(connected.devices.find((d) => d.serial === '192.168.1.7:40123').authorized, true);
+  h.control.adbOutput = 'phone-1 device\n';
+  const disconnected = await h.bridge.disconnectPhone({ address: '192.168.1.7:40123' });
+  assert.deepEqual(plain(disconnected), { devices: [{ serial: 'phone-1', state: 'device', model: '', authorized: true }] });
+  const command = h.ofTool('adb').find((child) => child.args[0] === 'disconnect');
+  assert.deepEqual(plain(command.args), ['disconnect', '192.168.1.7:40123']);
+  assert.equal(mirror.exited, false);
+  assert.equal(h.bridge.status().mirrorRunning, true);
+  for (const child of h.children) {
+    assert.equal(child.options.shell, false);
+    assert.ok(!child.args.includes('kill-server'));
+    assert.ok(!child.args.includes('tcpip'));
+  }
+  assert.ok(!JSON.stringify({ events: h.events, status: h.bridge.status() }).includes('012345'));
+  assert.equal(fs.existsSync(h.userDataPath), false, 'wireless actions never save inputs');
+});
+
+test('wireless endpoints reject hostnames, WAN, ambiguous addresses, ports and injection before spawning', async (t) => {
+  const h = harness(t);
+  for (const address of [undefined, null, {}, 'phone.local:1234', 'localhost:1234', '8.8.8.8:1234',
+    '127.0.0.1:1234', '169.254.1.2:1234', '100.64.1.2:1234', '172.15.1.2:1234', '172.32.1.2:1234',
+    '192.169.1.2:1234', '010.0.0.1:1234', '10.1:1234', '0xa000001:1234', '10.0.0.1',
+    '10.0.0.1:0', '10.0.0.1:65536', '10.0.0.1:-1', '10.0.0.1:1e3', '10.0.0.1:1234\n',
+    '10.0.0.1:1234;whoami', '10.0.0.1:1234 & calc', '--help', ' 10.0.0.1:1234',
+    '[::1]:1234', '[2001:4860::1]:1234', '[ff02::1]:1234', '[::ffff:10.0.0.1]:1234',
+    '[fec0::1]:1234', '[fd00::1%3]:1234', '[fe80::1%eth0]:1234', 'fe80::1:1234']) {
+    for (const action of ['pairPhone', 'connectPhone', 'disconnectPhone']) {
+      await assert.rejects(h.bridge[action]({ address, code: '123456' }), { code: 'INVALID_ADDRESS' });
+    }
+  }
+  for (const code of [123456, null, {}, '', '12345', '1234567', '123456\n', '１２３４５６', '12345;', ' 123456']) {
+    await assert.rejects(h.bridge.pairPhone({ address: '10.0.0.1:1234', code }), { code: 'INVALID_PAIR_CODE' });
+  }
+  assert.equal(h.children.length, 0);
+});
+
+test('RFC1918 boundaries and local IPv6 are accepted; IPv4, IPv6 and mDNS phones remain mirrorable', async (t) => {
+  const h = harness(t);
+  for (const address of ['10.0.0.1:1', '172.16.0.1:65535', '172.31.255.254:1234', '192.168.0.1:1234',
+    '[fc00::1]:1234', '[fd12:3456::abcd]:1234', '[fe80::1%12]:1234', '[febf::1]:1234']) {
+    h.control.adbOutput = `${address} device model:Pixel\n`;
+    assert.equal((await h.bridge.connectPhone({ address })).devices[0].authorized, true);
+    await h.bridge.mirror(address);
+    assert.equal(h.latest('scrcpy').args[1], address);
+    await h.bridge.stopMirror();
+  }
+  const mdns = 'adb-phone-123._adb-tls-connect._tcp';
+  h.control.adbOutput = `${mdns} device\n`;
+  await h.bridge.mirror(mdns);
+  assert.equal(h.latest('scrcpy').args[1], mdns);
+});
+
+test('connect requires both a matching success response and that exact authorized endpoint', async (t) => {
+  const h = harness(t);
+  const address = '10.0.0.7:40123';
+  for (const output of ['failed to connect to 10.0.0.7:40123\n', '', 'connected to 10.0.0.8:40123\n']) {
+    h.control.wirelessOutput = output;
+    await assert.rejects(h.bridge.connectPhone({ address }), { code: 'ADB_FAILED' });
+  }
+  h.control.wirelessOutput = null;
+  for (const [output, code] of [['phone-1 device\n', 'DEVICE_OFFLINE'],
+    [`${address} unauthorized\n`, 'UNAUTHORIZED'], [`${address} offline\n`, 'DEVICE_OFFLINE'],
+    ['10.0.0.8:40123 device\n', 'DEVICE_OFFLINE']]) {
+    h.control.adbOutput = output;
+    await assert.rejects(h.bridge.connectPhone({ address }), { code });
+  }
+  h.control.adbOutput = `${address} device\n`;
+  h.control.wirelessOutput = `already connected to ${address}\n`;
+  assert.equal((await h.bridge.connectPhone({ address })).devices[0].authorized, true);
+});
+
+test('pair secrets are excluded from errors, logs, status, args and files even when echoed or native errors occur', async (t) => {
+  const h = harness(t);
+  const code = '098765';
+  const check = (error) => {
+    assert.ok(!String(error.stack).includes(code));
+    assert.ok(!JSON.stringify(error).includes(code));
+    return true;
+  };
+  for (const output of [`Enter pairing code: ${code}\nFailed: ${code}\n`,
+    `Successfully paired to 10.0.0.8:37123 [guid=${code}]\n`]) {
+    h.control.wirelessOutput = output;
+    await assert.rejects(h.bridge.pairPhone({ address: '10.0.0.7:37123', code }), check);
+  }
+  h.control.wirelessOutput = null;
+  h.control.wirelessExit = 1;
+  await assert.rejects(h.bridge.pairPhone({ address: '10.0.0.7:37123', code }), { code: 'ADB_FAILED' });
+  h.control.wirelessExit = 0;
+  h.control.stdinFails = true;
+  await assert.rejects(h.bridge.pairPhone({ address: '10.0.0.7:37123', code }), { code: 'ADB_FAILED' });
+  h.control.stdinFails = false;
+  h.control.errorTool = 'adb.exe';
+  await assert.rejects(h.bridge.pairPhone({ address: '10.0.0.7:37123', code }), check);
+  h.control.errorTool = null;
+  h.control.throwTool = 'adb.exe';
+  await assert.rejects(h.bridge.pairPhone({ address: '10.0.0.7:37123', code }), check);
+  assert.ok(!JSON.stringify({ events: h.events, status: h.bridge.status(), args: h.children.map((c) => c.args) }).includes(code));
+  assert.equal(fs.existsSync(h.userDataPath), false);
+});
+
+test('all wireless commands time out at 15 seconds, bound output and preserve independently open mirrors', async (t) => {
+  const h = harness(t);
+  await h.bridge.mirror();
+  const mirror = h.latest('scrcpy');
+  for (const action of ['pairPhone', 'connectPhone', 'disconnectPhone']) {
+    h.control.hangAdb = true;
+    const rejected = assert.rejects(h.bridge[action]({ address: '10.0.0.7:1234', code: '123456' }), { code: 'ADB_TIMEOUT' });
+    const child = h.latest('adb');
+    await h.clock.advance(14999);
+    assert.equal(child.exited, false);
+    await h.clock.advance(1);
+    await rejected;
+    assert.equal(child.exited, true);
+    assert.equal(mirror.exited, false);
+  }
+  const oversized = assert.rejects(h.bridge.pairPhone({ address: '10.0.0.7:1234', code: '123456' }), { code: 'ADB_FAILED' });
+  await drain();
+  h.latest('adb').stderr.write('x'.repeat(65537));
+  await oversized;
+  await drain();
+  assert.equal(h.latest('adb').exited, true);
+  assert.equal(h.clock.timers.size, 0);
+});
+
+test('disposal cancels pending wireless actions promptly and clears their deadlines', async (t) => {
+  const h = harness(t);
+  h.control.hangAdb = true;
+  const pending = ['pairPhone', 'connectPhone', 'disconnectPhone'].map((action) =>
+    assert.rejects(h.bridge[action]({ address: '192.168.1.7:1234', code: '123456' }), { code: 'CANCELLED' }));
+  await h.bridge.dispose();
+  await Promise.all(pending);
+  assert.equal(h.clock.timers.size, 0);
+  assert.equal(h.kills.length, 3);
+  assert.equal(h.ofTool('adb').length, 3, 'no discovery is started after cancellation');
+  for (const action of ['pairPhone', 'connectPhone', 'disconnectPhone']) {
+    await assert.rejects(h.bridge[action]({ address: '192.168.1.7:1234', code: '123456' }), { code: 'DISPOSED' });
+  }
+});
+
+
+test('disposal cancels wireless verification discovery and an exited command still waiting for pipe closure', async (t) => {
+  const h = harness(t);
+  h.control.hangAdb = true;
+  const verification = assert.rejects(h.bridge.connectPhone({ address: '10.0.0.7:1234' }), { code: 'CANCELLED' });
+  await drain();
+  h.latest('adb').stdout.write('connected to 10.0.0.7:1234\n');
+  h.latest('adb').finish();
+  await drain();
+  assert.deepEqual(plain(h.latest('adb').args), ['devices', '-l']);
+  const pairing = assert.rejects(h.bridge.pairPhone({ address: '10.0.0.7:37123', code: '123456' }), { code: 'CANCELLED' });
+  await drain();
+  const pair = h.latest('adb');
+  pair.exited = true;
+  pair.emit('exit', 0, null); // Pipes may remain open after the parent exits.
+  await h.bridge.dispose();
+  await Promise.all([verification, pairing]);
+  assert.equal(h.clock.timers.size, 0);
+  pair.emit('close', 0, null);
 });

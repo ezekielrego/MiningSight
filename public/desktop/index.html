@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#202020">
-  <meta name="description" content="Download TunnelSight for Windows 10 and 11 x64. Set up your account, Android USB mirroring, and desktop window streaming.">
-  <title>TunnelSight for Windows — Download &amp; setup</title>
+  <meta name="description" content="Download TunnelSight 1.1.0 for Windows 10 and 11 x64. Set up USB or Android 11+ wireless mirroring and desktop window streaming.">
+  <title>TunnelSight 1.1.0 for Windows — Download &amp; setup</title>
   <link rel="icon" type="image/webp" href="/favicon.webp">
   <link rel="apple-touch-icon" href="/favicon.webp">
   <style>
-    :root { color-scheme: dark; --bg:#202020; --panel:#292929; --line:#45423e; --text:#f3f0eb; --muted:#bdb9b2; --accent:#ee963a; }
+    :root { color-scheme: dark; --bg:#202020; --line:#45423e; --text:#f3f0eb; --muted:#bdb9b2; --accent:#ee963a; }
     * { box-sizing:border-box; }
     [hidden] { display:none !important; }
     html { scroll-behavior:smooth; scroll-padding-top:24px; }
@@ -33,17 +33,13 @@
     h1 span { color:var(--accent); }
     .lead { max-width:570px; color:var(--muted); font-size:18px; line-height:1.7; }
     .actions { display:flex; flex-wrap:wrap; align-items:center; gap:16px; margin-block:28px 14px; }
-    .button { display:inline-flex; justify-content:center; align-items:center; gap:10px; min-height:50px; border:1px solid transparent; border-radius:7px; padding:12px 20px; background:var(--accent); color:#21170a; font-weight:700; font-size:15px; text-decoration:none; cursor:pointer; }
-    .button:hover { background:#ffad54; color:#21170a; }
-    .button.secondary { background:transparent; border-color:#686057; color:var(--text); }
-    .button.secondary:hover { background:#36312b; }
+    .button { display:inline-flex; justify-content:center; align-items:center; gap:10px; min-height:50px; border:1px solid var(--accent); padding:12px 20px; background:transparent; color:var(--text); font-weight:600; font-size:15px; text-decoration:none; cursor:pointer; }
+    .button:hover { border-color:#ffcf99; color:#ffcf99; }
+    .button.secondary { border-color:#686057; }
+    .button.secondary:hover { border-color:#ffcf99; }
     .small { color:var(--muted); font-size:13px; }
     .download-meta { margin-bottom:10px; }
-    .workflow { position:relative; overflow:hidden; border:1px solid #5f4b35; border-radius:14px; background:linear-gradient(145deg,#363027,#252525 65%); box-shadow:0 24px 70px #0004; }
-    .window-bar { display:flex; align-items:center; gap:7px; border-bottom:1px solid var(--line); padding:16px 20px; }
-    .window-dot { width:7px; height:7px; border-radius:50%; background:#817566; }
-    .window-bar span:last-child { margin-left:auto; font-size:11px; letter-spacing:1px; color:var(--muted); text-transform:uppercase; }
-    .workflow-body { padding:32px; }
+    .workflow-title { margin-bottom:24px; font-size:11px; letter-spacing:1px; color:var(--muted); text-transform:uppercase; }
     .workflow-body img { display:block; width:156px; height:98px; object-fit:contain; margin:0 auto 28px; }
     .workflow ol { list-style:none; margin:0; padding:0; counter-reset:flow; }
     .workflow li { display:flex; align-items:center; gap:14px; padding-block:15px; border-top:1px solid var(--line); counter-increment:flow; font-size:14px; }
@@ -56,35 +52,37 @@
     section { padding-top:68px; }
     h2 { margin-block:10px 12px; font-size:32px; line-height:1.2; font-weight:600; letter-spacing:-.8px; }
     .section-intro { max-width:710px; color:var(--muted); margin-bottom:28px; }
-    .steps { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; }
-    .card { border:1px solid var(--line); background:var(--panel); border-radius:10px; padding:25px; }
-    .number { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border:1px solid #765333; border-radius:50%; color:var(--accent); font-size:13px; margin-bottom:20px; }
+    .steps { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:32px; }
+    .guide { min-width:0; border-top:1px solid var(--line); padding-top:20px; }
+    .number { display:block; color:var(--accent); font-size:13px; margin-bottom:14px; }
     h3 { font-size:18px; font-weight:600; line-height:1.35; margin-bottom:12px; }
-    .card p { color:var(--muted); font-size:14px; margin-bottom:12px; }
-    .card p:last-child { margin-bottom:0; }
-    .stream-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+    .guide p { color:var(--muted); font-size:14px; margin-bottom:12px; }
+    .guide p:last-child { margin-bottom:0; }
+    .stream-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:32px; }
+    .wireless-guide { grid-column:1 / -1; }
     .stream-grid ol { padding-left:21px; color:var(--muted); font-size:14px; margin-bottom:0; }
+    .wireless-guide ol { margin-bottom:20px; }
     .stream-grid li { padding-left:5px; margin-bottom:12px; }
     .stream-grid li:last-child { margin-bottom:0; }
     .stream-grid strong { color:var(--text); font-weight:600; }
-    .note { margin-top:18px; padding:18px 22px; border-left:3px solid var(--accent); background:#2d2923; color:#d4c8b7; font-size:14px; }
+    .note { margin-top:24px; color:var(--muted); font-size:14px; }
     .note p { margin:0; }
     .help { max-width:860px; }
     details { border-bottom:1px solid var(--line); }
     summary { padding:21px 8px; font-weight:550; cursor:pointer; }
     details p { color:var(--muted); padding:0 8px 8px; font-size:14px; }
-    .handoff { display:grid; grid-template-columns:1fr 1fr; gap:40px; align-items:center; margin-top:64px; padding:30px; border:1px solid var(--line); border-radius:10px; background:var(--panel); }
+    .handoff { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:40px; align-items:center; margin-top:64px; padding-top:30px; border-top:1px solid var(--line); }
     .handoff h2 { font-size:24px; margin-top:0; }
     .handoff p { color:var(--muted); font-size:14px; margin-bottom:0; }
     label { display:block; color:var(--muted); font-size:12px; margin-bottom:8px; }
     .copy-row { display:flex; gap:8px; }
-    input { min-width:0; width:100%; border:1px solid #625b52; background:#1d1d1d; color:var(--text); border-radius:6px; padding:10px; font-size:12px; }
+    input { min-width:0; width:100%; border:1px solid #625b52; background:transparent; color:var(--text); padding:10px; font-size:12px; }
     .copy-row button { flex-shrink:0; padding:10px 14px; min-height:44px; }
     #copy-status { min-height:22px; margin-top:8px; color:#f5b976; font-size:12px; }
     footer { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:16px; margin-top:64px; padding-block:24px 32px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }
     footer p { margin:0; }
     footer a { margin-left:16px; }
-    @media(max-width:900px) { .hero { gap:32px; padding-block:56px; } .workflow-body { padding:24px; } .steps { gap:12px; } .card { padding:20px; } }
+    @media(max-width:900px) { .hero { gap:32px; padding-block:56px; } .steps { gap:24px; } }
     @media(max-width:700px) {
       .wrap { width:calc(100% - 32px); }
       .header { flex-wrap:wrap; gap:12px; padding-block:18px; }
@@ -94,13 +92,12 @@
       .lead { font-size:16px; }
       .actions { align-items:stretch; }
       .actions .button { width:100%; }
-      .workflow-body { padding:24px; }
       .workflow-body img { width:112px; height:70px; margin-bottom:20px; }
       .facts,.steps,.stream-grid,.handoff { grid-template-columns:1fr; }
       .facts { gap:20px; }
       section { padding-top:44px; }
       h2 { font-size:28px; }
-      .handoff { gap:24px; padding:22px; margin-top:44px; }
+      .handoff { gap:24px; padding-top:24px; margin-top:44px; }
       .copy-row { flex-wrap:wrap; }
       .copy-row button { width:100%; }
       footer { margin-top:44px; }
@@ -118,19 +115,20 @@
   <main id="main" class="wrap">
     <div class="hero">
       <div>
-        <div class="eyebrow">TunnelSight for Windows · v1.0.0</div>
+        <div class="eyebrow">TunnelSight for Windows · v1.1.0</div>
         <h1>Your workspace.<br>Your windows.<br><span>One desktop app.</span></h1>
-        <p class="lead">Open the online TunnelSight workspace in a dedicated Windows app. Bring a local window or an Android phone’s mirrored screen into your streaming workflow.</p>
+        <p class="lead">Open the online TunnelSight workspace in a dedicated Windows app. Stream a local window or mirror an Android phone over USB or your local network.</p>
         <div class="actions">
-          <a class="button" href="/downloads/TunnelSight-Setup.exe" download>↓ &nbsp; Download for Windows</a>
+          <a class="button" href="/downloads/TunnelSight-Setup-1.1.0.exe" download>↓ &nbsp; Download for Windows</a>
           <a href="#setup">Installation &amp; setup →</a>
         </div>
         <p class="small download-meta">Windows 10 / 11 · 64-bit (x64) · Internet required for cloud features</p>
-        <p class="small"><a href="/downloads/TunnelSight-Setup-1.0.0.exe" download>Version 1.0.0 installer</a> &nbsp;·&nbsp; <a href="/downloads/TunnelSight-Setup-1.0.0.exe.sha256" title="SHA-256 checksum for version 1.0.0">Checksum</a></p>
+        <p class="small"><a href="/downloads/TunnelSight-Setup-1.1.0.exe" download>Version 1.1.0 installer</a> &nbsp;·&nbsp; <a href="/downloads/TunnelSight-Setup-1.1.0.exe.sha256" title="SHA-256 checksum for version 1.1.0">Checksum</a></p>
+        <p class="small">Version 1.1.0 · 202 MB · USB and local-network phone connection</p>
         <p class="small">This installer is unsigned. Windows may display “Unknown publisher” or a SmartScreen warning.</p>
       </div>
       <aside class="workflow" aria-label="Desktop workflow at a glance">
-        <div class="window-bar" aria-hidden="true"><span class="window-dot"></span><span class="window-dot"></span><span class="window-dot"></span><span>Workflow at a glance</span></div>
+        <p class="workflow-title">Workflow at a glance</p>
         <div class="workflow-body">
           <img src="/favicon.webp" alt="TunnelSight" width="156" height="98">
           <ol>
@@ -151,36 +149,48 @@
       <h2 id="setup-title">From download to workspace.</h2>
       <p class="section-intro">Use a Windows 10 or 11 computer with an x64 processor. A keyboard, mouse, and a stable internet connection make the full workspace easier to use.</p>
       <div class="steps">
-        <article class="card"><span class="number" aria-hidden="true">1</span><h3>Install on your PC</h3><p>Download <strong>TunnelSight-Setup.exe</strong> above, open it from your Downloads folder, and follow the installer prompts.</p><p>This Windows installer does not run on Android, iPhone, iPad, or macOS.</p></article>
-        <article class="card"><span class="number" aria-hidden="true">2</span><h3>Open &amp; sign in</h3><p>Launch TunnelSight from the Start menu or its installed shortcut. Choose browser sign-in, sign in with the same Google account you use on the website, and approve the secure desktop sign-in request in your browser.</p><p>Return to the app. It opens the hosted workspace; your online projects stay attached to that account.</p></article>
-        <article class="card"><span class="number" aria-hidden="true">3</span><h3>Link your stream</h3><p>Confirm that the linked desktop account email matches your signed-in TunnelSight account.</p><p>Choose a source window, then select <strong>Start stream</strong>. Open your project’s live viewer to review the feed.</p></article>
+        <article class="guide"><span class="number" aria-hidden="true">1</span><h3>Install on your PC</h3><p>Download <strong>TunnelSight-Setup-1.1.0.exe</strong> above, open it from your Downloads folder, and follow the installer prompts.</p><p>This Windows installer does not run on Android, iPhone, iPad, or macOS.</p></article>
+        <article class="guide"><span class="number" aria-hidden="true">2</span><h3>Open &amp; sign in</h3><p>Launch TunnelSight from the Start menu or its installed shortcut. Choose browser sign-in, sign in with the same Google account you use on the website, and approve the secure desktop sign-in request in your browser.</p><p>Return to the app. It opens the hosted workspace; your online projects stay attached to that account.</p></article>
+        <article class="guide"><span class="number" aria-hidden="true">3</span><h3>Link your stream</h3><p>Confirm that the linked desktop account email matches your signed-in TunnelSight account.</p><p>Choose a source window, then select <strong>Start stream</strong>. Open your project’s live viewer to review the feed.</p></article>
       </div>
     </section>
     <section aria-labelledby="stream-title">
       <div class="eyebrow">Choose your source</div>
       <h2 id="stream-title">A local window. Or your phone.</h2>
-      <p class="section-intro">Window capture and Android USB mirroring are local desktop tools. Cloud sign-in, online projects, uploads, and viewing a published stream still need internet access.</p>
+      <p class="section-intro">Window capture and Android mirroring over USB or a local network are local desktop tools. Cloud sign-in, online projects, uploads, and viewing a published stream still need internet access.</p>
       <div class="stream-grid">
-        <article class="card">
+        <article class="guide">
           <h3>Stream any available window</h3>
           <ol>
             <li>Open the application you want to capture on your Windows computer. Keep its window visible and unminimized.</li>
             <li>In TunnelSight’s desktop streaming controls, open the <strong>window picker</strong> and choose the window you want to share.</li>
-            <li>Check the selected source, link using your account email, then select <strong>Start stream</strong>.</li>
+            <li>Check the default local preview, link using your account email, then select <strong>Start stream</strong>.</li>
             <li>Open the live viewer in your TunnelSight project. Stop the stream in the desktop controls when you finish.</li>
           </ol>
         </article>
-        <article class="card">
+        <article class="guide">
           <h3>Mirror an Android phone over USB</h3>
           <ol>
             <li>On your Android phone, enable <strong>Developer options</strong>, then <strong>USB debugging</strong>. The location varies by phone.</li>
             <li>Connect it to your PC with a USB cable that supports data. Unlock the phone and accept the <strong>Allow USB debugging</strong> RSA authorization prompt for your computer.</li>
-            <li>Use the desktop app’s Android mirroring controls to open the phone’s screen with <strong>scrcpy</strong>.</li>
+            <li>In <strong>Local streaming</strong>, refresh devices, select the phone, and choose <strong>Open mirror</strong> to open its screen with <strong>scrcpy</strong>.</li>
             <li>Choose the resulting mirror window in the window picker, link with your TunnelSight email, and select <strong>Start stream</strong>.</li>
           </ol>
         </article>
+        <article class="guide wireless-guide">
+          <h3>Mirror over your local network · Android 11+</h3>
+          <ol>
+            <li>Connect your phone and PC to the same Wi-Fi or a routable LAN. They must be able to reach each other; guest-network isolation or a firewall can block the connection.</li>
+            <li>On the phone, open <strong>Developer options → Wireless debugging</strong>, enable it, then select <strong>Pair device with pairing code</strong>. Keep that dialog open.</li>
+            <li>In TunnelSight’s local-network controls, enter the dialog’s <strong>pairing IP:port</strong> and <strong>6-digit pairing code</strong>, then choose <strong>Pair</strong>. The code is held only in memory; it is not saved.</li>
+            <li>Return to the phone’s main <strong>Wireless debugging</strong> screen. Enter its separate <strong>IP address &amp; port</strong> in TunnelSight and choose <strong>Connect</strong>. The pairing and connection ports differ; do not reuse the pairing port.</li>
+            <li>Refresh devices, select the connected phone, and choose <strong>Open mirror</strong>. Refresh windows, choose the scrcpy mirror, check the preview, and select <strong>Start stream</strong> when ready.</li>
+          </ol>
+          <p>For an older phone with an ADB network port already enabled, use its IP:port with <strong>Connect</strong> only. TunnelSight does not automatically enable insecure ADB TCP/IP mode.</p>
+          <p><strong>Disconnect</strong> disconnects only the selected network phone. It does not kill the shared ADB server or disconnect other phones.</p>
+        </article>
       </div>
-      <div class="note"><p><strong>Before sharing:</strong> check the selected window and close private content inside it. Android mirroring depends on the device allowing USB debugging and screen capture; some apps protect their video from capture.</p></div>
+      <div class="note"><p><strong>Before sharing:</strong> check the selected window and close private content inside it. Android mirroring depends on the device allowing debugging and screen capture; some apps protect their video from capture.</p></div>
     </section>
     <section id="help" class="help" aria-labelledby="help-title">
       <div class="eyebrow">Installed app help</div>
@@ -188,8 +198,11 @@
       <details><summary>The app opens, but the workspace is blank or offline</summary><p>Check your internet connection, then open the <a href="/">web workspace</a> in a browser on the same computer. If the website loads, close and reopen the desktop app. Your account’s cloud projects require the hosted service to be reachable.</p></details>
       <details><summary>My projects or live stream are missing</summary><p>Confirm you signed in with the same Google account used on the website. For streaming, the linked email must match that account’s email. Open the intended project’s live viewer, check that the source window is still available, and confirm the desktop stream has started.</p></details>
       <details><summary>My Android phone is not detected, or says unauthorized</summary><p>Unlock the phone, enable USB debugging, and accept the computer’s RSA authorization prompt. Try a data-capable USB cable or another USB port. If the prompt does not appear, reconnect the phone; you can revoke USB debugging authorizations in Developer options and authorize this computer again. Some Windows devices also require the phone manufacturer’s USB driver.</p></details>
+      <details><summary>Wireless pairing works, but the phone will not connect</summary><p>Use the pairing dialog’s IP:port only for Pair. For Connect, use the separate IP:port on the main Wireless debugging screen; the ports differ and may change. Check that Wireless debugging is still enabled and both devices are reachable on the same Wi-Fi or a routable LAN. Check guest isolation and firewall rules, then Connect, refresh devices, and Open mirror.</p></details>
+      <details><summary>Does the local preview stay on while streaming?</summary><p>The local preview is available by default to check your source before publishing. In 1.1.0, it pauses while publishing to avoid a duplicate Electron capture of the same window. This can reduce mouse flicker, but Windows GDI capture may still show cursor flicker; a complete fix is not guaranteed. The published feed remains available in your project’s live viewer.</p></details>
+      <details><summary>Has 1.1.0 been tested on Windows with a wireless phone?</summary><p>Native Windows Wi-Fi pairing, connection, mirroring, and disconnect testing is still pending. Installation, USB mirroring, and cursor behavior during capture also need a real Windows machine; documentation checks do not verify those behaviors.</p></details>
       <details><summary>The stream is black, frozen, or showing the wrong window</summary><p>Bring the source window into view and restore it if minimized. Reopen the native window picker and select the intended window again, then restart the stream. For Android, confirm the scrcpy mirror is running and the phone is unlocked. Protected content may not allow capture.</p></details>
-      <details><summary>Windows shows a download or installation warning</summary><p>The installer is unsigned, so Windows may show “Unknown publisher” or a SmartScreen warning. Confirm that you downloaded it from this TunnelSight website, compare its <a href="/downloads/TunnelSight-Setup-1.0.0.exe.sha256">SHA-256 checksum</a>, and check the file with your Windows security tools. If you cannot verify the download or your organization blocks installation, use the <a href="/">browser workspace</a> and contact your administrator.</p></details>
+      <details><summary>Windows shows a download or installation warning</summary><p>The installer is unsigned, so Windows may show “Unknown publisher” or a SmartScreen warning. Confirm that you downloaded it from this TunnelSight website, compare its <a href="/downloads/TunnelSight-Setup-1.1.0.exe.sha256">SHA-256 checksum</a>, and check the file with your Windows security tools. If you cannot verify the download or your organization blocks installation, use the <a href="/">browser workspace</a> and contact your administrator.</p></details>
       <details><summary>How do I update or uninstall?</summary><p>Close TunnelSight before running a newer installer from this page. To remove it, open Windows Settings → Apps → Installed apps (Windows 11), or Apps &amp; features (Windows 10), select TunnelSight, and choose Uninstall. The uninstaller keeps local sign-in data and settings by default; select its optional removal checkbox to delete that local data too. Your online projects remain associated with your online account.</p></details>
       <details><summary>Can I keep using the website?</summary><p>Yes. The <a href="/">web version</a> remains available with its existing behavior. The desktop app adds local integration around the hosted workspace. On a phone or tablet, you can dismiss the desktop recommendation with “Continue in browser” to access settings and try the web tools.</p></details>
     </section>
@@ -202,7 +215,7 @@
       </div>
     </aside>
   </main>
-  <footer class="wrap"><p>TunnelSight · Surface &amp; subsurface visualisation</p><div><a href="/">Open web workspace</a><a href="/downloads/TunnelSight-Setup-1.0.0.exe.sha256" title="SHA-256 checksum for version 1.0.0">Checksum</a><a href="mailto:ezekiel@techinn.co.zw">Contact support</a></div></footer>
+  <footer class="wrap"><p>TunnelSight · Surface &amp; subsurface visualisation</p><div><a href="/">Open web workspace</a><a href="/downloads/TunnelSight-Setup-1.1.0.exe.sha256" title="SHA-256 checksum for version 1.1.0">Checksum</a><a href="mailto:ezekiel@techinn.co.zw">Contact support</a></div></footer>
   <script>
     const websiteLink = document.getElementById('website-link');
     const copyButton = document.getElementById('copy-link');

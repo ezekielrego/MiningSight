@@ -6,6 +6,7 @@ app.setName('TunnelSight');
 
 const SITE = 'https://tunnelsight.applications.co.zw';
 const SHELL_FILE = path.join(__dirname, 'ui/index.html');
+const APPBAR_HEIGHT = 48;
 let win, workspace, bridge, authTimer, authRequest, quitting = false, closing = false, activePage = 'workspace', selectedSource = '', wakeLock;
 let sourceIds = new Set();
 const resources = app.isPackaged ? process.resourcesPath : path.join(__dirname, 'resources');
@@ -24,7 +25,7 @@ const trustedSender = (event) => event.sender === win?.webContents && event.send
 function fitWorkspace() {
   if (!win || !workspace) return;
   const [width, height] = win.getContentSize();
-  workspace.setBounds(activePage === 'workspace' ? { x: 0, y: 64, width, height: Math.max(0, height - 64) } : { x: width + 1, y: 64, width: 1, height: 1 });
+  workspace.setBounds(activePage === 'workspace' ? { x: 0, y: APPBAR_HEIGHT, width, height: Math.max(0, height - APPBAR_HEIGHT) } : { x: width + 1, y: APPBAR_HEIGHT, width: 1, height: 1 });
 }
 function showPage(page) {
   activePage = ['workspace', 'stream', 'help'].includes(page) ? page : 'workspace';
@@ -95,6 +96,9 @@ async function handleCommand(command, payload = {}) {
     case 'sources': return listSources();
     case 'preview': if (!sourceIds.has(payload.sourceId)) throw new Error('Refresh the window list and choose an open window.'); selectedSource = payload.sourceId; return {};
     case 'devices': return bridge.devices();
+    case 'pair-phone': return bridge.pairPhone(payload);
+    case 'connect-phone': return bridge.connectPhone(payload);
+    case 'disconnect-phone': return bridge.disconnectPhone(payload);
     case 'mirror': return bridge.mirror(payload.serial);
     case 'stop-mirror': return bridge.stopMirror();
     case 'start-stream': {

@@ -1,4 +1,4 @@
-TunnelSight Desktop 1.0.0 — third-party runtime tools
+TunnelSight Desktop 1.1.0 — third-party runtime tools
 
 scrcpy 5.0.1 (unmodified official Windows x64 distribution)
 Copyright Genymobile and contributors, Apache License 2.0.

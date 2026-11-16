@@ -1,6 +1,6 @@
 const api = window.tunnelsight;
 const $ = (id) => document.getElementById(id);
-let selectedSource = '', previewStream, previewGeneration = 0, busy = false, toastTimer, currentState = 'idle', cleanupPending = false;
+let selectedSource = '', selectedThumbnail = '', previewStream, previewGeneration = 0, busy = false, toastTimer, currentState = 'idle', cleanupPending = false;
 async function command(action, payload = {}) {
   const result = await api.command(action, payload);
   if (!result.ok) throw new Error(result.error || 'The action could not finish.');
@@ -26,7 +26,7 @@ function updateButtons() {
   $('email').disabled = active;
   $('orientation').disabled = active;
   $('quality').disabled = active;
-  document.querySelectorAll('.source').forEach((source) => { source.disabled = active; });
+  document.querySelectorAll('.source').forEach((source) => { source.disabled = busy || active; });
 }
 function applyState(state = {}) {
   currentState = state.state || 'idle';
@@ -34,6 +34,7 @@ function applyState(state = {}) {
   $('stream-badge').textContent = currentState === 'idle' ? 'NOT STREAMING' : currentState.toUpperCase();
   $('stream-badge').classList.toggle('live', ['streaming', 'reconnecting'].includes(currentState));
   $('live-dot').hidden = !['streaming', 'connecting', 'reconnecting'].includes(currentState);
+  if (!['streaming', 'connecting', 'reconnecting'].includes(currentState)) $('preview-still').hidden = true;
   if (state.error) notice(state.error, true);
   else if (state.message) notice(state.message);
   else if (state.status) notice(state.status);
@@ -41,13 +42,14 @@ function applyState(state = {}) {
 }
 const settings = () => ({ email: $('email').value.trim(), orientation: $('orientation').value, quality: $('quality').value });
 function applyPreferences(preferences = {}) { $('email').value = preferences.email || ''; $('orientation').value = preferences.orientation || 'landscape'; $('quality').value = preferences.quality || 'balanced'; }
-function stopPreview() { ++previewGeneration; if (previewStream) { previewStream.getTracks().forEach(track => track.stop()); previewStream = null; } $('preview').srcObject = null; $('preview-empty').hidden = false; }
+function stopPreview() { ++previewGeneration; if (previewStream) { previewStream.getTracks().forEach(track => track.stop()); previewStream = null; } $('preview').srcObject = null; $('preview-still').hidden = true; $('preview-empty').hidden = false; }
 async function preview(source) {
   stopPreview();
   const generation = previewGeneration;
   await command('preview', { sourceId: source.id });
   if (generation !== previewGeneration) return;
   selectedSource = source.id;
+  selectedThumbnail = source.thumbnail || '';
   $('selected-window').textContent = source.name;
   $('preview-label').textContent = source.name;
   document.querySelectorAll('.source').forEach(element => element.classList.toggle('selected', element.dataset.id === source.id));
@@ -79,14 +81,39 @@ async function refreshWindows() {
   }
   updateButtons();
 }
-async function refreshDevices() {
-  const result = await command('devices');
+function renderDevices(result, preferred = $('device').value) {
   const devices = Array.isArray(result) ? result : result.devices || [];
   $('device').replaceChildren();
-  if (!devices.length) { const option = document.createElement('option'); option.value = ''; option.textContent = 'No authorized phone found'; $('device').append(option); notice('Connect USB, unlock the phone, allow USB debugging, then Refresh.'); return; }
+  if (!devices.length) { const option = document.createElement('option'); option.value = ''; option.textContent = 'No connected phone found'; $('device').append(option); return devices; }
   for (const device of devices) { const option = document.createElement('option'); option.value = device.serial; option.textContent = device.name || device.model || device.serial; if (device.state && device.state !== 'device') { option.disabled = true; option.textContent += ` · ${device.state}`; } $('device').append(option); }
-  notice('Phone detected. Open phone mirror to connect.');
+  const selection = devices.find(device => device.serial === preferred && device.state === 'device') || devices.find(device => device.state === 'device');
+  if (selection) $('device').value = selection.serial;
+  return devices;
 }
+async function refreshDevices() {
+  const devices = renderDevices(await command('devices'));
+  notice(devices.some(device => device.state === 'device') ? 'Phone detected. Select it and Open phone mirror.' : 'Authorize a USB phone or pair and connect over Local network, then Refresh.');
+}
+document.querySelectorAll('[data-connection]').forEach(button => button.addEventListener('click', () => {
+  const network = button.dataset.connection === 'network';
+  $('network-panel').hidden = !network; $('usb-panel').hidden = network;
+  document.querySelectorAll('[data-connection]').forEach(tab => tab.setAttribute('aria-selected', String(tab === button)));
+}));
+$('pair-phone').addEventListener('click', () => action($('pair-phone'), async () => {
+  const code = $('pair-code').value;
+  if (!/^[0-9]{6}$/.test(code)) { $('pair-code').focus(); throw new Error('Enter the six-digit code shown on the phone.'); }
+  try { renderDevices(await command('pair-phone', { address: $('pair-address').value.trim(), code })); notice('Phone paired. Now Connect using IP address & port on the main Wireless debugging screen.'); }
+  finally { $('pair-code').value = ''; }
+}));
+$('connect-phone').addEventListener('click', () => action($('connect-phone'), async () => {
+  const address = $('network-address').value.trim();
+  renderDevices(await command('connect-phone', { address }), address);
+  notice('Network phone connected. Select it below and Open phone mirror.');
+}));
+$('disconnect-phone').addEventListener('click', () => action($('disconnect-phone'), async () => {
+  renderDevices(await command('disconnect-phone', { address: $('network-address').value.trim() }));
+  notice('That network phone was disconnected. Other device connections were left alone.');
+}));
 document.querySelectorAll('[data-page]').forEach(button => button.addEventListener('click', () => action(button, async () => { await command('page', { page: button.dataset.page }); })));
 document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => action(button, () => command(button.dataset.action))));
 document.querySelectorAll('[data-external]').forEach(button => button.addEventListener('click', () => action(button, () => command('external', { link: button.dataset.external }))));
@@ -99,6 +126,9 @@ $('stop-preview').addEventListener('click', stopPreview);
 $('start').addEventListener('click', () => action($('start'), async () => {
   if (!$('email').checkValidity() || !$('email').value.trim()) { $('email').focus(); throw new Error('Enter your TunnelSight account email.'); }
   busy = true; updateButtons(); notice('Connecting the selected window to your TunnelSight relay…');
+  // Avoid a second active capture of the same window while FFmpeg publishes it.
+  stopPreview();
+  if (selectedThumbnail) { $('preview-still').src = selectedThumbnail; $('preview-still').hidden = false; $('preview-empty').hidden = true; }
   try { applyState(await command('start-stream', { ...settings(), sourceId: selectedSource })); }
   finally { busy = false; updateButtons(); }
 }));

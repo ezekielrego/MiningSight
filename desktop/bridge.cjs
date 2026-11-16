@@ -1,7 +1,9 @@
 'use strict';
 
 // Main-process only. emit(name, payload): status => status(), log => { level, message }.
-// devices() => [{ serial, state, model, authorized }]. All other async methods
+// devices() => [{ serial, state, model, authorized }]. Wireless phone methods
+// => { devices: [...] }; pair uses the pairing-dialog port, connect/disconnect
+// use the separate Wireless debugging connection port (Android 11+). Other async methods
 // resolve to status(); failures reject with a friendly Error and a stable code.
 // status() is synchronous. cleanupPending stays true while a stream session or
 // owned encoder needs stopping, or disposal still owns any tool after a failure.
@@ -10,6 +12,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const cp = require('node:child_process');
+const net = require('node:net');
 
 const LINK_ENDPOINT = 'https://tunnelsight.applications.co.zw/api/bridge/scrcpy/link';
 const HOSTS = new Set(['5.189.146.229', 'tunnelsight.applications.co.zw']);
@@ -22,6 +25,37 @@ function failure(code, message) {
   const error = new Error(message);
   error.code = code;
   return error;
+}
+
+// Explicit numeric LAN endpoints only. IPv6 must be bracketed; a numeric Windows
+// interface index is accepted for link-local addresses. Never resolve hostnames.
+function phoneEndpoint(address) {
+  const invalid = () => failure('INVALID_ADDRESS', 'Enter a local numeric phone IP:port (port 1–65535).');
+  if (typeof address !== 'string' || address.length > 100) throw invalid();
+  const match = /^(?:([0-9.]+)|\[([0-9a-fA-F:]+)(?:%([1-9][0-9]{0,9}))?\]):([0-9]{1,5})$/.exec(address);
+  if (!match || match[0] !== address || Number(match[4]) < 1 || Number(match[4]) > 65535) throw invalid();
+  let host;
+  if (match[1]) {
+    if (net.isIP(match[1]) !== 4) throw invalid();
+    const [a, b] = match[1].split('.').map(Number);
+    if (!(a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168))) throw invalid();
+    host = match[1];
+  } else {
+    if (net.isIP(match[2]) !== 6) throw invalid();
+    const first = parseInt(match[2].split(':')[0], 16);
+    const linkLocal = (first & 0xffc0) === 0xfe80;
+    if (!linkLocal && (first & 0xfe00) !== 0xfc00) throw invalid();
+    if (match[3] && !linkLocal) throw invalid();
+    host = new URL(`http://[${match[2]}]/`).hostname;
+    if (match[3]) host = host.slice(0, -1) + `%${match[3]}]`;
+  }
+  return `${host}:${Number(match[4])}`;
+}
+
+function validSerial(serial) {
+  if (typeof serial !== 'string') return false;
+  if (SERIAL.test(serial)) return true; // USB and existing mDNS serials.
+  try { return serial.startsWith('[') && Boolean(phoneEndpoint(serial)); } catch { return false; }
 }
 
 function windowInput(sourceId) {
@@ -84,6 +118,7 @@ function createBridge({ resourcePath = path.join(__dirname, 'resources'), userDa
   const settingsFile = path.join(userDataPath, 'bridge-settings.json');
   const deviceFile = path.join(userDataPath, 'scrcpy-device-id.txt');
   const owned = new Set();
+  const wirelessPending = new Set();
   let disposed = false;
   let disposal = null;
   let session = null;
@@ -142,11 +177,14 @@ function createBridge({ resourcePath = path.join(__dirname, 'resources'), userDa
     if (!toolsReady()) throw failure('TOOLS_MISSING', 'Bundled scrcpy, ADB or FFmpeg is missing. Reinstall the desktop app.');
   }
 
-  function spawnOwned(executable, args, handlers = {}, env = process.env) {
+  function spawnOwned(executable, args, handlers = {}, env = process.env, input) {
+    if (input !== undefined && (typeof input !== 'string' || Buffer.byteLength(input) > 128)) {
+      throw failure('INVALID_INPUT', 'The local tool input is invalid.');
+    }
     let child;
     try {
       child = cp.spawn(executable, args, { shell: false, windowsHide: true,
-        cwd: path.dirname(executable), stdio: ['ignore', 'pipe', 'pipe'], env });
+        cwd: path.dirname(executable), stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'], env });
     } catch {
       throw failure('PROCESS_START_FAILED', 'A bundled tool could not start. Reinstall the desktop app.');
     }
@@ -176,6 +214,15 @@ function createBridge({ resourcePath = path.join(__dirname, 'resources'), userDa
     if (handlers.stderr && child.stderr) child.stderr.on('data', handlers.stderr);
     else if (child.stderr) child.stderr.resume();
     if (handlers.spawn) child.once('spawn', () => handlers.spawn(record));
+    if (input !== undefined && child.stdin) {
+      child.stdin.on('error', () => { if (handlers.inputError) handlers.inputError(record); });
+      child.once('spawn', () => {
+        if (record.stopping || disposed) { input = undefined; return; }
+        try { child.stdin.end(input); }
+        catch { if (handlers.inputError) handlers.inputError(record); }
+        finally { input = undefined; }
+      });
+    }
     return record;
   }
 
@@ -242,7 +289,7 @@ function createBridge({ resourcePath = path.join(__dirname, 'resources'), userDa
             const result = [];
             for (const line of output.split(/\r?\n/)) {
               const match = /^(\S+)\s+(device|unauthorized|offline|no permissions)\b(.*)$/.exec(line.trim());
-              if (!match || !SERIAL.test(match[1])) continue;
+              if (!match || !validSerial(match[1])) continue;
               const model = /\bmodel:([a-zA-Z0-9_.-]{1,128})\b/.exec(match[3]);
               result.push({ serial: match[1], state: match[2] === 'no permissions' ? 'no-permissions' : match[2],
                 model: model ? model[1].replace(/_/g, ' ') : '', authorized: match[2] === 'device' });
@@ -258,9 +305,94 @@ function createBridge({ resourcePath = path.join(__dirname, 'resources'), userDa
     });
   }
 
+  function wirelessCommand(command, address, input) {
+    return new Promise((resolve, reject) => {
+      let output = '';
+      let size = 0;
+      let settled = false;
+      let timer;
+      let record;
+      const failed = () => failure('ADB_FAILED', command === 'pair' ?
+        'Wireless pairing failed. Open Pair device with pairing code on Android 11+, and check its pairing port and code.' :
+        'Wireless phone connection failed. Check the separate connection IP and port on the Wireless debugging screen.');
+      const finish = (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        output = '';
+        wirelessPending.delete(cancel);
+        error ? reject(error) : resolve();
+      };
+      const cancel = () => finish(failure('CANCELLED', 'Wireless phone action was cancelled.'));
+      const abort = (error) => {
+        finish(error);
+        void terminate(record).catch(() => {});
+      };
+      try {
+        record = spawnOwned(tools.adb, [command, address], {
+          waitForClose: true,
+          stdout(chunk) {
+            if (settled) return;
+            size += chunk.length;
+            if (size > 65536) return abort(failed());
+            output += chunk.toString();
+          },
+          stderr(chunk) {
+            if (settled) return;
+            size += chunk.length;
+            if (size > 65536) abort(failed());
+          },
+          inputError() { abort(failed()); },
+          end(rec, code, signal, errored) {
+            if (settled) return;
+            if (disposed || rec.stopping) return finish(failure('CANCELLED', 'Wireless phone action was cancelled.'));
+            if (errored || code !== 0) return finish(failed());
+            const pattern = command === 'pair' ? /(?:^|\n|Enter pairing code: )Successfully paired to (\S+)(?: |\r?$)/m :
+              command === 'connect' ? /^(?:connected to|already connected to) (\S+)\r?$/m :
+                /^disconnected (\S+)\r?$/m;
+            const match = pattern.exec(output);
+            try {
+              if (!match || phoneEndpoint(match[1]) !== address) return finish(failed());
+            } catch { return finish(failed()); }
+            finish();
+          },
+        }, process.env, input);
+        wirelessPending.add(cancel);
+        timer = setTimeout(() => abort(failure('ADB_TIMEOUT', 'Wireless phone action timed out after 15 seconds. Check Wireless debugging and retry.')), 15000);
+      } catch { finish(failed()); }
+    });
+  }
+
+  async function wirelessPhone(command, options) {
+    available();
+    const address = phoneEndpoint(options && options.address);
+    const code = options && options.code;
+    if (command === 'pair' && (typeof code !== 'string' || code.length !== 6 || !/^[0-9]{6}$/.test(code))) {
+      throw failure('INVALID_PAIR_CODE', 'Enter the six-digit code from Pair device with pairing code.');
+    }
+    await wirelessCommand(command, address, command === 'pair' ? `${code}\n` : undefined);
+    if (disposed) throw failure('CANCELLED', 'Wireless phone action was cancelled.');
+    const list = await devices();
+    if (disposed) throw failure('CANCELLED', 'Wireless phone action was cancelled.');
+    if (command === 'connect') {
+      const target = list.find((device) => {
+        try { return phoneEndpoint(device.serial) === address; } catch { return false; }
+      });
+      if (!target || !target.authorized) {
+        throw failure(target && target.state === 'unauthorized' ? 'UNAUTHORIZED' : 'DEVICE_OFFLINE',
+          'The wireless phone is not authorized and online. Check Wireless debugging and reconnect using its connection port.');
+      }
+    }
+    return { devices: list };
+  }
+
+  const pairPhone = (options) => wirelessPhone('pair', options);
+  const connectPhone = (options) => wirelessPhone('connect', options);
+  const disconnectPhone = (options) => wirelessPhone('disconnect', options);
+
   async function mirror(serial) {
     available();
-    if (serial !== undefined && (typeof serial !== 'string' || !SERIAL.test(serial))) {
+    if (serial !== undefined && !validSerial(serial)) {
       throw failure('INVALID_DEVICE', 'Choose a phone from the connected device list.');
     }
     if (mirrorPending !== null || mirrorRecord) throw failure('MIRROR_BUSY', 'A phone mirror is already open or starting. Stop it first.');
@@ -542,6 +674,7 @@ function createBridge({ resourcePath = path.join(__dirname, 'resources'), userDa
     if (disposal) return disposal;
     disposed = true;
     ++mirrorGeneration;
+    for (const cancel of wirelessPending) cancel();
     const attempt = (async () => {
       const results = await Promise.allSettled([stopStream(), stopMirror(), ...[...owned].map(terminate)]);
       const failed = results.find((result) => result.status === 'rejected');
@@ -556,7 +689,7 @@ function createBridge({ resourcePath = path.join(__dirname, 'resources'), userDa
     return attempt;
   }
 
-  return { devices, mirror, stopMirror, startStream, stopStream, status, dispose };
+  return { devices, pairPhone, connectPhone, disconnectPhone, mirror, stopMirror, startStream, stopStream, status, dispose };
 }
 
 module.exports = { createBridge };

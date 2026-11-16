@@ -16,7 +16,11 @@ The main interface includes a top-navigation switcher for moving between the con
 
 The application includes an About menu with the author profile, software overview, Terms of Use, and Privacy & Data Use notices. The source versions are available as [`docs/TERMS_OF_USE.md`](docs/TERMS_OF_USE.md) and [`docs/PRIVACY_AND_DATA_USE.md`](docs/PRIVACY_AND_DATA_USE.md).
 
-The optional Windows desktop app keeps the existing hosted workstation and adds local USB phone mirroring, a window picker, local preview, and start/stop streaming with bundled scrcpy and FFmpeg. Its installer and uninstaller work per user; cloud accounts, projects and files remain on the server. Sign in through your normal browser, then approve a separate desktop session. Mobile users receive a dismissible desktop recommendation. See [`desktop/README.md`](desktop/README.md) for build instructions and device-testing limits.
+The optional Windows desktop app keeps the existing hosted workstation and adds local phone mirroring, a window picker, local preview, and start/stop streaming with bundled scrcpy and FFmpeg. Version **1.1.0** adds Android 11+ Wireless debugging alongside USB: use the same Wi-Fi or a routable LAN, **Pair device with pairing code** using its pairing IP:port and 6-digit code, then **Connect** using the separate IP:port on the main Wireless debugging screen (the ports differ). Refresh devices, select the phone, and open its mirror. Pairing codes stay only in memory. Older phones with an already-enabled ADB network port use Connect only; the app does not automatically enable TCP/IP mode. Disconnect affects only the selected phone and leaves the shared ADB server running.
+
+Version 1.1.0 uses a 48px desktop navigation bar and text or outlined controls without filled cards or framed badges. It also supplies an opaque white app icon. Local preview remains available before publishing; pausing its duplicate capture during publishing reduces capture overhead, though Windows GDI cursor flicker may remain. Native Windows wireless-phone testing is still pending. Download `TunnelSight-Setup-1.1.0.exe` and its matching checksum from the setup page above.
+
+The installer and uninstaller work per user; cloud accounts, projects and files remain on the server. Sign in through your normal browser, then approve a separate desktop session. Mobile users receive a dismissible desktop recommendation. See [`desktop/README.md`](desktop/README.md) for setup, build instructions, and device-testing limits.
 
 ## Selected system evidence
 
