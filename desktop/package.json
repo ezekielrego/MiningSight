@@ -1,0 +1,44 @@
+{
+  "name": "tunnelsight-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TunnelSight workstation and local phone streaming bridge",
+  "author": { "name": "Ezekiel Rego", "email": "ezekiel@techinn.co.zw" },
+  "license": "UNLICENSED",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test bridge.test.cjs",
+    "prepare:tools": "node prepare-tools.cjs",
+    "dist:win": "electron-builder --win dir --x64 --publish never && node build-installer.cjs"
+  },
+  "devDependencies": { "electron": "45.3.2", "electron-builder": "26.18.0" },
+  "build": {
+    "appId": "zw.co.techinn.tunnelsight.desktop",
+    "productName": "TunnelSight",
+    "copyright": "Copyright © 2026 Ezekiel Rego",
+    "directories": { "output": "release", "buildResources": "resources/artwork" },
+    "files": ["main.cjs", "preload.cjs", "bridge.cjs", "ui/**/*", "package.json"],
+    "extraResources": [{ "from": "resources/tools", "to": "tools" }, { "from": "resources/artwork/icon.png", "to": "icon.png" }],
+    "asar": true,
+    "compression": "normal",
+    "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "icon": "resources/artwork/icon.ico", "requestedExecutionLevel": "asInvoker", "artifactName": "TunnelSight-Setup-${version}.${ext}" },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "TunnelSight",
+      "uninstallDisplayName": "TunnelSight Desktop",
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true,
+      "installerIcon": "resources/artwork/icon.ico",
+      "uninstallerIcon": "resources/artwork/icon.ico",
+      "installerSidebar": "resources/artwork/sidebar.bmp",
+      "uninstallerSidebar": "resources/artwork/sidebar.bmp",
+      "license": "TERMS.txt"
+    }
+  }
+}

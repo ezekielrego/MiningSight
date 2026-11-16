@@ -5,11 +5,12 @@ import path from 'node:path';
 import { createReadStream, createWriteStream, readFileSync } from 'node:fs';
 import { appendFile, mkdir, readdir, readFile, rm, stat, writeFile, rename } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import { isIP } from 'node:net';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { mountWebViewerProxy, validatePublicViewerUrl } from './server/webViewerProxy';
 
 dotenv.config();
@@ -605,6 +606,127 @@ app.get('/api/health', (_req, res) => {
     presets: ['classic_diorama', 'rugged_timbered_photo', 'ai_custom'],
     timestamp: new Date().toISOString()
   });
+});
+
+// Desktop handoffs are process-local, short-lived, and separate from web sessions.
+type DesktopAuthRequest = {
+  pollHash: Buffer;
+  approvalHash: Buffer;
+  expiresAt: number;
+  state: 'pending' | 'approving' | 'approved';
+  session?: { token: string; user: any };
+};
+const desktopAuthRequests = new Map<string, DesktopAuthRequest>();
+const desktopAuthTtlMs = 5 * 60 * 1000;
+
+function pruneDesktopAuthRequests() {
+  for (const [id, record] of desktopAuthRequests) {
+    if (record.expiresAt <= Date.now()) {
+      desktopAuthRequests.delete(id);
+      // An approved handoff that was never collected must not leave a live session.
+      if (record.session) void database('logout', { token: record.session.token }).catch(() => {});
+    }
+  }
+}
+setInterval(pruneDesktopAuthRequests, 15_000).unref();
+
+function desktopAuthRateLimit(limit: number, windowMs: number): express.RequestHandler {
+  const rates = new Map<string, { count: number; expiresAt: number }>();
+  return (req, res, next) => {
+    const now = Date.now();
+    for (const [ip, rate] of rates) if (rate.expiresAt <= now) rates.delete(ip);
+    // The local LiteSpeed proxy appends the real peer to X-Forwarded-For.
+    // Trust only that last hop, and only for requests arriving over loopback.
+    const peer = req.socket.remoteAddress || 'unknown';
+    const forwarded = String(req.headers['x-forwarded-for'] || '').split(',').at(-1)?.trim() || '';
+    const reqIP = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(peer) && isIP(forwarded) ? forwarded : peer;
+    let rate = rates.get(reqIP);
+    if (!rate && rates.size < 1000) {
+      rate = { count: 0, expiresAt: now + windowMs };
+      rates.set(reqIP, rate);
+    }
+    if (!rate || rate.count >= limit) {
+      res.setHeader('Retry-After', String(Math.max(1, Math.ceil(((rate?.expiresAt || now + windowMs) - now) / 1000))));
+      res.status(429).json({ success: false, error: 'DESKTOP_AUTH_RATE_LIMITED' });
+      return;
+    }
+    rate.count++;
+    next();
+  };
+}
+
+function desktopAuthRecord(requestId: unknown, secret: unknown, kind: 'pollHash' | 'approvalHash') {
+  pruneDesktopAuthRequests();
+  const record = typeof requestId === 'string' && /^[a-f0-9]{48}$/.test(requestId)
+    ? desktopAuthRequests.get(requestId) : undefined;
+  const validFormat = typeof secret === 'string' && /^[a-f0-9]{64}$/.test(secret);
+  const digest = createHash('sha256').update(validFormat ? secret : '').digest();
+  // Always compare fixed-size digests, including for malformed/unknown requests.
+  const matches = timingSafeEqual(digest, record?.[kind] || Buffer.alloc(32));
+  return matches && validFormat ? record : undefined;
+}
+
+app.use('/api/desktop/auth', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
+
+app.post('/api/desktop/auth/start', desktopAuthRateLimit(10, desktopAuthTtlMs), (_req, res) => {
+  pruneDesktopAuthRequests();
+  if (desktopAuthRequests.size >= 100) {
+    return res.status(503).json({ success: false, error: 'DESKTOP_AUTH_BUSY' });
+  }
+  const requestId = randomBytes(24).toString('hex');
+  const pollSecret = randomBytes(32).toString('hex');
+  const approvalSecret = randomBytes(32).toString('hex');
+  const expiresAt = Date.now() + desktopAuthTtlMs;
+  desktopAuthRequests.set(requestId, {
+    pollHash: createHash('sha256').update(pollSecret).digest(),
+    approvalHash: createHash('sha256').update(approvalSecret).digest(),
+    expiresAt,
+    state: 'pending',
+  });
+  return res.json({
+    success: true, requestId, pollSecret,
+    approvalUrl: `https://tunnelsight.applications.co.zw/desktop/connect.html#id=${requestId}&key=${approvalSecret}`,
+    expiresAt: new Date(expiresAt).toISOString(),
+  });
+});
+
+app.post('/api/desktop/auth/poll', desktopAuthRateLimit(180, 60_000), (req, res) => {
+  const record = desktopAuthRecord(req.body?.requestId, req.body?.pollSecret, 'pollHash');
+  if (!record) return res.status(404).json({ success: false, error: 'DESKTOP_AUTH_INVALID_OR_EXPIRED' });
+  if (record.state !== 'approved' || !record.session) return res.json({ success: true, status: 'pending' });
+  // Consume synchronously, before another poll can obtain the same session.
+  desktopAuthRequests.delete(req.body.requestId);
+  return res.json({ success: true, status: 'approved', token: record.session.token, user: record.session.user });
+});
+
+app.post('/api/desktop/auth/approve', desktopAuthRateLimit(30, desktopAuthTtlMs), async (req, res) => {
+  const requestId = req.body?.requestId;
+  const record = desktopAuthRecord(requestId, req.body?.approvalSecret, 'approvalHash');
+  if (!record) return res.status(404).json({ success: false, error: 'DESKTOP_AUTH_INVALID_OR_EXPIRED' });
+  if (record.state !== 'pending') return res.status(409).json({ success: false, error: 'DESKTOP_AUTH_ALREADY_APPROVED' });
+  // Reserve before authentication/database awaits to prevent duplicate sessions.
+  record.state = 'approving';
+  try {
+    const user = await authenticatedUser(req);
+    if (!user) return res.status(401).json({ success: false, error: 'AUTH_REQUIRED' });
+    const result = await database('desktop_login', { token: requestToken(req) });
+    if (desktopAuthRequests.get(requestId) !== record || record.expiresAt <= Date.now()) {
+      await database('logout', { token: result.token });
+      return res.status(404).json({ success: false, error: 'DESKTOP_AUTH_INVALID_OR_EXPIRED' });
+    }
+    record.session = { token: result.token, user: result.user };
+    record.state = 'approved';
+    return res.json({ success: true, status: 'approved' });
+  } catch {
+    // Never include database errors or session material in the browser response/logs.
+    return res.status(503).json({ success: false, error: 'DESKTOP_AUTH_APPROVAL_FAILED' });
+  } finally {
+    if (record.state === 'approving') record.state = 'pending';
+  }
 });
 
 // Authentication and database-backed projects/assets. Files are private to their owning user.

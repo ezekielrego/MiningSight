@@ -192,6 +192,12 @@ try:
         db.commit()
         row = db.execute('SELECT * FROM users WHERE id=?', (user_id,)).fetchone()
         output = {'user': user_payload(row), 'token': token}
+    elif OPERATION == 'desktop_login':
+        # Authenticate the existing browser session; never accept a caller-supplied user ID.
+        user = require_user()
+        token = create_session(user['id'])
+        db.commit()
+        output = {'user': user, 'token': token}
     elif OPERATION == 'me':
         user = auth_user(PAYLOAD.get('token'))
         if not user: raise ValueError('AUTH_REQUIRED')

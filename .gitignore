@@ -11,3 +11,5 @@ deploy-server/
 data/
 *.sqlite3
 server/__pycache__/
+desktop/release/
+desktop/resources/tools/

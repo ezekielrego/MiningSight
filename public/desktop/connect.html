@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-I4hy9A7w5BcBJpiUGyLJaCOsi8kOpMa4yqNRCMJSFIk=' https://accounts.google.com/gsi/client; style-src 'unsafe-inline' https://accounts.google.com/gsi/style; connect-src 'self' https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'none'">
+  <title>Connect desktop · TunnelSight</title>
+  <link rel="icon" href="/favicon.webp">
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; color: #f5efe8; background: #101011; }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin: 0; min-height: 100svh; display: grid; place-items: center; padding: 32px 18px; background: radial-gradient(ellipse at 50% 0, #392516 0, transparent 58%), #101011; }
+    main { width: 100%; max-width: 470px; }
+    .brand { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 30px; font-size: 22px; font-weight: 750; letter-spacing: -.6px; }
+    .brand img { width: 42px; height: 42px; border-radius: 10px; }
+    .brand span span { color: #f49a41; }
+    .card { padding: 36px; background: linear-gradient(145deg, #22201e, #19191a); border: 1px solid #44372b; border-radius: 22px; box-shadow: 0 24px 80px #0006; }
+    .eyebrow { color: #f5a253; font-size: 11px; font-weight: 750; letter-spacing: 2px; text-transform: uppercase; }
+    .device { width: 54px; height: 42px; margin: 25px 0; border: 2px solid #e99648; border-radius: 6px; position: relative; background: linear-gradient(135deg, #f49a4122, transparent); }
+    .device::after { content: ''; position: absolute; width: 26px; height: 2px; background: #e99648; bottom: -9px; left: 12px; }
+    h1 { margin: 0 0 12px; font-size: 28px; line-height: 1.2; letter-spacing: -.7px; }
+    p { font-size: 14px; line-height: 1.65; color: #bdb4aa; margin: 0 0 22px; }
+    .account { padding: 16px; border: 1px solid #484039; border-radius: 12px; margin-bottom: 22px; background: #ffffff04; }
+    .account small { display: block; color: #a89a8b; font-size: 11px; margin-bottom: 6px; }
+    #email { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+    button { font: inherit; cursor: pointer; min-height: 46px; border-radius: 10px; transition: background .15s; }
+    button:focus-visible { outline: 3px solid #ffc588; outline-offset: 4px; }
+    #approve { width: 100%; border: 1px solid #ffa552; background: #ed913b; color: #211307; font-size: 13px; font-weight: 750; padding: 12px; }
+    #approve:hover { background: #ffa552; }
+    button:disabled { opacity: .55; cursor: wait; }
+    #cancel { width: 100%; margin-top: 12px; color: #c4b6a8; background: transparent; border: 1px solid #484039; font-size: 13px; }
+    #cancel:hover { background: #ffffff08; }
+    #google { min-height: 44px; display: flex; justify-content: center; margin: 22px 0 6px; }
+    #notice { margin: 18px 0 0; color: #ffc08a; font-size: 13px; }
+    .footnote { text-align: center; font-size: 11px; line-height: 1.7; color: #998878; margin: 22px 12px 0; }
+    @media (max-width: 420px) { .card { padding: 26px 22px; } h1 { font-size: 25px; } }
+  </style>
+</head>
+<body>
+  <main hidden>
+    <div class="brand"><img src="/favicon.webp" alt=""><span>Tunnel<span>Sight</span></span></div>
+    <section class="card" aria-labelledby="title">
+      <div class="eyebrow">Desktop connection</div>
+      <div class="device" aria-hidden="true"></div>
+      <h1 id="title">Sign in on your desktop</h1>
+      <p id="description">Checking your sign-in…</p>
+      <div id="account" class="account" hidden><small>Continue with this account</small><div id="email"></div></div>
+      <div id="google" hidden></div>
+      <button id="approve" type="button" hidden>Sign in to TunnelSight Desktop</button>
+      <button id="cancel" type="button">Cancel</button>
+      <p id="notice" role="status" aria-live="polite"></p>
+    </section>
+    <p class="footnote">Only approve a connection you started in TunnelSight Desktop.<br>Connection links expire five minutes after they are created.</p>
+  </main>
+  <noscript>JavaScript is required to connect TunnelSight Desktop. Enable it and open a new connection link from the desktop app.</noscript>
+  <script>
+    (() => {
+      'use strict';
+      const fragment = new URLSearchParams(location.hash.slice(1));
+      let requestId = fragment.get('id') || '';
+      let approvalSecret = fragment.get('key') || '';
+      // Remove credentials from browser history before loading any external script.
+      history.replaceState(null, '', location.pathname);
+      if (window.top !== window.self) return;
+      document.querySelector('main').hidden = false;
+      const $ = (id) => document.getElementById(id);
+      const authBase = '/api/reconstruction/ai/auth';
+      let token = '';
+      let temporaryToken = false;
+      let finished = false;
+      let busy = false;
+      let expiryTimer;
+
+      async function api(url, body, bearer) {
+        const response = await fetch(url, {
+          method: body === undefined ? 'GET' : 'POST',
+          headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}) },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+          cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer',
+          signal: AbortSignal.timeout(15000),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          const error = new Error('Request failed');
+          error.code = data.error;
+          throw error;
+        }
+        return data;
+      }
+
+      function clearToken() {
+        if (temporaryToken && token) {
+          void fetch(`${authBase}/logout`, {
+            method: 'POST', headers: { Authorization: `Bearer ${token}` },
+            credentials: 'omit', cache: 'no-store', keepalive: true,
+          }).catch(() => {});
+        }
+        token = '';
+        temporaryToken = false;
+      }
+
+      function finish(title, description) {
+        finished = true;
+        clearTimeout(expiryTimer);
+        clearToken();
+        requestId = '';
+        approvalSecret = '';
+        $('title').textContent = title;
+        $('description').textContent = description;
+        for (const id of ['account', 'google', 'approve', 'cancel']) $(id).hidden = true;
+        $('notice').textContent = '';
+      }
+
+      function showAccount(user) {
+        if (finished) return;
+        $('description').textContent = 'Approve this connection to access your account and projects in TunnelSight Desktop.';
+        $('email').textContent = user.email || user.displayName || user.username;
+        $('account').hidden = false;
+        $('google').hidden = true;
+        $('approve').hidden = false;
+        $('notice').textContent = '';
+      }
+
+      async function googleCredential(result) {
+        if (finished || busy) return;
+        busy = true;
+        $('notice').textContent = 'Verifying your Google account…';
+        try {
+          const data = await api(`${authBase}/google`, { credential: result.credential });
+          token = data.token;
+          temporaryToken = true;
+          if (finished) clearToken();
+          else showAccount(data.user); // Approval always requires a separate button click.
+        } catch {
+          if (!finished) $('notice').textContent = 'Google sign-in failed. Please try again.';
+        } finally { busy = false; }
+      }
+
+      async function showGoogle() {
+        $('description').textContent = 'Continue with Google, then approve the connection to your desktop.';
+        const config = await api(`${authBase}/google/config`);
+        if (finished) return;
+        if (!config.clientId) throw new Error('Google sign-in unavailable');
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'https://accounts.google.com/gsi/client';
+          script.async = true;
+          script.referrerPolicy = 'no-referrer';
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+        if (finished) return;
+        google.accounts.id.initialize({ client_id: config.clientId, callback: googleCredential, auto_select: false });
+        $('google').hidden = false;
+        google.accounts.id.renderButton($('google'), {
+          theme: 'outline', size: 'large', text: 'continue_with', shape: 'rectangular',
+          logo_alignment: 'left', width: Math.min(320, $('google').clientWidth),
+        });
+      }
+
+      $('approve').addEventListener('click', async () => {
+        if (finished || busy || !token) return;
+        busy = true;
+        $('approve').disabled = true;
+        $('cancel').disabled = true;
+        $('notice').textContent = 'Connecting your desktop…';
+        try {
+          await api('/api/desktop/auth/approve', { requestId, approvalSecret }, token);
+          finish('You’re connected', 'Return to TunnelSight Desktop to continue. You can close this tab.');
+        } catch (error) {
+          if (finished) return;
+          if (error.code === 'DESKTOP_AUTH_INVALID_OR_EXPIRED') {
+            finish('Connection link expired', 'Start sign-in again from TunnelSight Desktop to get a new connection link.');
+          } else if (error.code === 'DESKTOP_AUTH_ALREADY_APPROVED') {
+            finish('Connection already approved', 'Return to TunnelSight Desktop. If it is not signed in, start a new connection.');
+          } else if (error.code === 'AUTH_REQUIRED') {
+            clearToken();
+            $('account').hidden = true;
+            $('approve').hidden = true;
+            await showGoogle().catch(() => { $('notice').textContent = 'Please open a new connection link and try again.'; });
+          } else {
+            $('notice').textContent = 'Could not confirm the connection. Check your desktop, or try again in a moment.';
+          }
+        } finally {
+          busy = false;
+          $('approve').disabled = false;
+          $('cancel').disabled = false;
+        }
+      });
+      $('cancel').addEventListener('click', () => {
+        if (!busy) finish('Sign-in cancelled', 'This tab will not approve the connection. You can close it and return to your desktop.');
+      });
+      window.addEventListener('pagehide', () => {
+        finish('Connection closed', 'Start a new sign-in from TunnelSight Desktop to continue.');
+      });
+
+      async function init() {
+        if (!/^[a-f0-9]{48}$/.test(requestId) || !/^[a-f0-9]{64}$/.test(approvalSecret)) {
+          finish('Invalid connection link', 'Start sign-in from TunnelSight Desktop and open the new link in your browser.');
+          return;
+        }
+        expiryTimer = setTimeout(() => finish('Connection link expired', 'Start sign-in again from TunnelSight Desktop to get a new link.'), 5 * 60 * 1000);
+        let savedToken = '';
+        try { savedToken = localStorage.getItem('miningsight_auth_token') || ''; } catch {}
+        if (savedToken) {
+          try {
+            const data = await api(`${authBase}/me`, undefined, savedToken);
+            if (finished) return;
+            token = savedToken;
+            showAccount(data.user);
+            return;
+          } catch { /* Keep the website's stored session unchanged. */ }
+        }
+        if (!finished) await showGoogle();
+      }
+      void init().catch(() => {
+        if (!finished) $('notice').textContent = 'Sign-in is unavailable. Check your connection, then open a new link from TunnelSight Desktop.';
+      });
+    })();
+  </script>
+</body>
+</html>

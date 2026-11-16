@@ -10,10 +10,13 @@ MiningSight is an interactive surface and subsurface visualisation workstation f
 
 - Main interface: [tunnelsight.applications.co.zw](https://tunnelsight.applications.co.zw/)
 - GOMERAX trial interface: [tunnelsight.applications.co.zw/gomerax-trial/](https://tunnelsight.applications.co.zw/gomerax-trial/)
+- Windows desktop app and setup: [tunnelsight.applications.co.zw/desktop/](https://tunnelsight.applications.co.zw/desktop/)
 
 The main interface includes a top-navigation switcher for moving between the connected visualisation experiences. Both interfaces use the same hosted environment while keeping their application routes and provider workflows separate.
 
 The application includes an About menu with the author profile, software overview, Terms of Use, and Privacy & Data Use notices. The source versions are available as [`docs/TERMS_OF_USE.md`](docs/TERMS_OF_USE.md) and [`docs/PRIVACY_AND_DATA_USE.md`](docs/PRIVACY_AND_DATA_USE.md).
+
+The optional Windows desktop app keeps the existing hosted workstation and adds local USB phone mirroring, a window picker, local preview, and start/stop streaming with bundled scrcpy and FFmpeg. Its installer and uninstaller work per user; cloud accounts, projects and files remain on the server. Sign in through your normal browser, then approve a separate desktop session. Mobile users receive a dismissible desktop recommendation. See [`desktop/README.md`](desktop/README.md) for build instructions and device-testing limits.
 
 ## Selected system evidence
 

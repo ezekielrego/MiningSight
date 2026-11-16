@@ -25,6 +25,7 @@ import { PictureViewerModal } from './components/modals/PictureViewerModal';
 import { RenderSettingsModal } from './components/modals/RenderSettingsModal';
 import { HelpGuideModal } from './components/modals/HelpGuideModal';
 import { OnboardingGuide } from './components/modals/OnboardingGuide';
+import { MobileDesktopNotice } from './components/modals/MobileDesktopNotice';
 import { AboutModal, AboutSection } from './components/modals/AboutModal';
 import { calculateCartZ, stepFrame } from './utils/math3d';
 import { CameraKeyframe, CameraTour, KeyframeAnnotation } from './types/cameraTour';
@@ -2022,6 +2023,7 @@ export default function App() {
 
   return (
     <div className={`w-screen h-screen flex flex-col overflow-hidden bg-[#292929] text-[#e0e0e0] font-sans ${panelsMinimized ? 'panels-minimized' : ''}`}>
+      <MobileDesktopNotice />
       {panelsMinimized && <button onClick={() => setPanelsMinimized(false)} aria-label="Restore panels" title="Restore panels" className="fixed right-3 top-3 z-[150] flex items-center gap-1.5 border border-white/20 bg-[#242424]/70 px-2 py-1.5 text-[10px] text-white opacity-60 shadow-lg backdrop-blur-sm hover:opacity-100 cursor-pointer"><Minimize2 className="h-3.5 w-3.5" />Restore panels</button>}
       {/* Hidden File Input for Opening Saved Projects */}
       <input

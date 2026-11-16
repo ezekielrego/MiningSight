@@ -1,0 +1,33 @@
+TunnelSight Desktop 1.0.0 — third-party runtime tools
+
+scrcpy 5.0.1 (unmodified official Windows x64 distribution)
+Copyright Genymobile and contributors, Apache License 2.0.
+License: tools/scrcpy/LICENSE.txt
+Source: https://github.com/Genymobile/scrcpy/tree/v5.0.1
+Distribution: https://github.com/Genymobile/scrcpy/releases/tag/v5.0.1
+SHA-256 archive: b12a2c4ee8be317422451fc7dcf8ee20a71b5ea7ef9ad73ddd825a25316227a5
+The scrcpy bundle includes adb, SDL and FFmpeg libraries with their own upstream
+copyrights and licenses. See the official distribution and build documentation.
+Android platform tools: https://android.googlesource.com/platform/packages/modules/adb/
+SDL source: https://github.com/libsdl-org/SDL
+
+FFmpeg 9.0.2 essentials build by Gyan Doshi (unmodified ffmpeg.exe)
+GNU General Public License version 3. The full license is included alongside
+the executable in tools/ffmpeg/LICENSE.txt. This program is provided without
+warranty. FFmpeg runs as an independent command-line process.
+Official binary and build information: https://www.gyan.dev/ffmpeg/builds/
+Source revision: https://github.com/FFmpeg/FFmpeg/commit/946fcce07b
+Corresponding upstream source archive: https://github.com/FFmpeg/FFmpeg/archive/946fcce07b.tar.gz
+Binary archive SHA-256: 60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba
+Build README: tools/ffmpeg/README.txt
+Included library source locations and build scripts: https://github.com/GyanD/codexffmpeg
+Source for x264: https://code.videolan.org/videolan/x264
+No modifications were made to these upstream programs.
+
+Electron 45.3.2 is licensed under MIT. Electron's LICENSE and Chromium's
+LICENSES.chromium.html are installed with the application. Chromium includes
+components with their own licenses documented there.
+https://github.com/electron/electron/tree/v45.3.2
+
+TunnelSight application source: https://github.com/ezekielrego/MiningSight/tree/main/desktop
+Contact: ezekiel@techinn.co.zw

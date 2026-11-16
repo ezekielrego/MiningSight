@@ -1,0 +1,31 @@
+TunnelSight Desktop — Ezekiel Rego
+
+TunnelSight Desktop connects to the existing TunnelSight service. Your projects,
+files, permissions and account remain managed by that service. The desktop app
+does not make cloud models, reconstruction APIs or cloud storage available offline.
+
+Local screen capture begins only when you choose a window and start streaming.
+Your selected window's video is transmitted to the TunnelSight relay associated
+with the email you supply. The email is a destination label, not authentication.
+Sign in through your browser to access your private projects in the workstation.
+Choose only windows you intend to share. Phone control remains in the local
+scrcpy mirror. No unattended remote control service is installed.
+
+You may stop streaming at any time. Closing TunnelSight stops its own mirror and
+encoder processes. Uninstall through Windows Settings > Apps. Uninstalling the
+desktop app does not delete server projects or files. Local application settings
+are retained for reinstalls; use Clear local data in Help before uninstalling to
+remove them. Your Android USB-debugging authorization is managed on the phone.
+
+The software is provided as available, without a guarantee of uninterrupted
+network or device compatibility. Survey accuracy requires genuine calibrated
+survey data. Review the service's About, Terms and Privacy pages for its data
+processing practices, including software and model improvements.
+
+scrcpy is distributed under Apache License 2.0. Its bundled Android platform
+tools and dependencies retain their own licenses. FFmpeg is distributed under
+its included GPL license; build information and corresponding source locations
+are supplied in Third-party notices. Electron and Chromium retain their bundled
+licenses. These notices do not replace third-party license terms.
+
+Contact: ezekiel@techinn.co.zw
