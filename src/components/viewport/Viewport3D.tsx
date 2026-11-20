@@ -667,7 +667,8 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       const center = bounds.getCenter(new THREE.Vector3());
       const largest = Math.max(size.x, size.y, size.z) || 1;
       const scale = Math.min(1, 28 / largest);
-      model.position.copy(center).multiplyScalar(-scale);
+      // Keep imported floors at ground level so walk eye-height remains usable.
+      model.position.set(-center.x * scale, -bounds.min.y * scale, -center.z * scale);
       model.scale.setScalar(scale);
       group.add(model);
       group.visible = !clearView;
@@ -691,6 +692,25 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         minZ: minZ < maxZ ? minZ : -23,
         maxZ: minZ < maxZ ? maxZ : 23,
       };
+      const authoredCamera = model.getObjectByProperty('isPerspectiveCamera', true) as THREE.PerspectiveCamera | undefined;
+      if (authoredCamera && cameraRef.current) {
+        group.updateMatrixWorld(true);
+        const position = authoredCamera.getWorldPosition(new THREE.Vector3());
+        const direction = authoredCamera.getWorldDirection(new THREE.Vector3()).normalize();
+        walkPosRef.current.copy(position);
+        walkVelocityRef.current.set(0, 0, 0);
+        walkYawRef.current = Math.atan2(-direction.x, -direction.z);
+        walkPitchRef.current = Math.asin(Math.max(-1, Math.min(1, direction.y)));
+        const limits = walkBoundsRef.current;
+        limits.minX = Math.min(limits.minX, position.x); limits.maxX = Math.max(limits.maxX, position.x);
+        limits.minY = Math.min(limits.minY, position.y); limits.maxY = Math.max(limits.maxY, position.y);
+        limits.minZ = Math.min(limits.minZ, position.z); limits.maxZ = Math.max(limits.maxZ, position.z);
+        cameraRef.current.fov = authoredCamera.fov;
+        cameraRef.current.updateProjectionMatrix();
+        manualNavigationRef.current = true;
+        onSetPlayback?.(false);
+        setNavMode('walk');
+      }
       setAssetLoadState('ready');
       setAssetLoadMessage('');
     };
