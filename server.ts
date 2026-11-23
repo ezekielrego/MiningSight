@@ -866,7 +866,7 @@ app.post('/api/ai/projects', async (req, res) => {
 
 // This endpoint only proposes scene edits. The browser previews, validates and
 // confirms them; saving uses the existing owner-scoped project endpoint.
-app.post('/api/reconstruction/ai/model-edit-proposal', async (req, res) => {
+app.post(['/api/reconstruction/ai/model-edit-proposal', '/api/ai/model-edit-proposal'], async (req, res) => {
   const user = await requireAuthenticated(req, res);
   if (!user) return;
   try {

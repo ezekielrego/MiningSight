@@ -29,7 +29,7 @@ Export part context downloads the current asset's metadata and units. A future p
 
 Allowed operations are `hide`, `show`, `remove` and `transform`. A transform includes one or more complete `position`, `rotation` or `scale` vectors with numeric `x`, `y`, `z`. Values are absolute and local to the parent: positions in centimetres, rotations in Euler XYZ degrees, scales as ratios. Use exact exported IDs, never guessed names. Respect inherited locks and request clarification when a target or requested change is uncertain. The limits are 500 operations per proposal, finite coordinates within ±1e9, and absolute scale components between 0.0001 and 10000.
 
-The authenticated endpoint is `POST /api/reconstruction/ai/model-edit-proposal`, with `{ projectId, assetId, guidance, objects: context.parts }`. It verifies project ownership and asset membership, validates the supplied unsaved part context and provider output, then returns `{ success: true, modelEditProposal }` or `{ success: true, clarification }`. This endpoint supports local project model assets. It does not edit external embedded world viewers.
+The authenticated endpoint is `POST /api/reconstruction/ai/model-edit-proposal`, with `{ projectId, assetId, guidance, objects: context.parts }`. The `/api/ai/model-edit-proposal` alias supports the production proxy rewrite. It verifies project ownership and asset membership, validates the supplied unsaved part context and provider output, then returns `{ success: true, modelEditProposal }` or `{ success: true, clarification }`. This endpoint supports local project model assets. It does not edit external embedded world viewers.
 
 Validation:
 

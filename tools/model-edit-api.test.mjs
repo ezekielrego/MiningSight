@@ -29,6 +29,7 @@ try {
   const body = { projectId: 'project_edits', assetId: 'asset_test', guidance: 'Hide Panel', objects: [part('imported:asset_test', 'Root'), part('imported:asset_test/0', 'Panel')] };
   const call = (token, changes = {}) => fetch(`http://127.0.0.1:${port}/api/reconstruction/ai/model-edit-proposal`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ ...body, ...changes }) });
   await start('');
+  assert.equal((await fetch(`http://127.0.0.1:${port}/api/ai/model-edit-proposal`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 401, 'production proxy rewrites the public route to /api/ai');
   assert.equal((await call('invalid')).status, 401);
   assert.equal((await call(other.token)).status, 404);
   assert.equal((await call(owner.token, { assetId: 'someone-elses-asset' })).status, 404);
