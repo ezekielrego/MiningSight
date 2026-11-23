@@ -27,6 +27,8 @@ import {
   Sliders as SlidersIcon,
   Map as MapIcon,
 } from 'lucide-react';
+import { ImportedModelController } from '../../scene/importedModel';
+import { importedRootId } from '../../scene/modelEditing';
 import { MiningTunnelRig, ShadingDisplayMode } from '../../scene/miningTunnelGenerator';
 import { TunnelPresetId, ProceduralTunnelParams } from '../../types/tunnelScene';
 import { TUNNEL_PRESETS, createTunnelRigByPreset, getPresetRootId } from '../../scene/tunnelPresetRegistry';
@@ -113,6 +115,10 @@ const ViewerOverlay: React.FC<ViewerOverlayProps> = ({ title, minimized, onToggl
 );
 
 interface Viewport3DProps {
+  onImportedModelLoaded?: (assetId: string, tree: C4DSceneObject) => void;
+  editingBlocked?: boolean;
+  onBeginTransform?: () => void;
+  onEndTransform?: () => void;
   selectedObject: C4DSceneObject | null;
   onSelectObject: (objId: string | null) => void;
   activeTool: ToolMode;
@@ -181,6 +187,10 @@ interface Viewport3DProps {
 }
 
 export const Viewport3D: React.FC<Viewport3DProps> = ({
+  onImportedModelLoaded,
+  editingBlocked = false,
+  onBeginTransform,
+  onEndTransform,
   selectedObject,
   onSelectObject,
   activeTool,
@@ -252,6 +262,14 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   const rulerLineRef = useRef<THREE.Line | null>(null);
   const gridHelperRef = useRef<THREE.GridHelper | null>(null);
   const externalModelGroupRef = useRef<THREE.Group | null>(null);
+  const importedControllerRef = useRef<ImportedModelController | null>(null);
+  const importedStateRef = useRef({ sceneObjects, onImportedModelLoaded, selectedObject });
+  importedStateRef.current = { sceneObjects, onImportedModelLoaded, selectedObject };
+  const intersectScene = (ray: THREE.Raycaster, root: THREE.Object3D) => importedControllerRef.current && root === externalModelGroupRef.current
+    ? importedControllerRef.current.intersections(ray) : ray.intersectObject(root, true).filter((hit) => {
+      for (let node: THREE.Object3D | null = hit.object; node; node = node.parent) if (!node.visible) return false;
+      return true;
+    });
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const liveCaptureRef = useRef<LiveFrameCapture | null>(null);
@@ -289,6 +307,8 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   const [shadingMode, setShadingMode] = useState<ShadingDisplayMode>('gouraud');
   const [showGrid, setShowGrid] = useState<boolean>(true);
   const [clearView, setClearView] = useState<boolean>(false);
+  const importedDisplayRef = useRef({ clearView, shadingMode });
+  importedDisplayRef.current = { clearView, shadingMode };
   const [displayMenuOpen, setDisplayMenuOpen] = useState<boolean>(false);
   const [cameraMenuOpen, setCameraMenuOpen] = useState<boolean>(false);
   const [viewMenuOpen, setViewMenuOpen] = useState<boolean>(false);
@@ -404,7 +424,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   const lastMousePosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchDistanceRef = useRef<number | null>(null);
-  const transformDragRef = useRef<{ position: Vector3D; rotation: Vector3D; scale: Vector3D } | null>(null);
+  const transformDragRef = useRef<{ position: Vector3D; rotation: Vector3D; scale: Vector3D; pointerX: number; pointerY: number } | null>(null);
 
   const clampWalkPosition = useCallback((position: THREE.Vector3) => {
     const bounds = walkBoundsRef.current;
@@ -636,13 +656,8 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     if (!scene) return;
     if (externalModelGroupRef.current) {
       scene.remove(externalModelGroupRef.current);
-      externalModelGroupRef.current.traverse((child) => {
-        const mesh = child as THREE.Mesh;
-        if (mesh.geometry) mesh.geometry.dispose();
-        const material = mesh.material as THREE.Material | THREE.Material[] | undefined;
-        if (Array.isArray(material)) material.forEach((item) => item.dispose());
-        else material?.dispose();
-      });
+      importedControllerRef.current?.dispose();
+      importedControllerRef.current = null;
       externalModelGroupRef.current = null;
     }
     if (!activeAsset || activeAsset.kind !== 'model') {
@@ -660,7 +675,11 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     draco.setDecoderPath('/draco/');
     const extension = activeAsset.name.split('.').pop()?.toLowerCase() || '';
     const addLoadedModel = (model: THREE.Object3D) => {
-      if (cancelled) return;
+      if (cancelled) {
+        const discarded = new THREE.Group(); discarded.add(model);
+        new ImportedModelController(discarded, activeAsset).dispose();
+        return;
+      }
       const group = new THREE.Group();
       group.name = `Loaded_${activeAsset.name}`;
       const bounds = new THREE.Box3().setFromObject(model);
@@ -672,7 +691,12 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       model.position.set(-center.x * scale, -bounds.min.y * scale, -center.z * scale);
       model.scale.setScalar(scale);
       group.add(model);
-      group.visible = !clearView;
+      const controller = new ImportedModelController(group, activeAsset);
+      importedControllerRef.current = controller;
+      const saved = importedStateRef.current.sceneObjects.find((object) => object.id === importedRootId(activeAsset.id));
+      controller.applyScene(saved ? [saved] : [controller.tree], importedDisplayRef.current.clearView);
+      controller.setDisplayMode(importedDisplayRef.current.shadingMode);
+      importedStateRef.current.onImportedModelLoaded?.(activeAsset.id, controller.tree);
       externalModelGroupRef.current = group;
       scene.add(group);
       const loadedBounds = new THREE.Box3().setFromObject(group);
@@ -741,7 +765,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       cancelled = true;
       draco.dispose();
     };
-  }, [activeAsset, clearView, connectedViewerReload]);
+  }, [activeAsset?.id, activeAsset?.url, connectedViewerReload]);
 
   useEffect(() => {
     if (!activeAsset || !['model', 'world', 'image', 'video'].includes(activeAsset.kind) || assetLoadState !== 'loading') return;
@@ -767,8 +791,20 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   }, [activeAsset?.id, activeAsset?.kind, connectedViewerReload]);
 
   useEffect(() => {
-    if (externalModelGroupRef.current) externalModelGroupRef.current.visible = !clearView;
-  }, [clearView]);
+    const controller = importedControllerRef.current;
+    if (!controller) return;
+    controller.applyScene(sceneObjects, clearView);
+    controller.setSelection(selectedObject?.id || null);
+    const node = selectedObject ? controller.nodes.get(selectedObject.id) : null;
+    if (gizmoGroupRef.current && activeAsset?.kind === 'model') {
+      gizmoGroupRef.current.visible = Boolean(node && selectedObject && !selectedObject.locked && !editingBlocked && !clearView && ['move', 'rotate', 'scale'].includes(activeTool));
+      if (node) gizmoGroupRef.current.position.copy(node.getWorldPosition(new THREE.Vector3()));
+    }
+  }, [sceneObjects, clearView, selectedObject, activeTool, editingBlocked, assetLoadState]);
+
+  useEffect(() => {
+    importedControllerRef.current?.setDisplayMode(shadingMode);
+  }, [shadingMode, assetLoadState]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -1211,7 +1247,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     const mouseY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), cameraRef.current);
-    const hit = raycaster.intersectObject(interactiveRoot, true)[0];
+    const hit = intersectScene(raycaster, interactiveRoot)[0];
     if (!hit) return;
 
     const point = hit.point;
@@ -1457,7 +1493,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     const mouseY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), cameraRef.current);
-    const hit = raycaster.intersectObject(interactiveRoot, true)[0];
+    const hit = intersectScene(raycaster, interactiveRoot)[0];
     if (!hit) return;
     targetRef.current.copy(hit.point);
     sphericalRef.current.radius = Math.max(4, Math.min(220, sphericalRef.current.radius));
@@ -1496,7 +1532,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       const mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), cameraRef.current);
-      const hits = raycaster.intersectObject(interactiveRoot, true);
+      const hits = intersectScene(raycaster, interactiveRoot);
       if (hits.length > 0) {
         const point = hits[0].point;
         setPendingAnnotationPosition({ x: Number(point.x.toFixed(3)), y: Number(point.y.toFixed(3)), z: Number(point.z.toFixed(3)) });
@@ -1514,7 +1550,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       const mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), cameraRef.current);
-      const hits = raycaster.intersectObject(interactiveRoot, true);
+      const hits = intersectScene(raycaster, interactiveRoot);
       if (hits.length > 0) {
         const pt = hits[0].point;
         if (rulerPoints.length === 0 || rulerPoints.length >= 2) {
@@ -1544,10 +1580,10 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         const rect = canvas.getBoundingClientRect();
         const ray = new THREE.Raycaster();
         ray.setFromCamera(new THREE.Vector2(((e.clientX-rect.left)/rect.width)*2-1, -((e.clientY-rect.top)/rect.height)*2+1), cameraRef.current);
-        if (!ray.intersectObject(interactiveRoot, true).length) {
-          setHighlightedSelectionId(null);
-          onSelectObject(null);
-        }
+        const hit = intersectScene(ray, interactiveRoot)[0]?.object;
+        const pickedId = hit ? resolveSelectableObjectId(hit, getPresetRootId(currentPresetId)) : null;
+        setHighlightedSelectionId(pickedId);
+        onSelectObject(pickedId);
       }
     } else {
       // Any direct pointer navigation takes ownership from a paused tour path.
@@ -1558,7 +1594,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         const mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), cameraRef.current);
-        const hit = raycaster.intersectObject(interactiveRoot, true)[0]?.object;
+        const hit = intersectScene(raycaster, interactiveRoot)[0]?.object;
         const pickedId = hit ? resolveSelectableObjectId(hit, getPresetRootId(currentPresetId)) : null;
         setHighlightedSelectionId(pickedId);
         onSelectObject(pickedId);
@@ -1570,19 +1606,21 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       // Orbit owns the normal left-drag gesture. Hold Shift when a Move/Rotate/Scale
       // tool should transform the selected object, so the viewer can never feel stuck
       // just because an object-editing tool was active on load.
-      if (e.button === 0 && e.shiftKey && !e.altKey && activeTool !== 'live_selection' && selectedObject && !activeProjectId && cameraRef.current && miningTunnelRigRef.current) {
+      if (e.button === 0 && e.shiftKey && !e.altKey && activeTool !== 'live_selection' && selectedObject && !selectedObject.locked && !editingBlocked && cameraRef.current && interactiveRoot) {
         const rect = canvas.getBoundingClientRect();
         const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
         const mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), cameraRef.current);
-        const intersects = raycaster.intersectObject(miningTunnelRigRef.current.root, true);
+        const intersects = intersectScene(raycaster, interactiveRoot);
         if (intersects.length > 0) {
           const hit = intersects[0].object;
           const rootId = getPresetRootId(currentPresetId);
           const hitId = resolveSelectableObjectId(hit, rootId);
-          if (selectedObject.id === hitId) {
+          if (selectedObject.id === hitId || hitId?.startsWith(`${selectedObject.id}/`)) {
+            onBeginTransform?.();
             transformDragRef.current = {
+              pointerX: e.clientX, pointerY: e.clientY,
               position: { ...selectedObject.position },
               rotation: { ...selectedObject.rotation },
               scale: { ...selectedObject.scale },
@@ -1604,7 +1642,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
           const mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
           const raycaster = new THREE.Raycaster();
           raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), cameraRef.current);
-          const intersects = raycaster.intersectObject(interactiveRoot, true);
+          const intersects = intersectScene(raycaster, interactiveRoot);
           if (intersects.length > 0) {
             const hit = intersects[0].object;
             const pickedId = resolveSelectableObjectId(hit, getPresetRootId(currentPresetId));
@@ -1644,6 +1682,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
       walkPitchRef.current = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, walkPitchRef.current - dy * 0.005));
     } else if (dragModeRef.current === 'transform' && transformDragRef.current && selectedObject && onUpdateTransform) {
       const start = transformDragRef.current;
+      const dx = e.clientX - start.pointerX, dy = e.clientY - start.pointerY;
       if (activeTool === 'move') {
         onUpdateTransform(
           { ...start.position, x: start.position.x + dx * 0.6, y: start.position.y - dy * 0.6 },
@@ -1676,6 +1715,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     gasLastStampRef.current = null;
     isDraggingRef.current = false;
     dragModeRef.current = 'none';
+    if (transformDragRef.current) onEndTransform?.();
     transformDragRef.current = null;
     try {
       canvasRef.current?.releasePointerCapture(e.pointerId);
@@ -1687,6 +1727,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     if (activePointersRef.current.size < 2) pinchDistanceRef.current = null;
     isDraggingRef.current = false;
     dragModeRef.current = 'none';
+    if (transformDragRef.current) onEndTransform?.();
     transformDragRef.current = null;
     try {
       canvasRef.current?.releasePointerCapture(e.pointerId);

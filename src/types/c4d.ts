@@ -29,6 +29,7 @@ export interface C4DMaterial {
 
 export interface C4DSceneObject {
   id: string;
+  importedAssetId?: string;
   name: string;
   type: 'submarine' | 'cube' | 'cylinder' | 'sphere' | 'camera' | 'light' | 'group';
   position: Vector3D;

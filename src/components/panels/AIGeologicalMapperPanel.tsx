@@ -36,9 +36,13 @@ import {
   ReconstructionMapSelection,
 } from '../../types/aiSurvey';
 import { ProjectAsset, ProjectProvider } from '../../types/project';
+import { GuidedModelEdits, type EditableModelContext } from './GuidedModelEdits';
 import { createSingleImageMapDraft, SINGLE_IMAGE_RECONSTRUCTION_PROMPT } from '../../utils/singleImageReconstruction';
 
 interface AIGeologicalMapperPanelProps {
+  modelEditContext?: EditableModelContext | null;
+  modelEditProjectId?: string | null;
+  onModelEditProposal?: (proposal: unknown) => void;
   reconstructionOpenToken?: number;
   onStatusChange: (status: StatusAlert) => void;
   onApply3DMarkers?: (points: Array<{ stationId: string; x: number; y: number; z: number; color: string; label: string }>) => void;
@@ -103,6 +107,9 @@ interface AISettingsState {
 }
 
 export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = ({
+  modelEditContext = null,
+  modelEditProjectId = null,
+  onModelEditProposal,
   reconstructionOpenToken = 0,
   onStatusChange,
   onApply3DMarkers,
@@ -1271,6 +1278,7 @@ export const AIGeologicalMapperPanel: React.FC<AIGeologicalMapperPanelProps> = (
         </div>
       </div>
 
+      {modelEditContext && onModelEditProposal && <GuidedModelEdits key={`${modelEditProjectId}:${modelEditContext.assetId}`} context={modelEditContext} projectId={modelEditProjectId} authToken={authToken} onProposal={onModelEditProposal} />}
       {/* Sub Tabs - Responsive flex-wrap / horizontal scroll */}
       {focusedReconstruction && <div className="min-h-7 bg-[#292929] border-b border-[#222] flex items-center justify-between px-2 py-1 flex-shrink-0">
         <span className="text-[10px] font-semibold text-[#e88724]">New reconstruction · user references only</span>

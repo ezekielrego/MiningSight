@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { Minimize2 } from 'lucide-react';
 import { C4DMaterial, C4DSceneObject, TimelineState, ToolMode, Vector3D } from './types/c4d';
 import { createDefaultReconstructionMap, createEmptyReconstructionMap, ReconstructionBrief, ReconstructionMapFeature, ReconstructionMapGeometry, ReconstructionMapPoint, ReconstructionMapSelection, StatusAlert } from './types/aiSurvey';
@@ -32,6 +32,8 @@ import { CameraKeyframe, CameraTour, KeyframeAnnotation } from './types/cameraTo
 import { getDefaultCameraTours } from './utils/cameraAnimation';
 import { TunnelPresetId, ProceduralTunnelParams } from './types/tunnelScene';
 import { TUNNEL_PRESETS, getCombinedSceneObjects, getAllCombinedMaterials, getPresetRootId } from './scene/tunnelPresetRegistry';
+import { applyModelEdits, editableModelContext, importedRootId, updateSceneObject, validTransform, validateModelEditProposal, type ModelEditProposal } from './scene/modelEditing';
+import { ModelEditReview } from './components/modals/ModelEditReview';
 import { AuthUser, GasMark, MediaMarker, ProjectAsset, ProjectProvider, ProjectSummary, StorageQuota } from './types/project';
 
 declare global {
@@ -424,6 +426,16 @@ export default function App() {
   // Built-in scenes and saved assets load only after an explicit user choice.
   const [objects, setObjects] = useState<C4DSceneObject[]>([]);
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
+  const [modelEditProposal, setModelEditProposal] = useState<ModelEditProposal | null>(null);
+  const [modelEditPreview, setModelEditPreview] = useState(false);
+  const proposalBaseRef = useRef('');
+  const transformGestureRef = useRef(false);
+  const handleImportedModelLoaded = useCallback((assetId: string, tree: C4DSceneObject) => {
+    setObjects((current) => current.some((object) => object.id === tree.id) ? current : [...current, tree]);
+    setSelectedObjectId((current) => current?.startsWith(importedRootId(assetId)) ? current : tree.id);
+    setMaterials([]);
+    setSelectedMaterialId(null);
+  }, []);
   const [walkPosition, setWalkPosition] = useState<Vector3D | null>(null);
   const [cameraPositionRequest, setCameraPositionRequest] = useState<{ id: number; position: Vector3D } | null>(null);
   const handleWalkPositionChange = useCallback((position: Vector3D | null) => {
@@ -760,6 +772,8 @@ export default function App() {
       });
       return false;
     }
+    setModelEditProposal(null); setModelEditPreview(false);
+    setHistoryStack([]); setRedoStack([]);
     // Clear the previous project's asset view immediately while the selected project loads.
     setActiveProjectId(projectId);
     setProjectAssets([]);
@@ -1061,6 +1075,7 @@ export default function App() {
   }, [activeProjectId, buildProjectData, mediaMarkers, persistTours, projectAssets, projectName, queueGasMarksSave, saveProjectSnapshot, tours]);
 
   const handleToggleSolo = () => {
+    if (modelEditProposal) return;
     if (!selectedObjectId) {
       setStatusAlert({ type: 'idle', message: 'Select an object before enabling Solo Mode.' });
       return;
@@ -1088,6 +1103,8 @@ export default function App() {
 
   // Preset switching handler
   const handleSelectPreset = useCallback((presetId: TunnelPresetId, customParams?: ProceduralTunnelParams) => {
+    setModelEditProposal(null); setModelEditPreview(false);
+    setHistoryStack([]); setRedoStack([]);
     setActiveAssetId(null);
     setActiveProjectId(null);
     setIsLiveStreamOpen(false);
@@ -1359,6 +1376,7 @@ export default function App() {
 
   // Undo Handler
   const handleUndo = useCallback(() => {
+    if (modelEditProposal) return;
     if (showMap) {
       const previousMap = mapHistoryStack[mapHistoryStack.length - 1];
       if (!previousMap) {
@@ -1387,10 +1405,11 @@ export default function App() {
       message: 'Undo executed.',
       timestamp: new Date().toLocaleTimeString(),
     });
-  }, [historyStack, mapHistoryStack, objects, reconstructionMapGeometry, showMap]);
+  }, [historyStack, mapHistoryStack, objects, reconstructionMapGeometry, showMap, modelEditProposal]);
 
   // Redo Handler
   const handleRedo = useCallback(() => {
+    if (modelEditProposal) return;
     if (showMap) {
       const nextMap = mapRedoStack[mapRedoStack.length - 1];
       if (!nextMap) {
@@ -1419,7 +1438,7 @@ export default function App() {
       message: 'Redo executed.',
       timestamp: new Date().toLocaleTimeString(),
     });
-  }, [mapRedoStack, objects, reconstructionMapGeometry, redoStack, showMap]);
+  }, [mapRedoStack, objects, reconstructionMapGeometry, redoStack, showMap, modelEditProposal]);
 
   // Keyboard Shortcuts (Standard Cinema 4D keys + F8 Play/Pause)
   useEffect(() => {
@@ -1482,6 +1501,7 @@ export default function App() {
 
   // Revert Project Baseline (Working Revert Arrow ↺)
   const handleRevertProject = useCallback(() => {
+    setModelEditProposal(null); setModelEditPreview(false);
     pushUndoState();
     setObjects(getCombinedSceneObjects('rugged_timbered_photo'));
     setMaterials(getAllCombinedMaterials());
@@ -1590,51 +1610,27 @@ export default function App() {
     }
   }, [currentPresetId, handleSelectPreset]);
 
-  // Update object transform
-  const handleUpdateTransform = useCallback(
-    (pos: Vector3D, rot: Vector3D, scale: Vector3D) => {
-      if (!selectedObjectId) return;
-      pushUndoState();
-      setObjects((prev) =>
-        prev.map((obj) => {
-          if (obj.id === selectedObjectId) {
-            return { ...obj, position: pos, rotation: rot, scale };
-          }
-          if (obj.children) {
-            return {
-              ...obj,
-              children: obj.children.map((c) =>
-                c.id === selectedObjectId ? { ...c, position: pos, rotation: rot, scale } : c
-              ),
-            };
-          }
-          return obj;
-        })
-      );
-    },
-    [selectedObjectId]
-  );
+  const editableObject = (id: string) => {
+    const path = findSceneObjectPath(objects, id);
+    return path && !path.some((object) => object.locked) && !modelEditProposal ? path[path.length - 1] : null;
+  };
 
-  // Update object properties (e.g. name, visibility)
+  // Imported parts can be nested arbitrarily deeply in a GLB hierarchy.
+  const handleUpdateTransform = (pos: Vector3D, rot: Vector3D, scale: Vector3D) => {
+    if (!selectedObjectId || !editableObject(selectedObjectId)) return;
+    if (!validTransform(pos, 'position') || !validTransform(rot, 'rotation') || !validTransform(scale, 'scale')) {
+      setStatusAlert({ type: 'error', message: 'Enter finite coordinates and a non-zero scale.' }); return;
+    }
+    if (!transformGestureRef.current) pushUndoState();
+    setObjects((current) => updateSceneObject(current, selectedObjectId, (object) => ({ ...object, position: pos, rotation: rot, scale })));
+  };
+
   const handleUpdateProperty = (key: string, val: any) => {
-    if (!selectedObjectId) return;
+    if (!selectedObjectId || modelEditProposal || !['name', 'locked', 'visibleInEditor', 'visibleInRenderer'].includes(key)) return;
+    const path = findSceneObjectPath(objects, selectedObjectId);
+    if (!path || path.slice(0, -1).some((object) => object.locked) || (key !== 'locked' && !editableObject(selectedObjectId))) return;
     pushUndoState();
-    setObjects((prev) =>
-      prev.map((obj) => {
-        if (obj.id === selectedObjectId) {
-          return { ...obj, [key]: val };
-        }
-        if (obj.children) {
-          return {
-            ...obj,
-            children: obj.children.map((c) =>
-              c.id === selectedObjectId ? { ...c, [key]: val } : c
-            ),
-          };
-        }
-        return obj;
-      })
-    );
+    setObjects((current) => updateSceneObject(current, selectedObjectId, (object) => ({ ...object, [key]: val })));
   };
 
   // Toggle editor / renderer visibility
@@ -1656,68 +1652,15 @@ export default function App() {
       }
     }
 
-    setObjects((prev) =>
-      prev.map((obj) => {
-        if (obj.id === id) {
-          return target === 'editor'
-            ? { ...obj, visibleInEditor: !obj.visibleInEditor }
-            : { ...obj, visibleInRenderer: !obj.visibleInRenderer };
-        }
-        if (obj.children) {
-          return {
-            ...obj,
-            children: obj.children.map((c) => {
-              if (c.id === id) {
-                return target === 'editor'
-                  ? { ...c, visibleInEditor: !c.visibleInEditor }
-                  : { ...c, visibleInRenderer: !c.visibleInRenderer };
-              }
-              if (c.children) {
-                return {
-                  ...c,
-                  children: c.children.map((sub) =>
-                    sub.id === id
-                      ? target === 'editor'
-                        ? { ...sub, visibleInEditor: !sub.visibleInEditor }
-                        : { ...sub, visibleInRenderer: !sub.visibleInRenderer }
-                      : sub
-                  ),
-                };
-              }
-              return c;
-            }),
-          };
-        }
-        return obj;
-      })
-    );
+    if (!editableObject(id)) return;
+    pushUndoState();
+    setObjects((current) => updateSceneObject(current, id, (object) => target === 'editor'
+      ? { ...object, visibleInEditor: !object.visibleInEditor }
+      : { ...object, visibleInRenderer: !object.visibleInRenderer }));
   };
 
-  // Toggle hierarchy expansion
   const handleToggleExpand = (id: string) => {
-    setObjects((prev) =>
-      prev.map((obj) => {
-        if (obj.id === id) return { ...obj, expanded: !obj.expanded };
-        if (obj.children) {
-          return {
-            ...obj,
-            children: obj.children.map((c) => {
-              if (c.id === id) return { ...c, expanded: !c.expanded };
-              if (c.children) {
-                return {
-                  ...c,
-                  children: c.children.map((sub) =>
-                    sub.id === id ? { ...sub, expanded: !sub.expanded } : sub
-                  ),
-                };
-              }
-              return c;
-            }),
-          };
-        }
-        return obj;
-      })
-    );
+    setObjects((current) => updateSceneObject(current, id, (object) => ({ ...object, expanded: !object.expanded })));
   };
 
   // Add new primitive object
@@ -1752,9 +1695,13 @@ export default function App() {
 
   // Delete object
   const handleDeleteObject = (id: string) => {
+    const target = editableObject(id);
+    if (!target) return;
     pushUndoState();
-    setObjects((prev) => removeSceneObjectById(prev, id));
-    if (selectedObjectId === id) setSelectedObjectId(null);
+    setObjects((current) => target.importedAssetId
+      ? applyModelEdits(current, [{ type: 'remove', targetId: id }])
+      : removeSceneObjectById(current, id));
+    if (selectedObjectId === id || findSceneObjectPath(target.children || [], selectedObjectId || '')) setSelectedObjectId(null);
     setStatusAlert({
       type: 'idle',
       message: `Deleted object ${id}.`,
@@ -1975,6 +1922,29 @@ export default function App() {
   }, []);
 
   // Selected Object lookup (recursive through all child levels)
+  const handleModelEditProposal = (value: unknown) => {
+    try {
+      const asset = projectAssets.find((item) => item.id === activeAssetId && item.kind === 'model');
+      if (!asset || !activeProjectId || activeProjectId.startsWith('provider_')) throw new Error('Open an editable model in a local project first.');
+      const proposal = validateModelEditProposal(value, objects, asset.id);
+      proposalBaseRef.current = JSON.stringify(objects);
+      setModelEditProposal(proposal); setModelEditPreview(false);
+    } catch (error: any) { setStatusAlert({ type: 'error', message: error.message }); }
+  };
+  const closeModelEditProposal = () => { setModelEditProposal(null); setModelEditPreview(false); };
+  const confirmModelEditProposal = () => {
+    try {
+      if (!modelEditPreview || !modelEditProposal || activeAssetId !== modelEditProposal.assetId || JSON.stringify(objects) !== proposalBaseRef.current) throw new Error('The model changed. Request a new proposal before applying edits.');
+      const checked = validateModelEditProposal(modelEditProposal, objects, activeAssetId);
+      pushUndoState();
+      setObjects(applyModelEdits(objects, checked.operations));
+      closeModelEditProposal();
+      setStatusAlert({ type: 'success', message: 'Guided model edits applied. Undo is available; save the project to keep these changes.' });
+    } catch (error: any) { setStatusAlert({ type: 'error', message: error.message }); closeModelEditProposal(); }
+  };
+  const displayObjects = useMemo(() => modelEditPreview && modelEditProposal
+    ? applyModelEdits(objects, modelEditProposal.operations) : objects, [modelEditPreview, modelEditProposal, objects]);
+
   const findObjectById = (list: C4DSceneObject[], targetId: string | null): C4DSceneObject | null => {
     if (!targetId) return null;
     for (const item of list) {
@@ -1989,6 +1959,7 @@ export default function App() {
 
   const selectedObject = findObjectById(objects, selectedObjectId);
   const activeAsset = projectAssets.find((asset) => asset.id === activeAssetId) || null;
+  const modelEditContext = useMemo(() => activeAsset?.kind === 'model' ? editableModelContext(objects, activeAsset.id) : null, [objects, activeAsset?.id, activeAsset?.kind]);
   const markHistoryItems: MarkHistoryItem[] = [
     ...tours.flatMap((tour) => tour.keyframes.flatMap((keyframe) => (keyframe.annotations || []).map((annotation) => ({
       id: annotation.id,
@@ -2042,6 +2013,7 @@ export default function App() {
 
       {/* 1. Main Top Menu Bar */}
       <div data-workspace-chrome className="shrink-0">
+      {modelEditProposal && <ModelEditReview proposal={modelEditProposal} objects={objects} preview={modelEditPreview} onPreview={() => setModelEditPreview((value) => !value)} onCancel={closeModelEditProposal} onConfirm={confirmModelEditProposal} />}
       <MenuBar
         onMinimizePanels={() => setPanelsMinimized(true)}
         onOpenReconstruction={() => { setActiveUpperTab('AI Survey'); setReconstructionOpenToken(value => value + 1); }}
@@ -2157,6 +2129,9 @@ export default function App() {
         }
         aiSurveyPanel={
           <AIGeologicalMapperPanel
+            modelEditContext={modelEditContext}
+            modelEditProjectId={activeProjectId}
+            onModelEditProposal={handleModelEditProposal}
             reconstructionOpenToken={reconstructionOpenToken}
             projectTitle={`${projectName} - Surface & Subsurface Mapping`}
             onStatusChange={setStatusAlert}
@@ -2227,7 +2202,11 @@ export default function App() {
             activeTool={activeTool}
             activeLeftMode={activeLeftMode}
             materials={materials}
-            sceneObjects={objects}
+            sceneObjects={displayObjects}
+            onImportedModelLoaded={handleImportedModelLoaded}
+            editingBlocked={Boolean(modelEditProposal)}
+            onBeginTransform={() => { if (!modelEditProposal) { pushUndoState(); transformGestureRef.current = true; } }}
+            onEndTransform={() => { transformGestureRef.current = false; }}
             cameraResetRequest={cameraResetRequest}
             isPlaying={timeline.isPlaying}
             currentFrame={timeline.currentFrame}
@@ -2324,7 +2303,7 @@ export default function App() {
         }
         objectManager={
           <ObjectManager
-            objects={objects}
+            objects={activeAsset?.kind === 'model' ? displayObjects.filter((object) => object.importedAssetId === activeAsset.id) : objects.filter((object) => !object.importedAssetId)}
             selectedObjectId={selectedObjectId}
             onSelectObject={handleSelectObject}
             onToggleVisibility={handleToggleVisibility}
@@ -2362,6 +2341,8 @@ export default function App() {
             onSelectAsset={(asset) => {
               setShowMap(false);
               setIsLiveStreamOpen(false);
+              closeModelEditProposal();
+              setSelectedObjectId(null);
               setActiveAssetId(asset.id);
               setStatusAlert({ type: 'idle', message: `Loaded ${asset.name} into the viewport.`, timestamp: new Date().toLocaleTimeString() });
             }}

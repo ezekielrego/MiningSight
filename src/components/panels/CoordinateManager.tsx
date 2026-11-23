@@ -84,7 +84,7 @@ export const CoordinateManager: React.FC<CoordinateManagerProps> = ({
             <span className="w-1 h-1 bg-[#888] rounded-full inline-block"></span>
             <span className="w-1 h-1 bg-[#888] rounded-full inline-block"></span>
           </div>
-          <span className="text-[#aaa] truncate text-[10px]" title={isWalk ? 'Camera location in model metres; coordinates outside the model bounds are limited to its edge.' : 'Selected object coordinates'}>{isWalk ? 'Walk position · m' : 'Object coordinates'}</span>
+          <span className="text-[#aaa] truncate text-[10px]" title={isWalk ? 'Camera location in model metres; coordinates outside the model bounds are limited to its edge.' : selectedObject?.importedAssetId ? 'Local to parent: centimetres, degrees and scale ratios.' : 'Selected object coordinates'}>{isWalk ? 'Walk position · m' : selectedObject?.importedAssetId ? 'Local object coordinates · cm' : 'Object coordinates'}</span>
         </div>
       </div>
 
@@ -235,7 +235,8 @@ export const CoordinateManager: React.FC<CoordinateManagerProps> = ({
         <div className="flex flex-wrap gap-1 items-center justify-between pt-2 border-t border-[#262626] text-[11px]">
           <fieldset disabled={isWalk} className={`flex min-w-0 items-center gap-1 ${isWalk ? 'opacity-40' : ''}`}>
             <select
-              value={coordState.system}
+              value={selectedObject?.importedAssetId ? 'object' : coordState.system}
+              disabled={Boolean(selectedObject?.importedAssetId)}
               onChange={(e) =>
                 setCoordState({
                   ...coordState,
@@ -249,7 +250,8 @@ export const CoordinateManager: React.FC<CoordinateManagerProps> = ({
             </select>
 
             <select
-              value={coordState.transformType}
+              value={selectedObject?.importedAssetId ? 'scale' : coordState.transformType}
+              disabled={Boolean(selectedObject?.importedAssetId)}
               onChange={(e) =>
                 setCoordState({
                   ...coordState,

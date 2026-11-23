@@ -126,6 +126,8 @@ Server configuration belongs in `.env`. The public application URL is configured
 
 ## Deployment layout
 
+Imported model parts now support vertex, wireframe and shaded display, nested selection, visibility, transforms, removal and undo/redo. Save the project to retain edits. AI Survey includes guided edit proposals with temporary preview and explicit confirmation, plus a JSON contract for future AI connections. See [imported model editing](docs/imported-model-editing.md) for controls, limitations and the API contract.
+
 The production site is hosted at `https://tunnelsight.applications.co.zw/`. The main application is served at the root path, while the GOMERAX trial is available at `/gomerax-trial/`. API routes and uploaded project data remain on the server so that files can be validated, tracked, and associated with the correct user and project.
 
 ## Project structure
