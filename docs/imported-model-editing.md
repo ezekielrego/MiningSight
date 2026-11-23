@@ -2,6 +2,8 @@
 
 Load a saved local project, then explicitly open its model asset. The viewer still starts empty on page load. Imported models now register their original hierarchy in Objects, with stable IDs based on asset ID and child index paths. Expand the hierarchy and select a group or mesh part; duplicate names remain separate targets.
 
+Imported models open framed in Orbit by default, including models with an authored camera. The authored camera still seeds the optional Walk view; select Walk explicitly to use it.
+
 Use Display for Textured Shading, Shading with Lines, Wireframe Mesh or Point Cloud Vertices. Points displays the mesh vertices, rather than generating a new surveyed point cloud. Click a surface to select its part in orbit or walk navigation. Use the visibility dots to hide a part, Delete to remove it from the edited scene, or Coord. in Attributes to change its local transform. In Orbit, Move/Rotate/Scale with Shift-drag also edits the selection. The coordinate panel edits local object transforms in Orbit and camera location in Walk. Mesh editing here operates on existing parts/groups; it does not cut individual vertices or faces or remesh geometry.
 
 Undo/Redo restores scene changes. Save project stores the edited hierarchy, visibility and transforms. Reopening the saved project and explicitly selecting the asset restores those edits. Removing a root hides it so the original hierarchy remains recoverable. Removing a nested part hides its original Three.js node and excludes it from the saved hierarchy; undo restores it. Geometry and the original uploaded file are never overwritten. Existing saved projects receive their hierarchy when their model is next opened.

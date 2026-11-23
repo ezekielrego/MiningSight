@@ -843,7 +843,7 @@ app.get('/api/ai/projects', async (req, res) => {
     const token = requestToken(req);
     const projects = result.projects.map((project: any) => ({
       ...project,
-      assets: (project.assets || []).map((asset: any) => ({ ...asset, url: `/api/reconstruction/ai/projects/${encodeURIComponent(project.id)}/assets/${encodeURIComponent(asset.storedName)}?access_token=${encodeURIComponent(token)}` })),
+      assets: (project.assets || []).map((asset: any) => ({ ...asset, url: asset.remoteUrl || `/api/reconstruction/ai/projects/${encodeURIComponent(project.id)}/assets/${encodeURIComponent(asset.storedName)}?access_token=${encodeURIComponent(token)}` })),
     }));
     return res.json({ success: true, projects });
   } catch (error: any) {
@@ -886,6 +886,8 @@ app.get(['/api/ai/public/projects/:projectId/assets/:assetId', '/api/reconstruct
   try {
     const projectId = safeProjectId(req.params.projectId);
     const result = await database('get_public_asset', { projectId, assetId: req.params.assetId });
+    res.setHeader('Cache-Control', 'no-store');
+    if (result.asset.remoteUrl) return res.redirect(302, (await validatePublicViewerUrl(result.asset.remoteUrl)).toString());
     const filename = safeAssetName(result.asset.storedName);
     const assetPath = path.join(projectAssetDirectory(projectId), filename);
     await stat(assetPath);
@@ -971,7 +973,7 @@ app.get('/api/ai/projects/:projectId', async (req, res) => {
     const projectId = safeProjectId(req.params.projectId);
     const result = await database('get_project', { token: requestToken(req), projectId });
     const project = result.project;
-    project.assets = (project.assets || []).map((asset: any) => ({ ...asset, url: `/api/reconstruction/ai/projects/${encodeURIComponent(projectId)}/assets/${encodeURIComponent(asset.storedName)}?access_token=${encodeURIComponent(requestToken(req))}` }));
+    project.assets = (project.assets || []).map((asset: any) => ({ ...asset, url: asset.remoteUrl || `/api/reconstruction/ai/projects/${encodeURIComponent(projectId)}/assets/${encodeURIComponent(asset.storedName)}?access_token=${encodeURIComponent(requestToken(req))}` }));
     return res.json({ success: true, project });
   } catch (error: any) {
     return res.status(404).json({ success: false, error: 'PROJECT_NOT_FOUND', message: error.message });
@@ -1149,6 +1151,20 @@ app.post('/api/ai/projects/:projectId/assets', async (req, res) => {
   }
 });
 
+app.post('/api/ai/projects/:projectId/linked-assets', async (req, res) => {
+  if (!await requireAuthenticated(req, res)) return;
+  try {
+    const projectId = safeProjectId(req.params.projectId);
+    await database('get_project', { token: requestToken(req), projectId });
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim().slice(0, 120) : '';
+    if (!name) throw new Error('Enter a name for the linked model.');
+    const remoteUrl = (await validatePublicViewerUrl(String(req.body?.url || '').trim())).toString();
+    const provider = ['worldlabs', 'gemini', 'gomera'].includes(req.body?.provider) ? req.body.provider : undefined;
+    const result = await database('add_linked_asset', { token: requestToken(req), projectId, id: `asset_${randomUUID()}`, name, remoteUrl, provider });
+    return res.status(201).json({ success: true, asset: result.asset });
+  } catch (error: any) { return res.status(400).json({ success: false, message: error.message || 'The model link could not be connected.' }); }
+});
+
 app.get('/api/ai/projects/:projectId/assets/:assetName', async (req, res) => {
   const user = await requireAuthenticated(req, res);
   if (!user) return;
@@ -1156,6 +1172,7 @@ app.get('/api/ai/projects/:projectId/assets/:assetName', async (req, res) => {
     const projectId = safeProjectId(req.params.projectId);
     const assetName = safeAssetName(req.params.assetName);
     const result = await database('get_asset', { token: requestToken(req), projectId, storedName: assetName });
+    if (result.asset.remoteUrl) return res.redirect(302, (await validatePublicViewerUrl(result.asset.remoteUrl)).toString());
     const assetPath = path.join(projectAssetDirectory(projectId), assetName);
     const info = await stat(assetPath);
     res.setHeader('content-length', info.size);

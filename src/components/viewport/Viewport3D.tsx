@@ -734,8 +734,11 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
         cameraRef.current.updateProjectionMatrix();
         manualNavigationRef.current = true;
         onSetPlayback?.(false);
-        setNavMode('walk');
       }
+      // Authored cameras seed the optional walk view, but every imported model
+      // opens framed in Orbit until the user explicitly chooses Walk.
+      const orbitCenter = loadedBounds.getCenter(new THREE.Vector3());
+      setOrbitView(Math.max(6, Math.min(320, loadedSize.length() * 1.6)), Math.PI / 2.6, Math.PI / 4, orbitCenter);
       setAssetLoadState('ready');
       setAssetLoadMessage('');
     };

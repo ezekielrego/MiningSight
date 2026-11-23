@@ -93,6 +93,11 @@ for column, definition in [
     except sqlite3.OperationalError:
         pass
 db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub) WHERE google_sub IS NOT NULL')
+for column in ['remote_url', 'provider']:
+    try:
+        db.execute(f'ALTER TABLE assets ADD COLUMN {column} TEXT')
+    except sqlite3.OperationalError:
+        pass
 
 def now():
     return datetime.now(timezone.utc).isoformat()
@@ -129,12 +134,16 @@ def require_user():
     return user
 
 def asset_payload(row, project_id=None):
-    return {
+    asset = {
         'id': row['id'], 'name': row['name'], 'storedName': row['stored_name'],
         'type': row['asset_type'], 'kind': row['kind'], 'size': row['size'],
         'uploadedAt': row['uploaded_at'],
         'projectId': project_id or row['project_id'],
     }
+    if row['remote_url']:
+        asset.update({'remoteUrl': row['remote_url'], 'url': row['remote_url']})
+        if row['provider']: asset['provider'] = row['provider']
+    return asset
 
 def provider_asset_payload(row):
     return {
@@ -326,6 +335,20 @@ try:
                 db.execute('UPDATE assets SET name=?,asset_type=?,kind=?,size=? WHERE id=? AND project_id=? AND user_id=?', (asset.get('name', asset['storedName']), asset.get('type', 'application/octet-stream'), asset.get('kind', 'other'), int(asset.get('size', 0)), asset['id'], project_id, user['id']))
         db.commit()
         output = {'project': {'id': project_id, 'projectName': name, 'updatedAt': timestamp, 'assetCount': db.execute('SELECT COUNT(*) FROM assets WHERE project_id=?', (project_id,)).fetchone()[0], 'assets': [asset_payload(asset) for asset in db.execute('SELECT * FROM assets WHERE project_id=? ORDER BY uploaded_at ASC', (project_id,)).fetchall()]}}
+    elif OPERATION == 'add_linked_asset':
+        user = require_user()
+        project_id = PAYLOAD['projectId']
+        if not db.execute('SELECT 1 FROM projects WHERE id=? AND user_id=?', (project_id, user['id'])).fetchone(): raise ValueError('PROJECT_NOT_FOUND')
+        remote_url = str(PAYLOAD.get('remoteUrl', ''))
+        if not remote_url.startswith(('https://', 'http://')): raise ValueError('PUBLIC_URL_REQUIRED')
+        existing = db.execute('SELECT id FROM assets WHERE project_id=? AND remote_url=?', (project_id, remote_url)).fetchone()
+        asset_id = existing['id'] if existing else PAYLOAD['id']
+        if existing:
+            db.execute('UPDATE assets SET name=?,provider=? WHERE id=?', (PAYLOAD['name'], PAYLOAD.get('provider'), asset_id))
+        else:
+            db.execute('INSERT INTO assets(id,project_id,user_id,name,stored_name,asset_type,kind,size,uploaded_at,remote_url,provider) VALUES(?,?,?,?,?,?,?,?,?,?,?)', (asset_id, project_id, user['id'], PAYLOAD['name'], asset_id + '.url', 'text/uri-list', 'world', 0, now(), remote_url, PAYLOAD.get('provider')))
+        db.commit()
+        output = {'asset': asset_payload(db.execute('SELECT * FROM assets WHERE id=?', (asset_id,)).fetchone())}
     elif OPERATION == 'add_asset':
         user = require_user()
         project_id = PAYLOAD['projectId']

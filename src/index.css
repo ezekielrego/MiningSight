@@ -12,6 +12,11 @@
   top: 0;
 }
 
+[data-workspace-locked="true"] [data-viewer-drag-handle],
+[data-workspace-locked="true"] [role="separator"] {
+  cursor: default;
+}
+
 @layer base {
   html, body, #root {
     width: 100%;

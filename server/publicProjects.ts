@@ -15,6 +15,7 @@ export function publicProjectPayload(project: any, projectId: string) {
   data.assets = (project.assets || []).map((asset: any) => ({
     id: asset.id, name: asset.name, kind: asset.kind, type: asset.type, size: asset.size, uploadedAt: asset.uploadedAt,
     url: `/api/reconstruction/ai/public/projects/${encodeURIComponent(projectId)}/assets/${encodeURIComponent(asset.id)}`,
+    ...(asset.kind === 'world' && asset.remoteUrl ? { remoteUrl: asset.remoteUrl, provider: asset.provider } : {}),
   }));
   const clean = (value: any): any => {
     if (Array.isArray(value)) return value.map(clean);

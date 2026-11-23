@@ -3,6 +3,8 @@ import { Video, Maximize2 } from 'lucide-react';
 
 interface MenuBarProps {
   onMinimizePanels?: () => void;
+  workspaceLocked?: boolean;
+  onToggleWorkspaceLock?: () => void;
   currentLayout: string;
   onSelectLayout: (layout: string) => void;
   onNewObject?: (type: string) => void;
@@ -31,6 +33,8 @@ interface MenuBarProps {
 
 export const MenuBar: React.FC<MenuBarProps> = ({
   onMinimizePanels,
+  workspaceLocked = false,
+  onToggleWorkspaceLock,
   currentLayout,
   onSelectLayout,
   onNewObject,
@@ -305,12 +309,11 @@ export const MenuBar: React.FC<MenuBarProps> = ({
 
       {/* Right side: Layout Selector and Utility Buttons */}
       <div className="flex items-center space-x-2 flex-shrink-0 pl-2">
-        <button onClick={() => { setActiveMenu(null); onMinimizePanels?.(); }} title="Minimize all panels for a clear model view" className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-[#ddd] hover:text-[#e88724] cursor-pointer">
-          <Maximize2 className="h-3 w-3" /><span>Minimize panels</span>
-        </button>
         <div className="flex items-center space-x-1">
           <span className="text-[#a0a0a0] text-[11px]">Layout:</span>
           <select
+            disabled={workspaceLocked}
+            aria-label="Workspace layout"
             value={currentLayout}
             onChange={(e) => onSelectLayout(e.target.value)}
             className="bg-[#262626] border border-[#484848] text-[#e8e8e8] text-[11px] px-1 py-0.5 rounded-[2px] cursor-pointer focus:outline-none focus:border-[#e88724]"
@@ -355,11 +358,14 @@ export const MenuBar: React.FC<MenuBarProps> = ({
         </a>
 
         {/* Lock layout icon */}
-        <button title="Lock Workspace" className="text-[#999] hover:text-white p-0.5">
+        <button onClick={onToggleWorkspaceLock} aria-pressed={workspaceLocked} aria-label={workspaceLocked ? "Unlock Workspace" : "Lock Workspace"} title={workspaceLocked ? "Unlock Workspace" : "Lock Workspace"} className={`p-0.5 cursor-pointer ${workspaceLocked ? "text-[#e88724]" : "text-[#999] hover:text-white"}`}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <rect x="3" y="11" width="18" height="11" rx="2"></rect>
             <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
           </svg>
+        </button>
+        <button onClick={() => { setActiveMenu(null); onMinimizePanels?.(); }} title="Minimize all panels for a clear model view" className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-[#ddd] hover:text-[#e88724] cursor-pointer">
+          <Maximize2 className="h-3 w-3" /><span>Minimize panels</span>
         </button>
       </div>
     </div>

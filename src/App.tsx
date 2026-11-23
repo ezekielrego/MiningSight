@@ -220,6 +220,12 @@ export default function App() {
   const [reconstructionOpenToken, setReconstructionOpenToken] = useState(0);
   const [layout, setLayout] = useState<string>('Startup');
   const [panelsMinimized, setPanelsMinimized] = useState(false);
+  const [workspaceLocked, setWorkspaceLocked] = useState(() => {
+    try { return localStorage.getItem('miningsight_workspace_locked') === 'true'; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('miningsight_workspace_locked', String(workspaceLocked)); } catch {}
+  }, [workspaceLocked]);
   useEffect(() => {
     if (!panelsMinimized) return;
     const restoreOnEscape = (event: KeyboardEvent) => {
@@ -817,7 +823,7 @@ export default function App() {
       const loadedGasMarks = Array.isArray(project.gasMarks) ? project.gasMarks : [];
       gasMarksRef.current = loadedGasMarks;
       setGasMarks(loadedGasMarks);
-      setActiveAssetId(openModel ? project.assets?.find((asset: ProjectAsset) => asset.kind === 'model')?.id || null : null);
+      setActiveAssetId(openModel ? (project.assets?.find((asset: ProjectAsset) => asset.kind === 'model' || asset.kind === 'world') || project.assets?.find((asset: ProjectAsset) => asset.kind === 'video' || asset.kind === 'image'))?.id || null : null);
       if (project.currentPresetId && TUNNEL_PRESETS[project.currentPresetId as TunnelPresetId]) setCurrentPresetId(project.currentPresetId);
       if (project.proceduralParams) setProceduralParams(project.proceduralParams);
       if (project.timeline) {
@@ -1210,6 +1216,7 @@ export default function App() {
 
   // Handle Layout switching (e.g. "Mining Survey & AI Mapping")
   const handleSelectLayout = (newLayout: string) => {
+    if (workspaceLocked) return;
     setLayout(newLayout);
     if (newLayout.toLowerCase().includes('mining') || newLayout.toLowerCase().includes('survey') || newLayout.toLowerCase().includes('ai')) {
       setActiveUpperTab('AI Survey');
@@ -1573,6 +1580,7 @@ export default function App() {
   }, []);
 
   const handleResetLayout = useCallback(() => {
+    if (workspaceLocked) return;
     setLayout('Startup');
     setActiveUpperTab('Objects');
     setCameraResetRequest((value) => value + 1);
@@ -1582,7 +1590,7 @@ export default function App() {
       details: 'Restored the Objects panel and default camera view.',
       timestamp: new Date().toLocaleTimeString(),
     });
-  }, []);
+  }, [workspaceLocked]);
 
   // Object Selection Handler with Auto-Scene Activation
   const handleSelectObject = useCallback((id: string | null) => {
@@ -2025,7 +2033,7 @@ export default function App() {
   ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 
   return (
-    <div className={`w-screen h-screen flex flex-col overflow-hidden bg-[#292929] text-[#e0e0e0] font-sans ${panelsMinimized ? 'panels-minimized' : ''}`}>
+    <div data-workspace-locked={workspaceLocked ? "true" : undefined} className={`w-screen h-screen flex flex-col overflow-hidden bg-[#292929] text-[#e0e0e0] font-sans ${panelsMinimized ? 'panels-minimized' : ''}`}>
       <MobileDesktopNotice />
       {panelsMinimized && <button onClick={() => setPanelsMinimized(false)} aria-label="Restore panels" title="Restore panels" className="fixed right-3 top-3 z-[150] flex items-center gap-1.5 border border-white/20 bg-[#242424]/70 px-2 py-1.5 text-[10px] text-white opacity-60 shadow-lg backdrop-blur-sm hover:opacity-100 cursor-pointer"><Minimize2 className="h-3.5 w-3.5" />Restore panels</button>}
       {/* Hidden File Input for Opening Saved Projects */}
@@ -2041,6 +2049,8 @@ export default function App() {
       <div data-workspace-chrome className="shrink-0">
       {modelEditProposal && <ModelEditReview proposal={modelEditProposal} objects={objects} preview={modelEditPreview} onPreview={() => setModelEditPreview((value) => !value)} onCancel={closeModelEditProposal} onConfirm={confirmModelEditProposal} />}
       <MenuBar
+        workspaceLocked={workspaceLocked}
+        onToggleWorkspaceLock={() => setWorkspaceLocked((current) => !current)}
         onMinimizePanels={() => setPanelsMinimized(true)}
         onOpenReconstruction={() => { setActiveUpperTab('AI Survey'); setReconstructionOpenToken(value => value + 1); }}
         currentLayout={layout}
@@ -2119,6 +2129,7 @@ export default function App() {
 
       {/* 3. Docking Layout: Central Viewport, Object Manager / Camera Tours / AI Survey, Attribute Manager, Timeline, Materials, Coordinates */}
       <DockLayout
+        workspaceLocked={workspaceLocked}
         activeUpperTab={activeUpperTab}
         onUpperTabChange={setActiveUpperTab}
         tourKeyframeCount={activeTour?.keyframes.length || 0}
@@ -2357,7 +2368,15 @@ export default function App() {
             onConnectProviderAsset={handleConnectProviderAsset}
             projectAssets={projectAssets}
             activeAssetId={activeAssetId}
-            onSelectServerProject={handleSelectServerProject}
+            onSelectServerProject={(id) => {
+              if (id.startsWith('local_preset_')) {
+                setProjectName('Mining Site'); setProjectAssets([]);
+                handleSelectPreset(id.slice('local_preset_'.length) as TunnelPresetId);
+              } else if (id === 'local_session') {
+                setActiveProjectId(null); setActiveAssetId(null); setProjectName('Mining Site'); setProjectAssets([]);
+                setObjects([]); setMaterials([]); setSelectedObjectId(null); setModelEditProposal(null); setModelEditPreview(false);
+              } else void handleSelectServerProject(id);
+            }}
             onUploadAssets={handleUploadAssets}
             onRetryUpload={uploadRetryAction || undefined}
             authUser={authUser}

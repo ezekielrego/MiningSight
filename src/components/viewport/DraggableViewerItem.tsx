@@ -87,7 +87,7 @@ export const DraggableViewerItem: React.FC<DraggableViewerItemProps> = ({ id, cl
     className={`${wholeSurface ? 'cursor-move touch-none ' : ''}${className}`}
     style={{ ...style, translate: `${offset.x}px ${offset.y}px` }}
     onPointerDown={(event) => {
-      if (event.button !== 0) return;
+      if (event.button !== 0 || event.currentTarget.closest('[data-workspace-locked="true"]')) return;
       const target = event.target as HTMLElement;
       const handle = target.closest('[data-viewer-drag-handle]');
       if (!handle || !event.currentTarget.contains(handle)) return;
@@ -101,6 +101,7 @@ export const DraggableViewerItem: React.FC<DraggableViewerItemProps> = ({ id, cl
       event.stopPropagation();
     }}
     onPointerMove={(event) => {
+      if (event.currentTarget.closest('[data-workspace-locked="true"]')) { finishDrag(event); return; }
       const drag = dragRef.current;
       if (!drag || drag.pointerId !== event.pointerId) return;
       const dx = event.clientX - drag.pointerX;

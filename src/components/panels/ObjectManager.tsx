@@ -654,12 +654,17 @@ export const ObjectManager: React.FC<ObjectManagerProps> = ({
       <div className="bg-[#2e2e2e] border-b border-[#222] p-1.5 space-y-1.5">
         <div className="flex items-center gap-1">
           <select
-            value={activeProjectId || ''}
-            onChange={(event) => event.target.value && onSelectServerProject?.(event.target.value)}
+            value={activeProjectId || 'local_session'}
+            onChange={(event) => onSelectServerProject?.(event.target.value)}
             className="min-w-0 flex-1 bg-[#1d1d1d] border border-[#484848] rounded-[2px] px-1.5 py-1 text-[10px] text-[#eee] focus:outline-none focus:border-[#e88724]"
             title="Choose a local project or a provider library"
           >
-            <option value="">{projectName} · local session</option>
+            <option value="local_session">Mining Site · local session</option>
+            <optgroup label="Local scenes · no sign-in required">
+              <option value="local_preset_rugged_timbered_photo">Rugged Timbered Drift (Photo Reference)</option>
+              <option value="local_preset_classic_diorama">Classic Mining Diorama</option>
+              <option value="local_preset_branching_drift">Branching Deep Mine Drift</option>
+            </optgroup>
             {projects.some((project) => !project.provider && !project.public) && <optgroup label="Your projects">
               {projects.filter((project) => !project.provider && !project.public).map((project) => <option key={project.id} value={project.id}>{project.projectName} · {project.assetCount} assets</option>)}
             </optgroup>}
@@ -695,7 +700,7 @@ export const ObjectManager: React.FC<ObjectManagerProps> = ({
         </div>}
         {uploadProgress?.active && <div className="space-y-0.5"><div className="flex items-center justify-between text-[8.5px] text-[#bbb]"><span className="truncate">{uploadProgress.status}</span><span className="font-mono text-[#e88724]">{uploadProgress.percent}%</span></div><div className="h-1 bg-[#171717] rounded-full overflow-hidden"><div className="h-full bg-[#e88724] transition-all" style={{ width: `${uploadProgress.percent}%` }} /></div></div>}
         {!uploadProgress?.active && uploadProgress?.canRetry && onRetryUpload && <div className="flex items-center justify-between gap-2 bg-[#321d1d] border border-[#713333] rounded-[2px] px-1.5 py-1 text-[8.5px] text-[#ffb0b0]"><span className="truncate">{uploadProgress.status}</span><button onClick={onRetryUpload} className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#e88724] hover:bg-[#ff9933] text-black font-bold rounded cursor-pointer"><RotateCcw className="w-2.5 h-2.5" /> Retry</button></div>}
-        <div className="flex items-center justify-between text-[9px] text-[#888]"><span className="uppercase tracking-wider font-bold">{activeProjectReadOnly ? 'Provider Assets' : 'Project Assets'}</span><span>{projectAssets.length} available</span></div>
+        <div className="flex items-center justify-between text-[9px] text-[#888]"><span className="uppercase tracking-wider font-bold">{activeProjectReadOnly ? activeProvider ? 'Provider Assets' : 'Public Project Assets' : 'Project Assets'}</span><span>{projectAssets.length} available</span></div>
         {providerLibraryMessage && activeProjectReadOnly && <div className="text-[8.5px] text-[#9fc0cc]">{providerLibraryMessage}</div>}
         {projectAssets.length > 0 ? <div className="max-h-[150px] overflow-y-auto space-y-1 pr-0.5">
           {assetFolders.map((folder) => {

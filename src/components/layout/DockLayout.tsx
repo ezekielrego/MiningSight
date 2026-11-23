@@ -4,6 +4,7 @@ import { Box, Video, Radio, FileText, Folder, MapPin, ChevronRight, ChevronLeft,
 export type UpperTabType = 'Objects' | 'AI Survey' | 'Camera Tours' | 'Mark History' | 'Takes' | 'Content Browser' | 'Structure';
 
 interface DockLayoutProps {
+  workspaceLocked?: boolean;
   leftPalette: React.ReactNode;
   viewport: React.ReactNode;
   timeline: React.ReactNode;
@@ -22,6 +23,7 @@ interface DockLayoutProps {
 }
 
 export const DockLayout: React.FC<DockLayoutProps> = ({
+  workspaceLocked = false,
   leftPalette,
   viewport,
   timeline,
@@ -38,6 +40,8 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
   tourKeyframeCount = 5,
   markHistoryCount = 0,
 }) => {
+  const lockedRef = useRef(workspaceLocked);
+  lockedRef.current = workspaceLocked;
   // Proportions:
   const [rightPanelWidthPercent, setRightPanelWidthPercent] = useState<number>(36);
   const [bottomPanelHeightPercent, setBottomPanelHeightPercent] = useState<number>(28);
@@ -47,11 +51,15 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
   // Sidebar collapse toggle for mobile or wide viewport viewing
   const [isRightCollapsed, setIsRightCollapsed] = useState<boolean>(false);
   const [isBottomCollapsed, setIsBottomCollapsed] = useState(() => localStorage.getItem('miningsight_bottom_collapsed') === 'true');
-  const toggleBottomPanels = () => setIsBottomCollapsed((current) => {
-    localStorage.setItem('miningsight_bottom_collapsed', String(!current));
-    return !current;
-  });
+  const toggleBottomPanels = () => {
+    if (workspaceLocked) return;
+    setIsBottomCollapsed((current) => {
+      localStorage.setItem('miningsight_bottom_collapsed', String(!current));
+      return !current;
+    });
+  };
   const restoreBottomPanels = () => {
+    if (workspaceLocked) return;
     localStorage.setItem('miningsight_bottom_collapsed', 'false');
     setIsBottomCollapsed(false);
   };
@@ -63,7 +71,7 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
   const handleUpperTabChange = (tab: UpperTabType) => {
     setInternalUpperTab(tab);
     onUpperTabChange?.(tab);
-    if (isRightCollapsed) {
+    if (isRightCollapsed && !workspaceLocked) {
       setIsRightCollapsed(false);
     }
   };
@@ -77,6 +85,7 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
     type: 'vertical-right' | 'horizontal-bottom' | 'horizontal-right' | 'vertical-bottom',
     e: React.MouseEvent
   ) => {
+    if (workspaceLocked) return;
     e.preventDefault();
     const startX = e.clientX;
     const startY = e.clientY;
@@ -86,7 +95,7 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
     const initialMatWidth = materialManagerWidthPercent;
 
     const onMouseMove = (moveEvent: MouseEvent) => {
-      if (!containerRef.current) return;
+      if (!containerRef.current || lockedRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
 
       if (type === 'vertical-right') {
@@ -154,9 +163,9 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
         {/* Timeline Bar (Fixed 64px height) */}
         <div data-workspace-chrome className="h-6 shrink-0 flex items-center justify-between border-y border-[#181818] bg-[#242424] px-1.5 text-[#999]">
           <div className="flex items-center gap-2">
-            {[{ Icon: Film, label: 'Timeline' }, { Icon: Palette, label: 'Materials' }, { Icon: Move3D, label: 'Coordinates' }].map(({ Icon, label }) => <button key={label} onClick={restoreBottomPanels} aria-label={`Show ${label}`} title={`Show ${label}`} className="flex items-center gap-1 hover:text-white cursor-pointer"><Icon className="h-3.5 w-3.5" />{!isBottomCollapsed && <span className="text-[9px]">{label}</span>}</button>)}
+            {[{ Icon: Film, label: 'Timeline' }, { Icon: Palette, label: 'Materials' }, { Icon: Move3D, label: 'Coordinates' }].map(({ Icon, label }) => <button key={label} disabled={workspaceLocked} onClick={restoreBottomPanels} aria-label={`Show ${label}`} title={`Show ${label}`} className="flex items-center gap-1 hover:text-white cursor-pointer"><Icon className="h-3.5 w-3.5" />{!isBottomCollapsed && <span className="text-[9px]">{label}</span>}</button>)}
           </div>
-          <button onClick={toggleBottomPanels} aria-expanded={!isBottomCollapsed} aria-label={isBottomCollapsed ? 'Expand bottom panels' : 'Collapse bottom panels'} title={isBottomCollapsed ? 'Expand bottom panels' : 'Collapse bottom panels'} className="p-0.5 text-[#e88724] hover:text-white cursor-pointer">{isBottomCollapsed ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</button>
+          <button disabled={workspaceLocked} onClick={toggleBottomPanels} aria-expanded={!isBottomCollapsed} aria-label={isBottomCollapsed ? 'Expand bottom panels' : 'Collapse bottom panels'} title={isBottomCollapsed ? 'Expand bottom panels' : 'Collapse bottom panels'} className="p-0.5 text-[#e88724] hover:text-white cursor-pointer">{isBottomCollapsed ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</button>
         </div>
         <div data-workspace-chrome data-onboarding-target="timeline" className={`w-full h-[64px] flex-shrink-0 ${isBottomCollapsed ? 'hidden' : ''}`}>
           {timeline}
@@ -165,6 +174,7 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
         {/* Resizer Splitter between Viewport/Timeline and Bottom Workspaces */}
         <div
           data-workspace-chrome
+          role="separator" aria-label="Resize bottom panels" aria-disabled={workspaceLocked}
           onMouseDown={(e) => startDrag('horizontal-bottom', e)}
           className={`h-[4px] w-full bg-[#202020] hover:bg-[#e88724] cursor-row-resize transition-colors z-20 flex-shrink-0 border-y border-[#181818] ${isBottomCollapsed ? 'hidden' : ''}`}
         />
@@ -195,7 +205,8 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
 
           {/* Vertical Splitter between Materials and Coordinates */}
           <div
-            onMouseDown={(e) => startDrag('vertical-bottom', e)}
+            role="separator" aria-label="Resize materials and coordinates" aria-disabled={workspaceLocked}
+          onMouseDown={(e) => startDrag('vertical-bottom', e)}
             className="w-[4px] h-full bg-[#202020] hover:bg-[#e88724] cursor-col-resize transition-colors z-20 flex-shrink-0 border-x border-[#181818]"
           />
 
@@ -212,6 +223,7 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
       {/* Main Vertical Splitter between Viewport column and Right panel column */}
       <div
         data-workspace-chrome
+          role="separator" aria-label="Resize right sidebar" aria-disabled={workspaceLocked}
         onMouseDown={(e) => !isRightCollapsed && startDrag('vertical-right', e)}
         className={`w-[4px] h-full bg-[#202020] transition-colors z-20 flex-shrink-0 border-x border-[#181818] ${
           isRightCollapsed ? 'cursor-default' : 'hover:bg-[#e88724] cursor-col-resize'
@@ -262,6 +274,7 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
 
               {/* Collapse Button */}
               <button
+                disabled={workspaceLocked}
                 onClick={() => setIsRightCollapsed(true)}
                 title="Collapse Right Sidebar"
                 className="w-5 h-5 flex items-center justify-center text-[#888] hover:text-white hover:bg-[#333] rounded-[2px] flex-shrink-0 ml-1 cursor-pointer"
@@ -288,7 +301,8 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
 
             {/* Splitter between Upper Panel and Attribute Manager */}
             <div
-              onMouseDown={(e) => startDrag('horizontal-right', e)}
+              role="separator" aria-label="Resize right panels" aria-disabled={workspaceLocked}
+          onMouseDown={(e) => startDrag('horizontal-right', e)}
               className="h-[4px] w-full bg-[#202020] hover:bg-[#e88724] cursor-row-resize transition-colors z-20 flex-shrink-0 border-y border-[#181818]"
             />
 
@@ -322,6 +336,7 @@ export const DockLayout: React.FC<DockLayoutProps> = ({
           /* Collapsed Mini Strip */
           <div className="w-full h-full bg-[#202020] flex flex-col items-center py-2 justify-between">
             <button
+              disabled={workspaceLocked}
               onClick={() => setIsRightCollapsed(false)}
               title="Expand Right Sidebar"
               className="w-5 h-5 flex items-center justify-center text-[#e88724] hover:bg-[#333] rounded cursor-pointer"
