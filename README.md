@@ -77,6 +77,7 @@ The following screenshots are selected from the supplied system evidence package
 
 ## Interface controls
 
+- Startup opens an empty viewer with no model, object, or material selected. Choose a built-in model from **Scene**, or open a saved project and select an asset to load it.
 - Orbit mode: drag to rotate the view, double-click to focus a point, and use the mouse wheel or `+` / `-` keys to zoom.
 - Walk mode: use `W`, `A`, `S`, `D` or the arrow keys to move; use the on-screen walk controls when preferred.
 - Object editing: select an object, then use `Shift`-drag for transform interaction.

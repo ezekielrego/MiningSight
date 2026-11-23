@@ -330,7 +330,7 @@ export default function App() {
   const [projectAssets, setProjectAssets] = useState<ProjectAsset[]>([]);
   const [activeAssetId, setActiveAssetId] = useState<string | null>(null);
   const [reconstructionBrief, setReconstructionBrief] = useState<ReconstructionBrief | null>(null);
-  const [reconstructionMapGeometry, setReconstructionMapGeometry] = useState<ReconstructionMapGeometry | null>(() => createDefaultReconstructionMap());
+  const [reconstructionMapGeometry, setReconstructionMapGeometry] = useState<ReconstructionMapGeometry | null>(() => createEmptyReconstructionMap());
   const [reconstructionMapSelection, setReconstructionMapSelection] = useState<ReconstructionMapSelection | null>(null);
   const [mapMarkingEnabled, setMapMarkingEnabled] = useState(false);
   const [mapDrawingMode, setMapDrawingMode] = useState(false);
@@ -417,13 +417,13 @@ export default function App() {
     TUNNEL_PRESETS.rugged_timbered_photo.defaultParams
   );
 
-  // Materials for Mining Tunnel - combined so all materials are accessible in Material Manager
-  const [materials, setMaterials] = useState<C4DMaterial[]>(getAllCombinedMaterials());
-  const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>('mat_photo_rock');
+  // Start with an empty workspace; selecting a scene populates its materials.
+  const [materials, setMaterials] = useState<C4DMaterial[]>([]);
+  const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
 
-  // Scene Hierarchy Objects for Mining Tunnel - BOTH models always listed in side nav panel
-  const [objects, setObjects] = useState<C4DSceneObject[]>(getCombinedSceneObjects('rugged_timbered_photo'));
-  const [selectedObjectId, setSelectedObjectId] = useState<string | null>('Rugged_Timbered_Mine_Tunnel_Photo');
+  // Built-in scenes and saved assets load only after an explicit user choice.
+  const [objects, setObjects] = useState<C4DSceneObject[]>([]);
+  const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const [walkPosition, setWalkPosition] = useState<Vector3D | null>(null);
   const [cameraPositionRequest, setCameraPositionRequest] = useState<{ id: number; position: Vector3D } | null>(null);
   const handleWalkPositionChange = useCallback((position: Vector3D | null) => {

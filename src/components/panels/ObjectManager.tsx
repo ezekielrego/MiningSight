@@ -728,7 +728,7 @@ export const ObjectManager: React.FC<ObjectManagerProps> = ({
 
       {/* Side Nav Footer Status Bar */}
       <div className="h-[18px] bg-[#2a2a2a] border-t border-[#222] px-2 flex items-center justify-between text-[9.5px] text-[#888]">
-        <span className="truncate">Both 3D models available. Click any object to inspect and view.</span>
+        <span className="truncate">{objects.length ? 'Click an object to inspect and view.' : 'No model selected. Choose a scene or open a project.'}</span>
         <span className="font-mono text-[#aaa]">{objects.length} Objects · {projectAssets.length} Assets</span>
       </div>
     </div>

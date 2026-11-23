@@ -264,7 +264,8 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   const [assetLoadMessage, setAssetLoadMessage] = useState('');
   const [assetLoadId, setAssetLoadId] = useState<string | null>(null);
   const worldFrameRef = useRef<HTMLIFrameElement>(null);
-  const [rigLoad, setRigLoad] = useState<{ params: ProceduralTunnelParams | null; state: 'loading' | 'ready' | 'error'; message?: string }>({ params: null, state: 'loading' });
+  const hasPresetScene = sceneObjects.some((object) => object.id === getPresetRootId(currentPresetId));
+  const [rigLoad, setRigLoad] = useState<{ params: ProceduralTunnelParams | null; state: 'loading' | 'ready' | 'error'; message?: string }>({ params: null, state: 'ready' });
   const viewerLoadError = !showMap && !liveStreamOpen && (activeAsset ? assetLoadId === activeAsset.id && assetLoadState === 'error' ? assetLoadMessage : '' : !activeProjectId && rigLoad.state === 'error' ? rigLoad.message : '');
   const viewerLoadName = activeAsset?.name || proceduralParams.name || TUNNEL_PRESETS[currentPresetId]?.name || 'model';
 
@@ -1050,16 +1051,21 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     const hemiLight = new THREE.HemisphereLight(0xe8e8e8, 0x303030, 0.7);
     scene.add(hemiLight);
 
-    // Procedural Mining Tunnel
-    const miningTunnelRig = createTunnelRigByPreset(currentPresetId, proceduralParams);
+    // Do not construct or flash a sample model before the user selects one.
+    const miningTunnelRig = hasPresetScene ? createTunnelRigByPreset(currentPresetId, proceduralParams) : null;
     miningTunnelRigRef.current = miningTunnelRig;
-    scene.add(miningTunnelRig.root);
-    miningTunnelRig.setDisplayMode(shadingMode);
+    if (miningTunnelRig) {
+      miningTunnelRig.root.visible = !activeProjectId && !clearView
+        && Boolean(flattenSceneObjects(sceneObjects).get(getPresetRootId(currentPresetId))?.visibleInEditor);
+      scene.add(miningTunnelRig.root);
+      miningTunnelRig.setDisplayMode(shadingMode);
+    }
 
     // Gizmo handles
     const gizmoGroup = new THREE.Group();
     gizmoGroupRef.current = gizmoGroup;
-    gizmoGroup.position.copy(miningTunnelRig.root.position);
+    gizmoGroup.visible = false;
+    if (miningTunnelRig) gizmoGroup.position.copy(miningTunnelRig.root.position);
     gizmoGroup.add(new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 0), 4, 0xee3333, 0.8, 0.4));
     gizmoGroup.add(new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 0), 4, 0x33cc33, 0.8, 0.4));
     gizmoGroup.add(new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, 0), 4, 0x3366ee, 0.8, 0.4));
@@ -1352,6 +1358,13 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
   useEffect(() => {
     if (!sceneRef.current) return;
     const scene = sceneRef.current;
+    if (!hasPresetScene) {
+      if (miningTunnelRigRef.current) scene.remove(miningTunnelRigRef.current.root);
+      miningTunnelRigRef.current = null;
+      if (gizmoGroupRef.current) gizmoGroupRef.current.visible = false;
+      setRigLoad({ params: null, state: 'ready' });
+      return;
+    }
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     setRigLoad({ params: proceduralParams, state: 'loading' });
@@ -1381,7 +1394,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
     }
     }, 0); });
     return () => { cancelled = true; cancelAnimationFrame(frame); clearTimeout(timer); };
-  }, [currentPresetId, proceduralParams, connectedViewerReload]);
+  }, [currentPresetId, proceduralParams, connectedViewerReload, hasPresetScene]);
 
   // Give the selected sample-scene part a clear, full-surface highlight. The
   // materials are cloned only for selected meshes so shared materials elsewhere
@@ -2008,7 +2021,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
             >
               <Layers className="w-3 h-3 text-[#e88724]" />
               <span>
-                Scene: {TUNNEL_PRESETS[currentPresetId]?.name.split(' ')[0]} ▾
+                Scene: {activeProjectId ? 'Project' : hasPresetScene ? TUNNEL_PRESETS[currentPresetId]?.name.split(' ')[0] : 'None'} ▾
               </span>
             </button>
             {presetMenuOpen && (
@@ -2017,7 +2030,7 @@ export const Viewport3D: React.FC<Viewport3DProps> = ({
                   Available 3D Tunnel Scenes
                 </div>
                 {Object.values(TUNNEL_PRESETS).map((preset) => {
-                  const isSelected = currentPresetId === preset.id;
+                  const isSelected = !activeProjectId && hasPresetScene && currentPresetId === preset.id;
                   return (
                     <button
                       key={preset.id}
