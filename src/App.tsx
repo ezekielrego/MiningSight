@@ -36,6 +36,8 @@ import { applyModelEdits, editableModelContext, importedRootId, updateSceneObjec
 import { ModelEditReview } from './components/modals/ModelEditReview';
 import { AuthUser, GasMark, MediaMarker, ProjectAsset, ProjectProvider, ProjectSummary, StorageQuota } from './types/project';
 
+const isReadOnlyProjectId = (id: string | null) => Boolean(id?.startsWith('provider_') || id?.startsWith('public_'));
+
 declare global {
   interface Window {
     google?: any;
@@ -288,6 +290,7 @@ export default function App() {
   const [showAboutModal, setShowAboutModal] = useState(false);
   const [aboutSection, setAboutSection] = useState<AboutSection>('about');
   const [showOnboarding, setShowOnboarding] = useState(() => {
+    if (new URLSearchParams(window.location.search).has('publicProject')) return false;
     try {
       return localStorage.getItem('miningsight_onboarding_completed') !== 'true';
     } catch (error) {
@@ -327,6 +330,14 @@ export default function App() {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [providerProjects, setProviderProjects] = useState<ProjectSummary[]>([]);
+  const [publicProjects, setPublicProjects] = useState<ProjectSummary[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/reconstruction/ai/public/projects').then((response) => response.json()).then((result) => {
+      if (!cancelled && result.success && Array.isArray(result.projects)) setPublicProjects(result.projects);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const [providerLibraryLoading, setProviderLibraryLoading] = useState(false);
   const [providerLibraryMessage, setProviderLibraryMessage] = useState('');
   const [projectAssets, setProjectAssets] = useState<ProjectAsset[]>([]);
@@ -623,7 +634,7 @@ export default function App() {
   }, [refreshStorageQuota]);
 
   const saveProjectSnapshot = useCallback(async (projectId: string, nextName = projectName, assetsOverride?: ProjectAsset[], dataOverride?: Record<string, any>) => {
-    if (projectId.startsWith('provider_')) return;
+    if (isReadOnlyProjectId(projectId)) return;
     const response = await fetch(`/api/reconstruction/ai/projects/${encodeURIComponent(projectId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
@@ -635,7 +646,7 @@ export default function App() {
   }, [authToken, buildProjectData, projectName, projectAssets]);
 
   const ensureActiveProject = useCallback(async () => {
-    if (activeProjectId && !activeProjectId.startsWith('provider_')) return activeProjectId;
+    if (activeProjectId && !isReadOnlyProjectId(activeProjectId)) return activeProjectId;
     const response = await fetch('/api/reconstruction/ai/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) },
@@ -755,7 +766,7 @@ export default function App() {
     void handleUploadAssets(files);
   }, [authUser, handleUploadAssets, pendingUploadFiles]);
 
-  const handleSelectServerProject = useCallback(async (projectId: string) => {
+  const handleSelectServerProject = useCallback(async (projectId: string, openModel = false) => {
     const providerProject = providerProjects.find((project) => project.id === projectId);
     if (providerProject) {
       setActiveProjectId(providerProject.id);
@@ -781,7 +792,9 @@ export default function App() {
     gasMarksRef.current = [];
     setGasMarks([]);
     try {
-      const response = await fetch(`/api/reconstruction/ai/projects/${encodeURIComponent(projectId)}`, { headers: authToken ? { Authorization: `Bearer ${authToken}` } : {} });
+      const isPublic = projectId.startsWith('public_');
+      const endpoint = isPublic ? `/api/reconstruction/ai/public/projects/${encodeURIComponent(projectId.slice(7))}` : `/api/reconstruction/ai/projects/${encodeURIComponent(projectId)}`;
+      const response = await fetch(endpoint, { headers: !isPublic && authToken ? { Authorization: `Bearer ${authToken}` } : {} });
       const json = await response.json().catch(() => ({}));
       if (!response.ok || !json.success) throw new Error(json.message || 'Could not load project.');
       const project = json.project;
@@ -804,7 +817,7 @@ export default function App() {
       const loadedGasMarks = Array.isArray(project.gasMarks) ? project.gasMarks : [];
       gasMarksRef.current = loadedGasMarks;
       setGasMarks(loadedGasMarks);
-      setActiveAssetId(null);
+      setActiveAssetId(openModel ? project.assets?.find((asset: ProjectAsset) => asset.kind === 'model')?.id || null : null);
       if (project.currentPresetId && TUNNEL_PRESETS[project.currentPresetId as TunnelPresetId]) setCurrentPresetId(project.currentPresetId);
       if (project.proceduralParams) setProceduralParams(project.proceduralParams);
       if (project.timeline) {
@@ -815,13 +828,22 @@ export default function App() {
         saveTours(project.tours);
         setActiveTourId(project.tours[0].id);
       }
-      setStatusAlert({ type: 'success', message: `Loaded server project “${project.projectName}”.`, details: `${project.assets?.length || 0} linked assets are available in the Objects panel.`, timestamp: new Date().toLocaleTimeString() });
+      setStatusAlert({ type: 'success', message: `Loaded server project “${project.projectName}”.`, details: isPublic ? 'Public project · viewing without sign-in. Changes to this public view are temporary.' : `${project.assets?.length || 0} linked assets are available in the Objects panel.`, timestamp: new Date().toLocaleTimeString() });
       return true;
     } catch (error: any) {
       setStatusAlert({ type: 'error', message: `Project load failed: ${error.message}`, timestamp: new Date().toLocaleTimeString() });
       return false;
     }
   }, [authToken, providerProjects, saveTours]);
+
+  const publicLinkOpenedRef = useRef(false);
+  useEffect(() => {
+    if (publicLinkOpenedRef.current) return;
+    const id = new URLSearchParams(window.location.search).get('publicProject');
+    if (!id || !/^[a-z0-9][a-z0-9_-]{1,63}$/i.test(id)) return;
+    publicLinkOpenedRef.current = true;
+    void handleSelectServerProject(`public_${id}`, true);
+  }, [handleSelectServerProject]);
 
   const handleProviderAssetReady = useCallback((provider: ProjectProvider, asset: ProjectAsset) => {
     setProviderProjects((current) => current.map((project) => project.provider === provider
@@ -956,7 +978,7 @@ export default function App() {
   }, [authToken, authUser, liveProjectNameDraft, openLiveInProject]);
 
   const handleLiveFileSave = useCallback(async (file: File) => {
-    if (!activeProjectId || activeProjectId.startsWith('provider_')) {
+    if (!activeProjectId || isReadOnlyProjectId(activeProjectId)) {
       setStatusAlert({ type: 'error', message: 'Choose a writable project before saving live media.', timestamp: new Date().toLocaleTimeString() });
       throw new Error('Choose a writable project before saving live media.');
     }
@@ -1784,6 +1806,10 @@ export default function App() {
 
   // Save locally and persist the same project snapshot on the server.
   const handleSaveProject = async () => {
+    if (activeProjectId?.startsWith('public_')) {
+      setStatusAlert({ type: 'idle', message: 'Public project is read-only. Create your own project to save a separate copy.' });
+      return;
+    }
     const projectData = buildProjectData();
     const blob = new Blob([JSON.stringify(projectData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -1925,7 +1951,7 @@ export default function App() {
   const handleModelEditProposal = (value: unknown) => {
     try {
       const asset = projectAssets.find((item) => item.id === activeAssetId && item.kind === 'model');
-      if (!asset || !activeProjectId || activeProjectId.startsWith('provider_')) throw new Error('Open an editable model in a local project first.');
+      if (!asset || !activeProjectId || isReadOnlyProjectId(activeProjectId)) throw new Error('Open an editable model in a local project first.');
       const proposal = validateModelEditProposal(value, objects, asset.id);
       proposalBaseRef.current = JSON.stringify(objects);
       setModelEditProposal(proposal); setModelEditPreview(false);
@@ -2130,7 +2156,7 @@ export default function App() {
         aiSurveyPanel={
           <AIGeologicalMapperPanel
             modelEditContext={modelEditContext}
-            modelEditProjectId={activeProjectId}
+            modelEditProjectId={activeProjectId?.startsWith('public_') ? null : activeProjectId}
             onModelEditProposal={handleModelEditProposal}
             reconstructionOpenToken={reconstructionOpenToken}
             projectTitle={`${projectName} - Surface & Subsurface Mapping`}
@@ -2322,8 +2348,8 @@ export default function App() {
             onRevertProject={handleRevertProject}
             projectName={projectName}
             activeProjectId={activeProjectId}
-            projects={[...providerProjects, ...projects]}
-            activeProjectReadOnly={Boolean(activeProjectId?.startsWith('provider_'))}
+            projects={[...publicProjects, ...providerProjects, ...projects]}
+            activeProjectReadOnly={isReadOnlyProjectId(activeProjectId)}
             activeProvider={providerProjects.find((project) => project.id === activeProjectId)?.provider || null}
             providerLibraryLoading={providerLibraryLoading}
             providerLibraryMessage={providerLibraryMessage}

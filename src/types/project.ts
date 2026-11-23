@@ -24,6 +24,7 @@ export interface ProjectSummary {
   assets: ProjectAsset[];
   provider?: ProjectProvider;
   readOnly?: boolean;
+  public?: boolean;
   status?: 'ready' | 'needs-key' | 'empty' | 'offline';
 }
 

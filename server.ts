@@ -14,6 +14,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEq
 import { mountWebViewerProxy, validatePublicViewerUrl } from './server/webViewerProxy';
 import { validateModelEditProposal, validTransform } from './src/scene/modelEditing';
 import type { C4DSceneObject } from './src/types/c4d';
+import { publicProjectPayload } from './server/publicProjects';
 
 dotenv.config();
 
@@ -862,6 +863,48 @@ app.post('/api/ai/projects', async (req, res) => {
   } catch (error: any) {
     return res.status(400).json({ success: false, error: 'PROJECT_CREATE_FAILED', message: error.message });
   }
+});
+
+app.get(['/api/ai/public/projects', '/api/reconstruction/ai/public/projects'], async (_req, res) => {
+  try {
+    const result = await database('list_public_projects');
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ success: true, projects: result.projects });
+  } catch { return res.status(500).json({ success: false, message: 'Public projects could not be loaded.' }); }
+});
+
+app.get(['/api/ai/public/projects/:projectId', '/api/reconstruction/ai/public/projects/:projectId'], async (req, res) => {
+  try {
+    const projectId = safeProjectId(req.params.projectId);
+    const result = await database('get_public_project', { projectId });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ success: true, project: publicProjectPayload(result.project, projectId) });
+  } catch { return res.status(404).json({ success: false, message: 'Public project not found.' }); }
+});
+
+app.get(['/api/ai/public/projects/:projectId/assets/:assetId', '/api/reconstruction/ai/public/projects/:projectId/assets/:assetId'], async (req, res) => {
+  try {
+    const projectId = safeProjectId(req.params.projectId);
+    const result = await database('get_public_asset', { projectId, assetId: req.params.assetId });
+    const filename = safeAssetName(result.asset.storedName);
+    const assetPath = path.join(projectAssetDirectory(projectId), filename);
+    await stat(assetPath);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    // Let sendFile handle byte ranges for GLBs, images and videos. Unknown file
+    // formats download rather than executing uploaded HTML in the app origin.
+    const extension = path.extname(filename).toLowerCase();
+    if (!['.glb', '.gltf', '.obj', '.fbx', '.ply', '.png', '.jpg', '.jpeg', '.webp', '.mp4', '.webm', '.mov', '.pdf'].includes(extension)) res.attachment(result.asset.name);
+    return res.sendFile(assetPath);
+  } catch { return res.status(404).json({ success: false, message: 'Public asset not found.' }); }
+});
+
+app.put('/api/ai/projects/:projectId/public', async (req, res) => {
+  if (!await requireAuthenticated(req, res)) return;
+  try {
+    const result = await database('set_project_public', { token: requestToken(req), projectId: safeProjectId(req.params.projectId), public: req.body?.public });
+    return res.json({ success: true, projectId: result.projectId, public: result.public });
+  } catch { return res.status(404).json({ success: false, message: 'Project not found or invalid sharing setting.' }); }
 });
 
 // This endpoint only proposes scene edits. The browser previews, validates and

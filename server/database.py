@@ -55,6 +55,10 @@ CREATE TABLE IF NOT EXISTS assets (
   size INTEGER NOT NULL,
   uploaded_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS public_projects (
+  project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  published_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS user_ai_settings (
   user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   gemini_api_key_ciphertext TEXT,
@@ -280,6 +284,28 @@ try:
         db.execute('INSERT INTO projects(id,user_id,project_name,data_json,created_at,updated_at) VALUES(?,?,?,?,?,?)', (project_id, user['id'], name, json.dumps(data), timestamp, timestamp))
         db.commit()
         output = {'project': {'id': project_id, 'projectName': name, 'updatedAt': timestamp, 'assetCount': 0, 'assets': []}}
+    elif OPERATION == 'set_project_public':
+        user = require_user()
+        project_id = PAYLOAD['projectId']
+        if not db.execute('SELECT 1 FROM projects WHERE id=? AND user_id=?', (project_id, user['id'])).fetchone(): raise ValueError('PROJECT_NOT_FOUND')
+        if not isinstance(PAYLOAD.get('public'), bool): raise ValueError('PUBLIC_FLAG_REQUIRED')
+        if PAYLOAD['public']:
+            db.execute('INSERT INTO public_projects(project_id,published_at) VALUES(?,?) ON CONFLICT(project_id) DO NOTHING', (project_id, now()))
+        else:
+            db.execute('DELETE FROM public_projects WHERE project_id=?', (project_id,))
+        db.commit()
+        output = {'projectId': project_id, 'public': PAYLOAD['public']}
+    elif OPERATION == 'list_public_projects':
+        rows = db.execute('SELECT projects.* FROM projects JOIN public_projects ON projects.id=public_projects.project_id ORDER BY projects.project_name').fetchall()
+        output = {'projects': [{'id': 'public_' + row['id'], 'projectName': row['project_name'], 'updatedAt': row['updated_at'], 'readOnly': True, 'public': True, 'assetCount': db.execute('SELECT COUNT(*) FROM assets WHERE project_id=?', (row['id'],)).fetchone()[0], 'assets': []} for row in rows]}
+    elif OPERATION == 'get_public_project':
+        row = db.execute('SELECT projects.* FROM projects JOIN public_projects ON projects.id=public_projects.project_id WHERE projects.id=?', (PAYLOAD['projectId'],)).fetchone()
+        if not row: raise ValueError('PROJECT_NOT_FOUND')
+        output = {'project': project_payload(row)}
+    elif OPERATION == 'get_public_asset':
+        row = db.execute('SELECT assets.* FROM assets JOIN public_projects ON assets.project_id=public_projects.project_id WHERE assets.project_id=? AND assets.id=?', (PAYLOAD['projectId'], PAYLOAD['assetId'])).fetchone()
+        if not row: raise ValueError('ASSET_NOT_FOUND')
+        output = {'asset': asset_payload(row)}
     elif OPERATION == 'get_project':
         user = require_user()
         row = db.execute('SELECT * FROM projects WHERE id=? AND user_id=?', (PAYLOAD['projectId'], user['id'])).fetchone()
